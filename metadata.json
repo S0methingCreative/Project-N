@@ -1,0 +1,6 @@
+{
+  "name": "Project N: The Dimensional Compiler",
+  "description": "A standalone ontological roguelite where your survival compiles the game graphics pipeline and waveform audio synthesis engine from a 0D acoustic void to a high-speed 240 FPS ultra experience.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
