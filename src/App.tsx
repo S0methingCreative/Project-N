@@ -495,7 +495,7 @@ export default function App() {
   };
 
   return (
-    <div className="relative w-screen h-screen bg-black text-neutral-100 font-sans overflow-hidden select-none">
+    <div className="fixed inset-0 w-full h-[100dvh] bg-black text-neutral-100 font-sans overflow-hidden select-none touch-none">
       {/* Standalone Fullscreen Game Window (Border-free & Edge-to-Edge) */}
       <main className="relative w-full h-full overflow-hidden flex flex-col bg-black">
         <DimensionCanvas
@@ -527,6 +527,7 @@ export default function App() {
           hasActiveRun={gameState.carrierActive}
           userSettings={userSettings}
           onUpdateSettings={handleUpdateSettings}
+          isMobile={isMobileDevice}
         />
 
         {/* Slide-over Engine Pipeline Drawer */}

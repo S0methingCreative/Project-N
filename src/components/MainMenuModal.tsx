@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { GameMode, HighScores } from '../types/game';
 import {
-  Play,
+  BookOpen,
   Zap,
   Gamepad2,
   Trophy,
@@ -41,6 +41,7 @@ interface MainMenuModalProps {
   hasActiveRun?: boolean;
   userSettings?: UserSettings;
   onUpdateSettings?: (settings: UserSettings) => void;
+  isMobile?: boolean;
 }
 
 export const MainMenuModal: React.FC<MainMenuModalProps> = ({
@@ -54,6 +55,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   hasActiveRun = false,
   userSettings = DEFAULT_USER_SETTINGS,
   onUpdateSettings,
+  isMobile = false,
 }) => {
   const [activeTab, setActiveTab] = useState<'modes' | 'highscores' | 'options'>('modes');
   const [optionsSubTab, setOptionsSubTab] = useState<'audio' | 'control'>('audio');
@@ -103,10 +105,9 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
     };
   }, [isOpen]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Escape resumes ONLY if there is an active running game to return to
       if (e.key === 'Escape') {
         if (hasActiveRun) {
           onClose();
@@ -207,21 +208,13 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
     updateSettingsHelper(updated);
   };
 
-  const handleToggleMute = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    handleToggleMuteAll();
-  };
-
   return (
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto font-mono select-none animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 font-mono select-none animate-in fade-in duration-150 overflow-hidden"
       onClick={(e) => {
-        // Prevent click from propagating to canvas or window
-        // Ensure clicking anywhere on the main menu background does NOT start the game!
         e.stopPropagation();
-        // Safe user gesture to resume audio waltz if browser requires interaction
         soundEngine.ensureResumed();
         soundEngine.setMusicPacing('slow_waltz', 'easy');
         soundEngine.startBackgroundMusic();
@@ -233,109 +226,94 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
         className="fixed inset-0 w-full h-full object-cover pointer-events-none -z-10"
       />
 
-      {/* Dark semi-translucent scrim letting 6-bit pixel art shine through cleanly */}
-      <div className="fixed inset-0 bg-black/55 backdrop-blur-[0.5px] pointer-events-none -z-10" />
+      {/* Subtle backdrop scrim */}
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-[0.5px] pointer-events-none -z-10" />
 
-      {/* Modal Dialog Card */}
+      {/* Minimalist Modal Dialog Card - Fits cleanly on screen without scrollbars */}
       <div
-        className="relative w-full max-w-2xl max-h-[92vh] overflow-y-auto bg-[#0c0d12]/95 border-2 border-emerald-500/80 rounded-2xl shadow-2xl shadow-emerald-950/80 p-4 sm:p-7 flex flex-col space-y-3 sm:space-y-5 my-auto z-10"
+        className="relative w-full max-w-xl max-h-[96dvh] sm:max-h-[92dvh] bg-[#0c0d12]/95 border border-emerald-500/70 rounded-2xl shadow-2xl shadow-emerald-950/80 p-3 sm:p-5 flex flex-col gap-2 sm:gap-3.5 my-auto z-10 overflow-y-auto scrollbar-none"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header Bar */}
-        <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-400">
-              <Sparkles className="w-5 h-5 animate-pulse" />
+        {/* Sleek Minimalist Header */}
+        <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-400">
+              <Sparkles className="w-4 h-4 animate-pulse" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-black tracking-wider text-neutral-100 uppercase">
-                  GAME N: MAIN MENU
-                </h1>
-                {hasCompletedStory && (
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/50">
-                    MASTERED
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2 text-[11px] text-neutral-400">
-                <span>Dimensional Waveform Synthesis Hub</span>
-                <span className="text-neutral-600">•</span>
-                <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                  6-BIT GRAPHICS ACTIVE
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm sm:text-base font-black tracking-widest text-neutral-100 uppercase">
+                PROJECT N
+              </h1>
+              {hasCompletedStory ? (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/50">
+                  MASTERED
                 </span>
-              </div>
+              ) : (
+                <span className="text-[10px] text-emerald-400/80 font-bold hidden sm:inline">
+                  6-BIT SYNTHESIS
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Audio Status & Action Controls */}
-          <div className="flex items-center gap-2">
+          {/* Audio & Action Buttons */}
+          <div className="flex items-center gap-1.5">
             <button
-              onClick={handleToggleMute}
+              onClick={handleToggleMuteAll}
               aria-label={isAudioMuted ? 'Unmute slow waltz' : 'Mute audio'}
-              className="px-2.5 py-1.5 text-xs text-neutral-300 hover:text-emerald-300 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer touch-manipulation min-h-[38px]"
+              className="p-2 sm:px-2.5 sm:py-1.5 text-xs text-neutral-300 hover:text-emerald-300 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer touch-manipulation min-h-[38px] min-w-[38px] justify-center"
             >
               {isAudioMuted ? (
-                <>
-                  <VolumeX className="w-3.5 h-3.5 text-neutral-500" />
-                  <span className="text-[10px]">MUTED</span>
-                </>
+                <VolumeX className="w-3.5 h-3.5 text-neutral-500" />
               ) : (
-                <>
-                  <Volume2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-                  <span className="text-[10px] text-emerald-400 font-bold hidden sm:inline">SLOW WALTZ (78 BPM)</span>
-                </>
+                <Volume2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
               )}
             </button>
 
-            {/* Resume button only visible when a game run is actually underway */}
             {hasActiveRun ? (
               <button
                 onClick={onClose}
-                className="px-3 py-1.5 text-xs text-neutral-300 hover:text-neutral-100 bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 rounded-lg transition-colors cursor-pointer"
+                className="px-3 py-1.5 text-xs text-neutral-200 hover:text-white bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 rounded-lg transition-colors cursor-pointer min-h-[38px] flex items-center font-bold"
               >
-                RESUME [ESC]
+                RESUME
               </button>
-            ) : (
-              <div className="px-2.5 py-1 text-[10px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/50 rounded-lg">
-                READY
-              </div>
-            )}
+            ) : null}
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-2 border-b border-neutral-800 pb-2">
+        {/* Minimal Navigation Tabs */}
+        <div className="flex items-center gap-1.5 border-b border-neutral-800/80 pb-1.5">
           <button
             onClick={() => setActiveTab('modes')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'modes'
-                ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950'
-                : 'bg-neutral-900 text-neutral-400 hover:text-neutral-200 border border-neutral-800'
+                ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-950'
+                : 'bg-neutral-900/80 text-neutral-400 hover:text-neutral-200 border border-neutral-800/80'
             }`}
           >
-            <Play className="w-3.5 h-3.5" />
-            <span>GAME MODES</span>
+            <BookOpen className="w-3.5 h-3.5" />
+            <span>MODES</span>
           </button>
 
           <button
             onClick={() => setActiveTab('highscores')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'highscores'
-                ? 'bg-amber-600 text-white shadow-md shadow-amber-950'
-                : 'bg-neutral-900 text-neutral-400 hover:text-neutral-200 border border-neutral-800'
+                ? 'bg-amber-600 text-white shadow-sm shadow-amber-950'
+                : 'bg-neutral-900/80 text-neutral-400 hover:text-neutral-200 border border-neutral-800/80'
             }`}
           >
             <Trophy className="w-3.5 h-3.5" />
-            <span>HIGH SCORES</span>
+            <span>SCORES</span>
           </button>
 
           <button
             onClick={() => setActiveTab('options')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'options'
-                ? 'bg-cyan-600 text-white shadow-md shadow-cyan-950'
-                : 'bg-neutral-900 text-neutral-400 hover:text-neutral-200 border border-neutral-800'
+                ? 'bg-cyan-600 text-white shadow-sm shadow-cyan-950'
+                : 'bg-neutral-900/80 text-neutral-400 hover:text-neutral-200 border border-neutral-800/80'
             }`}
           >
             <Sliders className="w-3.5 h-3.5" />
@@ -345,70 +323,59 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
 
         {/* Tab 1: Game Modes */}
         {activeTab === 'modes' && (
-          <div className="space-y-4">
-            {/* FEATURED: START / CONTINUE STORY MODE HERO CARD */}
-            <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-950/70 via-neutral-900 to-neutral-900 border-2 border-emerald-500/80 shadow-xl shadow-emerald-950/60 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-              <div className="flex items-start sm:items-center gap-3.5">
-                <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-400 text-emerald-300 shrink-0">
-                  <Play className="w-6 h-6 fill-emerald-400 text-emerald-400" />
+          <div className="flex flex-col gap-2.5">
+            {/* FEATURED: STORY MODE HERO CARD (WITH OPEN BOOK ICON) */}
+            <div className="p-3 sm:p-4 rounded-xl bg-gradient-to-r from-emerald-950/60 via-neutral-900/90 to-neutral-900/90 border border-emerald-500/70 shadow-lg shadow-emerald-950/40 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-400/80 text-emerald-300 shrink-0 flex items-center justify-center">
+                  <BookOpen className="w-5 h-5 text-emerald-400" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-emerald-400 tracking-wider">
-                      {storyProgress?.hasSave ? 'ACTIVE STORY SAVE' : 'PRIMARY CAMPAIGN'}
-                    </span>
+                  <div className="flex items-center gap-1.5">
+                    <h2 className="text-sm sm:text-base font-black text-white">
+                      STORY CHRONICLE
+                    </h2>
                     {storyProgress?.hasSave && (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700">
-                        PROGRESS PERSISTED
+                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700">
+                        SAVED
                       </span>
                     )}
                   </div>
-                  <h2 className="text-base sm:text-lg font-black text-white mt-0.5">
-                    {storyProgress?.hasSave ? 'CONTINUE STORY' : 'START STORY'}
-                  </h2>
-                  <p className="text-xs text-neutral-300 font-mono mt-0.5">
+                  <p className="text-[11px] text-neutral-300 font-mono mt-0.5">
                     {storyProgress?.hasSave
-                      ? `Part ${storyProgress.act1SubPart} • N=${storyProgress.currentN} • ${storyProgress.act1Bits}/10 Bits • Res ${storyProgress.act1Resolution}/10 • ${storyProgress.resources.hertz} Hz, ${storyProgress.resources.volts} V${storyProgress.resources.baud ? `, ${storyProgress.resources.baud} Bd` : ''}`
-                      : 'Embark on the canonical journey from the 0D acoustic void to full dimensional reality.'}
+                      ? `Part ${storyProgress.act1SubPart} • N=${storyProgress.currentN} • ${storyProgress.act1Bits}/10 Bits • Res ${storyProgress.act1Resolution}/10`
+                      : '0D Void → Full Dimensionality'}
                   </p>
                 </div>
               </div>
 
               {confirmFreshStory ? (
-                <div className="flex flex-col sm:flex-row items-center gap-2.5 p-3 rounded-xl bg-rose-950/80 border border-rose-500/70 text-xs w-full sm:w-auto animate-in fade-in duration-150">
-                  <div className="flex-1 font-mono text-[11px] leading-tight text-center sm:text-left text-rose-200">
-                    <div className="font-bold text-rose-300">CLEAR ALL MATERIALS &amp; START FRESH?</div>
-                    <div className="text-rose-400/90 text-[10px] mt-0.5">
-                      Will clear all gathered materials: 0 Hz, 0 V, 0 Bd, and reset story to 0D Void.
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfirmFreshStory(false);
-                        handleModeClick('story', true);
-                      }}
-                      className="px-3.5 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 active:bg-rose-700 text-white font-mono font-bold text-xs shadow-md transition-all cursor-pointer active:scale-95 flex items-center gap-1.5"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                      <span>CLEAR ALL &amp; START</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConfirmFreshStory(false);
-                      }}
-                      className="px-3 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-mono text-xs border border-neutral-700 transition-all cursor-pointer"
-                    >
-                      CANCEL
-                    </button>
-                  </div>
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-rose-950/80 border border-rose-500/70 text-xs">
+                  <span className="text-[10px] text-rose-300 font-bold">RESET SAVE?</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmFreshStory(false);
+                      handleModeClick('story', true);
+                    }}
+                    className="px-2.5 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-mono font-bold text-[11px] cursor-pointer"
+                  >
+                    CONFIRM
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmFreshStory(false);
+                    }}
+                    className="px-2 py-1.5 rounded bg-neutral-800 text-neutral-300 font-mono text-[11px] cursor-pointer"
+                  >
+                    NO
+                  </button>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
+                <div className="flex items-center gap-2 shrink-0">
                   {storyProgress?.hasSave && (
                     <button
                       type="button"
@@ -416,192 +383,165 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                         e.stopPropagation();
                         setConfirmFreshStory(true);
                       }}
-                      className="px-3.5 py-3 rounded-xl text-xs font-mono font-bold bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-rose-300 border border-neutral-700 hover:border-rose-500/60 transition-colors cursor-pointer flex items-center gap-1.5"
+                      aria-label="Restart fresh story"
+                      className="p-2.5 rounded-xl text-xs font-mono font-bold bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-rose-400 border border-neutral-700 transition-colors cursor-pointer min-h-[42px] min-w-[42px] flex items-center justify-center"
                     >
-                      <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
-                      <span>START FRESH STORY</span>
+                      <RotateCcw className="w-3.5 h-3.5" />
                     </button>
                   )}
+
+                  {/* GREEN PLAY BUTTON CHANGED TO AN OPEN BOOK BUTTON */}
                   <button
                     type="button"
                     onClick={() => handleModeClick('story')}
-                    className="flex-1 sm:flex-initial px-6 py-3 rounded-xl text-xs font-mono font-black bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-black flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/70 transition-all cursor-pointer active:scale-95"
+                    className="flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-mono font-black bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-black flex items-center justify-center gap-2 shadow-md shadow-emerald-950/60 transition-all cursor-pointer active:scale-95 min-h-[42px]"
                   >
-                    <Play className="w-4 h-4 fill-black" />
-                    <span>{storyProgress?.hasSave ? 'START / CONTINUE STORY' : 'START STORY'}</span>
+                    <BookOpen className="w-4 h-4 text-black stroke-[2.5]" />
+                    <span>{storyProgress?.hasSave ? 'CONTINUE' : 'START'}</span>
                   </button>
                 </div>
               )}
             </div>
 
-            {/* OTHER GAME MODES */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* 1. SPEED RUN */}
+            {/* MINIMALIST 3 GAME MODES */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {/* SPEED RUN */}
               <div
                 onClick={() => handleModeClick('speedrun')}
-                className="group p-3.5 rounded-xl bg-neutral-900/80 border border-cyan-500/40 hover:border-cyan-400 transition-all cursor-pointer hover:bg-neutral-900 shadow-md flex flex-col justify-between"
+                className="group p-2.5 rounded-xl bg-neutral-900/80 border border-cyan-500/40 hover:border-cyan-400 transition-all cursor-pointer flex flex-col justify-between"
               >
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-1.5 text-cyan-400 font-bold text-xs sm:text-sm">
-                      <Zap className="w-4 h-4 text-cyan-400 group-hover:translate-x-0.5 transition-transform" />
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-1 text-cyan-400 font-bold text-xs">
+                      <Zap className="w-3.5 h-3.5 text-cyan-400" />
                       <span>SPEED RUN</span>
                     </div>
-                    <span className="text-[9px] text-cyan-300/80 px-1.5 py-0.5 rounded bg-cyan-950/70 border border-cyan-800/80 font-bold">
+                    <span className="text-[9px] text-cyan-300 px-1 py-0.5 rounded bg-cyan-950 border border-cyan-800/80 font-bold">
                       TIME ATTACK
                     </span>
                   </div>
-                  <p className="text-[11px] text-neutral-300 leading-relaxed">
-                    Auto-compiles bits and resolutions as soon as resources are harvested. Defeat both bosses as fast as possible.
+                  <p className="text-[10px] text-neutral-300">
+                    Auto-compiler rush. Defeat sovereigns at maximum speed.
                   </p>
                 </div>
-                <div className="mt-3 pt-2 border-t border-neutral-800 flex items-center justify-between text-[11px] text-cyan-400 font-bold">
+                <div className="mt-2 pt-1.5 border-t border-neutral-800 flex items-center justify-between text-[10px] text-cyan-400 font-bold">
                   <span>Best: {highScores.speedrunBestTime ? formatTime(highScores.speedrunBestTime) : '--'}</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <ArrowRight className="w-3 h-3" />
                 </div>
               </div>
 
-              {/* 2. SURVIVAL MODE */}
+              {/* SURVIVAL */}
               <div
                 onClick={() => handleModeClick('survival')}
-                className="group p-3.5 rounded-xl bg-neutral-900/80 border border-rose-500/40 hover:border-rose-400 transition-all cursor-pointer hover:bg-neutral-900 shadow-md flex flex-col justify-between"
+                className="group p-2.5 rounded-xl bg-neutral-900/80 border border-rose-500/40 hover:border-rose-400 transition-all cursor-pointer flex flex-col justify-between"
               >
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-1.5 text-rose-400 font-bold text-xs sm:text-sm">
-                      <Flame className="w-4 h-4 text-rose-400 group-hover:translate-x-0.5 transition-transform" />
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-1 text-rose-400 font-bold text-xs">
+                      <Flame className="w-3.5 h-3.5 text-rose-400" />
                       <span>SURVIVAL</span>
                     </div>
-                    <span className="text-[9px] text-rose-300/80 px-1.5 py-0.5 rounded bg-rose-950/70 border border-rose-800/80 font-bold">
-                      ESCALATION
+                    <span className="text-[9px] text-rose-300 px-1 py-0.5 rounded bg-rose-950 border border-rose-800/80 font-bold">
+                      ENDLESS
                     </span>
                   </div>
-                  <p className="text-[11px] text-neutral-300 leading-relaxed">
-                    Start fully unlocked at 240 FPS with 5 Overshields. Endure endless bosses, error spikes, and rhythm surges.
+                  <p className="text-[10px] text-neutral-300">
+                    240 FPS. Endless bosses, rhythm surges, and error spikes.
                   </p>
                 </div>
-                <div className="mt-3 pt-2 border-t border-neutral-800 flex items-center justify-between text-[11px] text-rose-400 font-bold">
+                <div className="mt-2 pt-1.5 border-t border-neutral-800 flex items-center justify-between text-[10px] text-rose-400 font-bold">
                   <span>Best: {highScores.survivalBestTime ? formatTime(highScores.survivalBestTime) : '--'}</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <ArrowRight className="w-3 h-3" />
                 </div>
               </div>
 
-              {/* 3. ARCADE MODE */}
+              {/* ARCADE */}
               <div
                 onClick={() => handleModeClick('arcade')}
-                className="group p-3.5 rounded-xl bg-neutral-900/80 border border-purple-500/40 hover:border-purple-400 transition-all cursor-pointer hover:bg-neutral-900 shadow-md flex flex-col justify-between"
+                className="group p-2.5 rounded-xl bg-neutral-900/80 border border-purple-500/40 hover:border-purple-400 transition-all cursor-pointer flex flex-col justify-between"
               >
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-1.5 text-purple-400 font-bold text-xs sm:text-sm">
-                      <Gamepad2 className="w-4 h-4 text-purple-400 group-hover:rotate-12 transition-transform" />
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-1 text-purple-400 font-bold text-xs">
+                      <Gamepad2 className="w-3.5 h-3.5 text-purple-400" />
                       <span>ARCADE</span>
                     </div>
-                    <span className="text-[9px] text-purple-300/80 px-1.5 py-0.5 rounded bg-purple-950/70 border border-purple-800/80 font-bold">
-                      1 LIFE
+                    <span className="text-[9px] text-purple-300 px-1 py-0.5 rounded bg-purple-950 border border-purple-800/80 font-bold">
+                      1-2 LIVES
                     </span>
                   </div>
-                  <p className="text-[11px] text-neutral-300 leading-relaxed">
-                    Linear tempo & pattern escalation starting at 1 Bit. Gain +1 Life at N=2. Kill screen logs records into the Vault.
+                  <p className="text-[10px] text-neutral-300">
+                    Starts at 0D Void with 1 Life (+1 at N=1). Scales to Hard at 8 Bits; ends at Boss 1.
                   </p>
                 </div>
-                <div className="mt-3 pt-2 border-t border-neutral-800 flex items-center justify-between text-[11px] text-purple-400 font-bold">
-                  <span className="truncate max-w-[130px]">Best: {highScores.arcadeBestStage ? `${highScores.arcadeBestStage}` : '1 Life • 1 Bit'}</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                <div className="mt-2 pt-1.5 border-t border-neutral-800 flex items-center justify-between text-[10px] text-purple-400 font-bold">
+                  <span className="truncate max-w-[110px]">Best: {highScores.arcadeBestStage ? `${highScores.arcadeBestStage}` : '0D Void'}</span>
+                  <ArrowRight className="w-3 h-3" />
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* Tab 2: High Scores / Records Vault */}
+        {/* Tab 2: High Scores / Records */}
         {activeTab === 'highscores' && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Speed Run Best */}
-              <div className="bg-neutral-900/90 border border-cyan-500/50 rounded-xl p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-cyan-400 flex items-center gap-1.5">
-                    <Zap className="w-4 h-4" /> SPEED RUN RECORD
-                  </span>
-                  <Trophy className="w-4 h-4 text-amber-400" />
-                </div>
-                <div className="text-2xl font-black text-neutral-100">
-                  {highScores.speedrunBestTime ? formatTime(highScores.speedrunBestTime) : 'NO RECORD YET'}
-                </div>
-                <div className="text-xs text-neutral-400">
-                  {highScores.speedrunBestRuns ? `Completed in ${highScores.speedrunBestRuns} run attempts` : 'Defeat both Sovereigns in Speed Run mode to register'}
-                </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div className="bg-neutral-900/90 border border-cyan-500/50 rounded-xl p-3">
+              <div className="flex items-center justify-between text-xs font-bold text-cyan-400 mb-1">
+                <span>SPEED RUN</span>
+                <Trophy className="w-3.5 h-3.5 text-amber-400" />
               </div>
-
-              {/* Survival Best */}
-              <div className="bg-neutral-900/90 border border-rose-500/50 rounded-xl p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-rose-400 flex items-center gap-1.5">
-                    <Flame className="w-4 h-4" /> SURVIVAL RECORD
-                  </span>
-                  <Trophy className="w-4 h-4 text-amber-400" />
-                </div>
-                <div className="text-2xl font-black text-neutral-100">
-                  {highScores.survivalBestTime ? formatTime(highScores.survivalBestTime) : 'NO RECORD YET'}
-                </div>
-                <div className="text-xs text-neutral-400">
-                  {highScores.survivalBestResources
-                    ? `Harvested +${highScores.survivalBestResources.hertz} Hz, +${highScores.survivalBestResources.volts} V, +${highScores.survivalBestResources.baud} Flux`
-                    : 'Endure escalating difficulty in Survival mode to register'}
-                </div>
+              <div className="text-lg font-black text-white">
+                {highScores.speedrunBestTime ? formatTime(highScores.speedrunBestTime) : '--'}
               </div>
-
-              {/* Arcade Mode Best / Records Vault */}
-              <div className="col-span-1 sm:col-span-2 bg-neutral-900/90 border border-purple-500/50 rounded-xl p-4 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-purple-400 flex items-center gap-1.5">
-                    <Gamepad2 className="w-4 h-4" /> ARCADE RECORDS VAULT
-                  </span>
-                  <Trophy className="w-4 h-4 text-amber-400" />
-                </div>
-                <div className="flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
-                  <div className="text-xl sm:text-2xl font-black text-neutral-100">
-                    {highScores.arcadeBestStage ? highScores.arcadeBestStage : 'NO RECORD YET'}
-                  </div>
-                  {highScores.arcadeBestTime ? (
-                    <div className="text-sm font-bold text-amber-400">
-                      Time: {formatTime(highScores.arcadeBestTime)}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="text-xs text-neutral-400">
-                  {highScores.arcadeBestStage
-                    ? 'Furthest progress recorded from the Arcade Kill Screen / Victory'
-                    : 'Survive the 10-Bit and 10-Resolution escalation in Arcade Mode to log records in Vault'}
-                </div>
+              <div className="text-[10px] text-neutral-400 mt-0.5">
+                {highScores.speedrunBestRuns ? `${highScores.speedrunBestRuns} attempts` : 'Dual Sovereign rush'}
               </div>
             </div>
 
-            {/* Lifetime Stats */}
-            <div className="bg-black/60 border border-neutral-800 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-neutral-300">
-              <div className="flex items-center gap-2">
-                <RotateCcw className="w-4 h-4 text-emerald-400" />
-                <span>Total Lifetime Runs Recorded: <strong className="text-emerald-300">{totalRuns}</strong></span>
+            <div className="bg-neutral-900/90 border border-rose-500/50 rounded-xl p-3">
+              <div className="flex items-center justify-between text-xs font-bold text-rose-400 mb-1">
+                <span>SURVIVAL</span>
+                <Trophy className="w-3.5 h-3.5 text-amber-400" />
               </div>
-              <div className="text-[11px] text-neutral-500">
-                Data saved in browser localStorage
+              <div className="text-lg font-black text-white">
+                {highScores.survivalBestTime ? formatTime(highScores.survivalBestTime) : '--'}
               </div>
+              <div className="text-[10px] text-neutral-400 mt-0.5">
+                {highScores.survivalBestResources ? `+${highScores.survivalBestResources.hertz} Hz` : 'Endless endurance'}
+              </div>
+            </div>
+
+            <div className="bg-neutral-900/90 border border-purple-500/50 rounded-xl p-3">
+              <div className="flex items-center justify-between text-xs font-bold text-purple-400 mb-1">
+                <span>ARCADE</span>
+                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+              </div>
+              <div className="text-lg font-black text-white truncate">
+                {highScores.arcadeBestStage || '--'}
+              </div>
+              <div className="text-[10px] text-neutral-400 mt-0.5">
+                {highScores.arcadeBestTime ? formatTime(highScores.arcadeBestTime) : '1 Life ladder'}
+              </div>
+            </div>
+
+            <div className="col-span-1 sm:col-span-3 bg-neutral-950 border border-neutral-800 rounded-lg p-2 flex items-center justify-between text-[11px] text-neutral-400">
+              <span>Lifetime Runs Recorded: <strong className="text-emerald-300">{totalRuns}</strong></span>
+              <span>Local Storage</span>
             </div>
           </div>
         )}
 
-        {/* Tab 3: Options (Sub-menus: Audio & Control) */}
+        {/* Tab 3: Options */}
         {activeTab === 'options' && (
-          <div className="space-y-4">
-            {/* Options Sub Navigation: Audio vs Control */}
-            <div className="flex items-center gap-2 bg-neutral-900/90 p-1 rounded-xl border border-neutral-800">
+          <div className="space-y-2.5">
+            <div className="flex items-center gap-1.5 bg-neutral-900/90 p-1 rounded-lg border border-neutral-800">
               <button
                 type="button"
                 onClick={() => setOptionsSubTab('audio')}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`flex-1 py-1 px-2.5 rounded text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                   optionsSubTab === 'audio'
-                    ? 'bg-cyan-600 text-white shadow-md'
+                    ? 'bg-cyan-600 text-white'
                     : 'text-neutral-400 hover:text-neutral-200'
                 }`}
               >
@@ -611,76 +551,45 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
               <button
                 type="button"
                 onClick={() => setOptionsSubTab('control')}
-                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                className={`flex-1 py-1 px-2.5 rounded text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer ${
                   optionsSubTab === 'control'
-                    ? 'bg-cyan-600 text-white shadow-md'
+                    ? 'bg-cyan-600 text-white'
                     : 'text-neutral-400 hover:text-neutral-200'
                 }`}
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>CONTROL</span>
+                <span>CONTROLS</span>
               </button>
             </div>
 
-            {/* AUDIO OPTIONS SUB-MENU */}
             {optionsSubTab === 'audio' && (
-              <div className="space-y-3">
-                {/* 1. Mute All */}
-                <div className="p-3.5 rounded-xl bg-neutral-900/80 border border-neutral-800 flex items-center justify-between gap-4">
-                  <div>
-                    <div className="text-xs font-bold text-neutral-200 flex items-center gap-2">
-                      {userSettings.audio.muteAll ? (
-                        <VolumeX className="w-4 h-4 text-rose-400" />
-                      ) : (
-                        <Volume2 className="w-4 h-4 text-emerald-400" />
-                      )}
-                      <span>Mute All</span>
-                    </div>
-                    <div className="text-[11px] text-neutral-400">
-                      Silences all master audio output (music and sound effects).
-                    </div>
+              <div className="space-y-2">
+                <div className="p-2.5 rounded-lg bg-neutral-900/80 border border-neutral-800 flex items-center justify-between">
+                  <div className="text-xs font-bold text-neutral-200 flex items-center gap-1.5">
+                    {userSettings.audio.muteAll ? (
+                      <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                    )}
+                    <span>Master Audio</span>
                   </div>
                   <button
                     type="button"
                     onClick={handleToggleMuteAll}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer border ${
+                    className={`px-2.5 py-1 rounded text-xs font-mono font-bold border transition-all cursor-pointer ${
                       userSettings.audio.muteAll
                         ? 'bg-rose-950/80 border-rose-500 text-rose-300'
                         : 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
                     }`}
                   >
-                    {userSettings.audio.muteAll ? 'MUTED (ON)' : 'UNMUTED (OFF)'}
+                    {userSettings.audio.muteAll ? 'MUTED' : 'ACTIVE'}
                   </button>
                 </div>
 
-                {/* 2. Music Volume + Mute toggle */}
-                <div className="p-3.5 rounded-xl bg-neutral-900/80 border border-neutral-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-bold text-neutral-200 flex items-center gap-2">
-                        <Volume1 className="w-4 h-4 text-cyan-400" />
-                        <span>Music Volume</span>
-                      </div>
-                      <div className="text-[11px] text-neutral-400">
-                        Procedural C Major background soundtrack (Default: 5).
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-cyan-300 bg-black/60 px-2 py-0.5 rounded border border-neutral-800">
-                        {userSettings.audio.musicVolume} / 10
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleToggleMusicMuted}
-                        className={`px-2.5 py-1 rounded text-[11px] font-mono font-bold border transition-all cursor-pointer ${
-                          userSettings.audio.musicMuted
-                            ? 'bg-rose-950/80 border-rose-500 text-rose-300'
-                            : 'bg-neutral-800 border-neutral-700 text-neutral-300 hover:text-white'
-                        }`}
-                      >
-                        {userSettings.audio.musicMuted ? 'MUSIC MUTED' : 'MUTE MUSIC'}
-                      </button>
-                    </div>
+                <div className="p-2.5 rounded-lg bg-neutral-900/80 border border-neutral-800 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-neutral-200">Music Volume</span>
+                    <span className="font-mono text-cyan-300">{userSettings.audio.musicVolume} / 10</span>
                   </div>
                   <input
                     type="range"
@@ -689,39 +598,14 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                     step="1"
                     value={userSettings.audio.musicVolume}
                     onChange={(e) => handleMusicVolumeChange(Number(e.target.value))}
-                    className="w-full accent-cyan-500 cursor-pointer h-2 bg-neutral-800 rounded-lg appearance-none"
+                    className="w-full accent-cyan-500 cursor-pointer h-1.5 bg-neutral-800 rounded appearance-none"
                   />
-                  <div className="flex justify-between text-[10px] font-mono text-neutral-500">
-                    <span>1 (Quiet)</span>
-                    <span>5 (Default Build Volume)</span>
-                    <span>10 (Max)</span>
-                  </div>
                 </div>
 
-                {/* 3. Sound Effect Volume */}
-                <div className="p-3.5 rounded-xl bg-neutral-900/80 border border-neutral-800 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-bold text-neutral-200 flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 text-emerald-400" />
-                        <span>Sound Effect Volume</span>
-                      </div>
-                      <div className="text-[11px] text-neutral-400">
-                        Polarizer matches, kicks, shield sparks & clashes (Default: 5).
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-emerald-300 bg-black/60 px-2 py-0.5 rounded border border-neutral-800">
-                        {userSettings.audio.sfxVolume} / 10
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => soundEngine.playCorrectHit('general')}
-                        className="px-2.5 py-1 rounded text-[11px] font-mono font-bold bg-neutral-800 hover:bg-neutral-700 text-neutral-200 border border-neutral-700 transition-all cursor-pointer"
-                      >
-                        TEST SFX
-                      </button>
-                    </div>
+                <div className="p-2.5 rounded-lg bg-neutral-900/80 border border-neutral-800 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-neutral-200">SFX Volume</span>
+                    <span className="font-mono text-emerald-300">{userSettings.audio.sfxVolume} / 10</span>
                   </div>
                   <input
                     type="range"
@@ -730,78 +614,53 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                     step="1"
                     value={userSettings.audio.sfxVolume}
                     onChange={(e) => handleSfxVolumeChange(Number(e.target.value))}
-                    className="w-full accent-emerald-500 cursor-pointer h-2 bg-neutral-800 rounded-lg appearance-none"
+                    className="w-full accent-emerald-500 cursor-pointer h-1.5 bg-neutral-800 rounded appearance-none"
                   />
-                  <div className="flex justify-between text-[10px] font-mono text-neutral-500">
-                    <span>1 (Quiet)</span>
-                    <span>5 (Default Build Volume)</span>
-                    <span>10 (Max)</span>
-                  </div>
                 </div>
               </div>
             )}
 
-            {/* CONTROL OPTIONS SUB-MENU */}
             {optionsSubTab === 'control' && (
-              <div className="space-y-3">
-                {/* 1. Scroll Wheel Inversion */}
-                <div className="p-3.5 rounded-xl bg-neutral-900/80 border border-neutral-800 flex items-center justify-between gap-4">
-                  <div>
-                    <div className="text-xs font-bold text-neutral-200 flex items-center gap-2">
-                      <RotateCcw className="w-4 h-4 text-amber-400" />
-                      <span>Scroll Wheel Inversion</span>
-                    </div>
-                    <div className="text-[11px] text-neutral-400">
-                      Inverts mouse scroll wheel movement direction on the 1D line.
-                    </div>
-                  </div>
+              <div className="space-y-2">
+                <div className="p-2.5 rounded-lg bg-neutral-900/80 border border-neutral-800 flex items-center justify-between">
+                  <span className="text-xs font-bold text-neutral-200">Invert Scroll Wheel</span>
                   <button
                     type="button"
                     onClick={handleToggleWheelInversion}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer border ${
+                    className={`px-2.5 py-1 rounded text-xs font-mono font-bold border transition-all cursor-pointer ${
                       userSettings.controls.scrollWheelInversion
                         ? 'bg-amber-950/80 border-amber-500 text-amber-300'
-                        : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-neutral-200'
+                        : 'bg-neutral-800 border-neutral-700 text-neutral-400'
                     }`}
                   >
-                    {userSettings.controls.scrollWheelInversion ? 'INVERTED (ON)' : 'DEFAULT (OFF)'}
+                    {userSettings.controls.scrollWheelInversion ? 'INVERTED' : 'NORMAL'}
                   </button>
                 </div>
 
-                {/* 2. Cycle Polarizer State Toggle (Spacebar vs RMB) */}
-                <div className="p-3.5 rounded-xl bg-neutral-900/80 border border-neutral-800 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-bold text-neutral-200">
-                        Cycle Polarizer State
-                      </div>
-                      <div className="text-[11px] text-neutral-400">
-                        Choose input to toggle polarity between positive, negative, and neutral.
-                      </div>
-                    </div>
-                  </div>
+                <div className="p-2.5 rounded-lg bg-neutral-900/80 border border-neutral-800 space-y-1.5">
+                  <span className="text-xs font-bold text-neutral-200 block">Cycle Polarizer Key</span>
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => handleSetPolarizerInput('space')}
-                      className={`p-2.5 rounded-xl border text-xs font-mono font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      className={`py-1.5 px-2 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer ${
                         userSettings.controls.cyclePolarizerInput === 'space'
-                          ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300 shadow-md'
-                          : 'bg-neutral-950/80 border-neutral-800 text-neutral-400 hover:text-neutral-200'
+                          ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+                          : 'bg-neutral-950 border-neutral-800 text-neutral-400'
                       }`}
                     >
-                      <span>⌨️ SPACEBAR (DEFAULT)</span>
+                      SPACEBAR
                     </button>
                     <button
                       type="button"
                       onClick={() => handleSetPolarizerInput('rmb')}
-                      className={`p-2.5 rounded-xl border text-xs font-mono font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      className={`py-1.5 px-2 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer ${
                         userSettings.controls.cyclePolarizerInput === 'rmb'
-                          ? 'bg-cyan-950/80 border-cyan-500 text-cyan-300 shadow-md'
-                          : 'bg-neutral-950/80 border-neutral-800 text-neutral-400 hover:text-neutral-200'
+                          ? 'bg-cyan-950/80 border-cyan-500 text-cyan-300'
+                          : 'bg-neutral-950 border-neutral-800 text-neutral-400'
                       }`}
                     >
-                      <span>🖱️ RMB (RIGHT CLICK)</span>
+                      RIGHT CLICK
                     </button>
                   </div>
                 </div>
@@ -809,13 +668,6 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
             )}
           </div>
         )}
-
-
-        {/* Footer controls */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-1.5 pt-2 border-t border-neutral-800 text-[11px] text-neutral-500">
-          <span>Controls: Tap screen or [SPACE] to cycle polarizer • Drag joystick or scroll to steer</span>
-          <span>Project N • Standalone Architecture</span>
-        </div>
       </div>
     </div>
   );

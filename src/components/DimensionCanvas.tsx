@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { GameState, DeathScreenState, GameMode } from '../types/game';
 import { soundEngine, MusicGenre, SpeedZone } from '../audio/soundEngine';
-import { Volume2, VolumeX, Shield, Play, RotateCcw, Zap, Sparkles, ArrowUp, ArrowDown, Activity, ShieldAlert, Lock, CheckCircle2, Cpu } from 'lucide-react';
+import { Volume2, VolumeX, Shield, Play, RotateCcw, Zap, Sparkles, ArrowUp, ArrowDown, Activity, ShieldAlert, Lock, CheckCircle2, Cpu, SlidersHorizontal, Settings, X } from 'lucide-react';
 import { draw6BitBackground } from '../utils/backgroundArt';
 import { UserSettings, DEFAULT_USER_SETTINGS, saveUserSettings } from '../utils/settings';
 
@@ -48,16 +48,16 @@ export interface ResolutionUpgrade {
 }
 
 export const RESOLUTION_UPGRADES: ResolutionUpgrade[] = [
-  { resolution: 1, name: 'Res 1: Harmonic Overshields', fps: '15 FPS', desc: 'Square packets at full HP grant Overshields (+20 HP each, up to 10 stacks / 300 effective HP).', costBaud: 8, costHz: 16, costV: 16 },
-  { resolution: 2, name: 'Res 2: 1D Line Mobility', fps: '24 FPS', desc: 'Unlocks horizontal line movement (touch joystick, scroll wheel, A/D). Red error zones now spawn across the line!', costBaud: 12, costHz: 24, costV: 24 },
-  { resolution: 3, name: 'Res 3: 33% Spatial Control', fps: '30 FPS', desc: 'Mobility responsiveness increased to 33% control.', costBaud: 16, costHz: 32, costV: 32 },
-  { resolution: 4, name: 'Res 4: 66% Spatial Control', fps: '45 FPS', desc: 'Mobility responsiveness increased to 66% control.', costBaud: 22, costHz: 44, costV: 44 },
-  { resolution: 5, name: 'Res 5: 100% Agile Control', fps: '60 FPS', desc: 'Mobility reaches 100% fluid instantaneous 1D spatial speed.', costBaud: 30, costHz: 60, costV: 60 },
-  { resolution: 6, name: 'Res 6: The Harmonic Slit (2x Yield)', fps: '75 FPS', desc: 'Center ~35% sector recognized: balanced zone yielding 2x resources for polarized waves.', costBaud: 40, costHz: 80, costV: 80 },
-  { resolution: 7, name: 'Res 7: The Attenuation Zone (Safe)', fps: '90 FPS', desc: 'Left sector discovered: pulses travel slower; yields 1x resources.', costBaud: 52, costHz: 104, costV: 104 },
-  { resolution: 8, name: 'Res 8: Emitter Maw (4x Yield)', fps: '120 FPS', desc: 'Right ~30% sector recognized: hazardous high-speed zone yielding 4x resources.', costBaud: 68, costHz: 136, costV: 136 },
-  { resolution: 9, name: 'Res 9: Fracture Sovereign Clash', fps: '144 FPS', desc: 'Fracture Sovereign engages! Boss can only be damaged when player occupies the targeted line sector.', costBaud: 88, costHz: 176, costV: 176 },
-  { resolution: 10, name: 'Res 10: Master Transcendence Plane', fps: '240 FPS Ultra', desc: 'Full control over the dimensional line achieved! Conquers the engine.', costBaud: 110, costHz: 220, costV: 220 },
+  { resolution: 1, name: 'Res 1: Shields', fps: '15 FPS', desc: 'Overshields', costBaud: 8, costHz: 16, costV: 16 },
+  { resolution: 2, name: 'Res 2: Line Move', fps: '24 FPS', desc: 'Movement', costBaud: 12, costHz: 24, costV: 24 },
+  { resolution: 3, name: 'Res 3: Speed +33%', fps: '30 FPS', desc: '+33% speed', costBaud: 16, costHz: 32, costV: 32 },
+  { resolution: 4, name: 'Res 4: Speed +66%', fps: '45 FPS', desc: '+66% speed', costBaud: 22, costHz: 44, costV: 44 },
+  { resolution: 5, name: 'Res 5: Full Agility', fps: '60 FPS', desc: 'Max agility', costBaud: 30, costHz: 60, costV: 60 },
+  { resolution: 6, name: 'Res 6: Center 2x', fps: '75 FPS', desc: 'Center 2x yield', costBaud: 40, costHz: 80, costV: 80 },
+  { resolution: 7, name: 'Res 7: Slow Zone', fps: '90 FPS', desc: 'Left slow zone', costBaud: 52, costHz: 104, costV: 104 },
+  { resolution: 8, name: 'Res 8: Right 4x', fps: '120 FPS', desc: 'Right 4x yield', costBaud: 68, costHz: 136, costV: 136 },
+  { resolution: 9, name: 'Res 9: Sovereign', fps: '144 FPS', desc: 'Boss fight', costBaud: 88, costHz: 176, costV: 176 },
+  { resolution: 10, name: 'Res 10: Transcend', fps: '240 FPS', desc: 'Mastery', costBaud: 110, costHz: 220, costV: 220 },
 ];
 
 export interface RedErrorZone {
@@ -67,6 +67,143 @@ export interface RedErrorZone {
   timeRemaining: number;
   maxTime: number;
   isWarning: boolean;
+}
+
+/**
+ * Renders the Right-Thumb Polarizer Tap Zone message floating seamlessly in the background.
+ * No borders or background box — pure subtle environmental typography that scales with Bit and Res unlocks.
+ */
+function drawPolarizerTapGuide(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  currentBits: number,
+  time: number,
+  subPart: 1 | 2,
+  resolution: number
+) {
+  // If 0 bits purchased (acoustic void before N=1), remain pure black void!
+  if (subPart === 1 && currentBits <= 0) return;
+
+  const rightOffset = Math.min(180, Math.max(85, w * 0.16));
+  const centerX = Math.round(w - rightOffset);
+  const centerY = Math.round(h * 0.72);
+  const text = "TAP · POLARIZE";
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  if (subPart === 1) {
+    if (currentBits === 1) {
+      ctx.fillStyle = "rgba(51, 255, 102, 0.75)";
+      ctx.font = "bold 9px monospace";
+      ctx.fillText(text, centerX, centerY);
+    } else if (currentBits === 2) {
+      ctx.fillStyle = "rgba(85, 255, 153, 0.8)";
+      ctx.font = "bold 9px monospace";
+      ctx.fillText(text, centerX, centerY);
+    } else if (currentBits >= 3 && currentBits <= 4) {
+      ctx.fillStyle = "rgba(85, 255, 170, 0.85)";
+      ctx.font = "bold 9px monospace";
+      ctx.fillText(text, centerX, centerY);
+    } else if (currentBits >= 5 && currentBits <= 7) {
+      const pulseAlpha = 0.75 + Math.sin(time * 0.003) * 0.2;
+      ctx.fillStyle = `rgba(0, 255, 170, ${pulseAlpha})`;
+      ctx.shadowColor = "#00ffaa";
+      ctx.shadowBlur = 4;
+      ctx.font = "bold 9px monospace";
+      ctx.fillText(text, centerX, centerY);
+    } else {
+      ctx.fillStyle = "#55ffc2";
+      ctx.shadowColor = "#00ffaa";
+      ctx.shadowBlur = 7;
+      ctx.font = "bold 9px monospace";
+      ctx.fillText(text, centerX, centerY);
+    }
+  } else {
+    if (resolution <= 2) {
+      ctx.fillStyle = "rgba(56, 225, 255, 0.8)";
+      ctx.font = "bold 9px monospace";
+      ctx.fillText(text, centerX, centerY);
+    } else if (resolution >= 3 && resolution <= 5) {
+      const pulse = (Math.sin(time * 0.0035) + 1) * 0.5;
+      ctx.fillStyle = `rgba(85, 255, 255, ${0.85 + pulse * 0.15})`;
+      ctx.shadowColor = "#00f0ff";
+      ctx.shadowBlur = 4 + pulse * 3;
+      ctx.font = "bold 9px monospace";
+      ctx.fillText(text, centerX, centerY);
+    } else if (resolution >= 6 && resolution <= 8) {
+      ctx.fillStyle = "#66ffdd";
+      ctx.shadowColor = "#00ffcc";
+      ctx.shadowBlur = 6;
+      ctx.font = "bold 9px monospace";
+      ctx.fillText(text, centerX, centerY);
+    } else {
+      ctx.fillStyle = "#88ffee";
+      ctx.shadowColor = "#00ffcc";
+      ctx.shadowBlur = 10;
+      ctx.font = "bold 9px monospace";
+      ctx.fillText(text, centerX, centerY);
+    }
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Renders the Left-Thumb Drag-to-Move message floating seamlessly in the background.
+ * Unlocked and displayed ONLY in Part Two when 1D Line Mobility is compiled (resolution >= 2).
+ * Does not display in Part One or Part Two when resolution < 2.
+ */
+function drawDragMoveGuide(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  _currentBits: number,
+  time: number,
+  subPart: 1 | 2,
+  resolution: number
+) {
+  // Movement left and right is strictly locked until Resolution 2 in Part Two!
+  // Do not display the message until then.
+  if (subPart !== 2 || resolution < 2) return;
+
+  const leftOffset = Math.min(180, Math.max(85, w * 0.16));
+  const centerX = Math.round(leftOffset);
+  const centerY = Math.round(h * 0.72);
+  const text = "DRAG ◄ ► MOVE";
+
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  if (resolution === 2) {
+    ctx.fillStyle = "rgba(56, 225, 255, 0.8)";
+    ctx.font = "bold 9px monospace";
+    ctx.fillText(text, centerX, centerY);
+  } else if (resolution >= 3 && resolution <= 5) {
+    const pulse = (Math.sin(time * 0.0035) + 1) * 0.5;
+    ctx.fillStyle = `rgba(85, 255, 255, ${0.85 + pulse * 0.15})`;
+    ctx.shadowColor = "#00f0ff";
+    ctx.shadowBlur = 4 + pulse * 3;
+    ctx.font = "bold 9px monospace";
+    ctx.fillText(text, centerX, centerY);
+  } else if (resolution >= 6 && resolution <= 8) {
+    ctx.fillStyle = "#66ffdd";
+    ctx.shadowColor = "#00ffcc";
+    ctx.shadowBlur = 6;
+    ctx.font = "bold 9px monospace";
+    ctx.fillText(text, centerX, centerY);
+  } else {
+    ctx.fillStyle = "#88ffee";
+    ctx.shadowColor = "#00ffcc";
+    ctx.shadowBlur = 10;
+    ctx.font = "bold 9px monospace";
+    ctx.fillText(text, centerX, centerY);
+  }
+
+  ctx.restore();
 }
 
 /**
@@ -622,20 +759,13 @@ function drawDynamicVoidBackground(
         ctx.bezierCurveTo(w * 0.33, arcY - 45, w * 0.66, arcY + 45, w, arcY);
         ctx.stroke();
       }
-
-      ctx.fillStyle = 'rgba(102, 255, 204, 0.95)';
-      ctx.font = 'bold 11px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('✦ RESOLUTION 10 COMPLETE: INSIDE THE ORION NEBULA [10" TELESCOPE DEEP-SKY FIELD] // 240 FPS ULTRA ✦', w / 2, h - 52);
-      ctx.textAlign = 'start';
-    } else {
-      ctx.fillStyle = 'rgba(102, 204, 255, 0.75)';
-      ctx.font = '10px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(`PART TWO: RESOLUTION ${resolution}/10 [${RESOLUTION_UPGRADES[Math.max(0, resolution - 1)]?.fps || '15 FPS'}] — INSIDE MESSIER 42 GASEOUS EMISSION`, w / 2, h - 52);
-      ctx.textAlign = 'start';
     }
 
+    // Environmental Navigation & Polarizer Guides: Blended directly into Part Two Subatomic & Orion Nebula field
+    if (resolution >= 2) {
+      drawDragMoveGuide(ctx, w, h, currentBits, time, 2, resolution);
+    }
+    drawPolarizerTapGuide(ctx, w, h, currentBits, time, 2, resolution);
     return;
   }
 
@@ -979,9 +1109,12 @@ function drawDynamicVoidBackground(
     ctx.fillStyle = 'rgba(102, 255, 204, 0.9)';
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('✦ 10-BIT TRANSCENDENCE: VOID FULLY TRANSFORMED — NEW POINT OCCUPIED ✦', w / 2, h - 52);
+    ctx.fillText('✦ 10-BIT TRANSCENDENCE: VOID FULLY TRANSFORMED — NEW POINT OCCUPIED ✦', w / 2, h * 0.28);
     ctx.textAlign = 'start';
   }
+
+  // Right-Thumb Polarizer Tap Guide: Blended directly into Part One retro pixel background
+  drawPolarizerTapGuide(ctx, w, h, currentBits, time, 1, 0);
 }
 
 interface Props {
@@ -1017,80 +1150,105 @@ export const DimensionCanvas: React.FC<Props> = ({
   const userSettingsRef = useRef<UserSettings>(userSettings);
   userSettingsRef.current = userSettings;
 
-  // Left-Right Joystick with square knob state
+  // Invisible Bottom-Left Quadrant Drag-to-Move Controller
   const [joystickDeflection, setJoystickDeflection] = useState<number>(0);
   const joystickDeflectionRef = useRef<number>(0);
   joystickDeflectionRef.current = joystickDeflection;
   const isJoystickDraggingRef = useRef<boolean>(false);
-  const joystickTrackRef = useRef<HTMLDivElement | null>(null);
+  const dragOriginXRef = useRef<number | null>(null);
+  const dragLastClientXRef = useRef<number>(0);
+  const lastTouchTimeRef = useRef<number>(0);
 
-  // Continuous movement loop while joystick is held deflected
+  // Orientation tracking for mobile portrait advisory banner
+  const [isPortrait, setIsPortrait] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerHeight > window.innerWidth;
+  });
+
   useEffect(() => {
-    let animId: number;
-    let lastTime = performance.now();
-    const updateJoystickMovement = (now: number) => {
-      const dt = Math.min(0.1, (now - lastTime) / 1000);
-      lastTime = now;
-      // Movement function is only available in Part Two once Resolution 2 or higher is reached
-      if (
-        Math.abs(joystickDeflectionRef.current) > 0.05 &&
-        subPartRef.current === 2 &&
-        resolutionRef.current >= 2
-      ) {
-        // Sensitivity matches the progression of scroll wheel sensitivity unlocks with res:
-        // Res 2: 0.08 (sluggish initial mobility)
-        // Res 3: 0.25 (33% spatial control)
-        // Res 4: 0.55 (66% spatial control)
-        // Res 5: 0.85 (85% agile control)
-        // Res 6+: 1.0 (full mastered spatial control)
-        const res = resolutionRef.current;
-        const agility =
-          res <= 2
-            ? 0.08
-            : res === 3
-            ? 0.25
-            : res === 4
-            ? 0.55
-            : res === 5
-            ? 0.85
-            : 1.0;
-        const moveStep = joystickDeflectionRef.current * 420 * agility * dt;
+    const handleOrientation = () => {
+      setIsPortrait(window.innerHeight > window.innerWidth);
+    };
+    window.addEventListener('resize', handleOrientation);
+    window.addEventListener('orientationchange', handleOrientation);
+    return () => {
+      window.removeEventListener('resize', handleOrientation);
+      window.removeEventListener('orientationchange', handleOrientation);
+    };
+  }, []);
+
+  const handleDragPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    lastTouchTimeRef.current = Date.now();
+    if (isMainMenuOpenRef.current || deathScreenRef.current || deathBufferSecondsRef.current > 0) return;
+    if (subPartRef.current !== 2 || resolutionRef.current < 2) return;
+    if (!stateRef.current.carrierActive) {
+      handleStartAudio();
+    }
+    isJoystickDraggingRef.current = true;
+    dragOriginXRef.current = e.clientX;
+    dragLastClientXRef.current = e.clientX;
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
+  };
+
+  const handleDragPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (subPartRef.current !== 2 || resolutionRef.current < 2) return;
+    if (!isJoystickDraggingRef.current || dragOriginXRef.current === null) return;
+    if (isMainMenuOpenRef.current || deathBufferSecondsRef.current > 0) return;
+
+    const diffX = e.clientX - dragOriginXRef.current;
+    const maxRadius = 45; // 45px deflection radius for left/right thumb control
+    const normalized = Math.max(-1, Math.min(1, diffX / maxRadius));
+    joystickDeflectionRef.current = normalized;
+    setJoystickDeflection(normalized);
+
+    // Floating origin: drift when dragging past maxRadius for effortless continuous navigation
+    if (Math.abs(diffX) > maxRadius) {
+      dragOriginXRef.current = e.clientX - Math.sign(diffX) * maxRadius;
+    }
+
+    // Direct instantaneous displacement tracking per swipe.
+    // Progresses in the exact same way as the scroll wheel:
+    // Sluggish early on at Resolution 2 (0.08) requiring multiple swipes to move across the screen,
+    // scaling with Resolution upgrades:
+    const deltaClientX = e.clientX - dragLastClientXRef.current;
+    dragLastClientXRef.current = e.clientX;
+
+    if (subPartRef.current === 2 && resolutionRef.current >= 2) {
+      const res = resolutionRef.current;
+      const agility =
+        res <= 2
+          ? 0.08
+          : res === 3
+          ? 0.25
+          : res === 4
+          ? 0.55
+          : res === 5
+          ? 0.85
+          : 1.0;
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect();
+        const scale = canvas.width / rect.width;
+        const deltaCanvas = deltaClientX * scale * agility;
         const TRACE_START = 80;
         const TRACE_END = 920 - 80;
         playerXRef.current = Math.max(
           TRACE_START + 10,
-          Math.min(TRACE_END - 20, playerXRef.current + moveStep)
+          Math.min(TRACE_END - 20, playerXRef.current + deltaCanvas)
         );
       }
-      animId = requestAnimationFrame(updateJoystickMovement);
-    };
-    animId = requestAnimationFrame(updateJoystickMovement);
-    return () => cancelAnimationFrame(animId);
-  }, []);
-
-  const handleJoystickPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    isJoystickDraggingRef.current = true;
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {}
-    handleJoystickPointerMove(e);
+    }
   };
 
-  const handleJoystickPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isJoystickDraggingRef.current || !joystickTrackRef.current) return;
-    const rect = joystickTrackRef.current.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const maxHalfWidth = (rect.width - 28) / 2;
-    const diff = e.clientX - centerX;
-    const clampedDiff = Math.max(-maxHalfWidth, Math.min(maxHalfWidth, diff));
-    const normalized = clampedDiff / maxHalfWidth;
-    setJoystickDeflection(normalized);
-  };
-
-  const handleJoystickPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleDragPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     e.stopPropagation();
+    lastTouchTimeRef.current = Date.now();
     isJoystickDraggingRef.current = false;
+    dragOriginXRef.current = null;
+    joystickDeflectionRef.current = 0;
     setJoystickDeflection(0);
     try {
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
@@ -1203,6 +1361,81 @@ export const DimensionCanvas: React.FC<Props> = ({
   arcadeVictoryModalRef.current = arcadeVictoryModal;
 
   const bossImmunityCooldownRef = useRef<number>(0);
+
+  // In-Game Options Modal (Accessible from any death / kill screen)
+  const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState<boolean>(false);
+  const isOptionsMenuOpenRef = useRef<boolean>(false);
+  isOptionsMenuOpenRef.current = isOptionsMenuOpen;
+  const [optionsSubTab, setOptionsSubTab] = useState<'audio' | 'control'>('audio');
+
+  const updateSettingsFromCanvas = (updated: UserSettings) => {
+    userSettingsRef.current = updated;
+    if (onUpdateSettings) {
+      onUpdateSettings(updated);
+    }
+    saveUserSettings(updated);
+    soundEngine.applyAudioSettings(updated.audio);
+  };
+
+  const handleToggleMuteAll = () => {
+    const current = userSettingsRef.current ?? DEFAULT_USER_SETTINGS;
+    const updated: UserSettings = {
+      ...current,
+      audio: {
+        ...current.audio,
+        muteAll: !current.audio.muteAll,
+      },
+    };
+    updateSettingsFromCanvas(updated);
+  };
+
+  const handleMusicVolumeChange = (vol: number) => {
+    const current = userSettingsRef.current ?? DEFAULT_USER_SETTINGS;
+    const updated: UserSettings = {
+      ...current,
+      audio: {
+        ...current.audio,
+        musicVolume: vol,
+      },
+    };
+    updateSettingsFromCanvas(updated);
+  };
+
+  const handleSfxVolumeChange = (vol: number) => {
+    const current = userSettingsRef.current ?? DEFAULT_USER_SETTINGS;
+    const updated: UserSettings = {
+      ...current,
+      audio: {
+        ...current.audio,
+        sfxVolume: vol,
+      },
+    };
+    updateSettingsFromCanvas(updated);
+  };
+
+  const handleToggleWheelInversion = () => {
+    const current = userSettingsRef.current ?? DEFAULT_USER_SETTINGS;
+    const updated: UserSettings = {
+      ...current,
+      controls: {
+        ...current.controls,
+        scrollWheelInversion: !current.controls.scrollWheelInversion,
+      },
+    };
+    updateSettingsFromCanvas(updated);
+  };
+
+  const handleSetPolarizerInput = (input: 'space' | 'rmb') => {
+    const current = userSettingsRef.current ?? DEFAULT_USER_SETTINGS;
+    const updated: UserSettings = {
+      ...current,
+      controls: {
+        ...current.controls,
+        cyclePolarizerInput: input,
+      },
+    };
+    updateSettingsFromCanvas(updated);
+  };
 
   // Phase 0 / Run Stats (State for rendering, Refs for 100% accurate closure reads)
   const [runHz, setRunHz] = useState<number>(0);
@@ -1353,11 +1586,13 @@ export const DimensionCanvas: React.FC<Props> = ({
           setRunVolts(0);
           setRunBaud(0);
         }
-      } else if (gameState.gameMode === 'arcade' && (gameState.arcadeTime === 0 || gameState.act1Bits <= 1)) {
+      } else if (gameState.gameMode === 'arcade' && (gameState.arcadeTime === 0 || (!gameState.act1PurchasedN && (gameState.act1Bits || 0) === 0))) {
         pulsesRef.current = [];
         arcadeTimeRef.current = gameState.arcadeTime || 0;
         setArcadeTime(arcadeTimeRef.current);
-        const initialLives = (gameState.currentN >= 2 || gameState.act1SubPart === 2) ? 2 : 1;
+        const initialLives = gameState.arcadeLives !== undefined
+          ? gameState.arcadeLives
+          : (gameState.act1PurchasedN && gameState.currentN >= 1) ? 2 : 1;
         arcadeLivesRef.current = initialLives;
         setArcadeLives(initialLives);
         setStoryCompleteModal(null);
@@ -1495,73 +1730,36 @@ export const DimensionCanvas: React.FC<Props> = ({
   // 8 - arcade techno; Medium difficulty; Medium tempo
   // 9 - cycle through (Waltz, math rock, arcade techno); Medium difficulty; Medium tempo
   // 10 - waltz; Fast difficulty; Fast tempo
-  // Res:
-  // 1 - waltz; Fast difficulty; Fast tempo
-  // 2 - waltz; Fast difficulty; Fast tempo
-  // 3 - math rock; Fast difficulty; Fast tempo
-  // 4 - arcade techno; Fast difficulty; Fast tempo
-  // 5 - cycle through (Waltz, math rock, arcade techno); Fast difficulty; Fast tempo
-  // 6 - waltz; Crazy difficulty; Crazy tempo
-  // 7 - math rock; Crazy difficulty; Crazy tempo
-  // 8 - arcade techno; Crazy difficulty; Crazy tempo
-  // 9 - cycle through (Waltz, math rock, arcade techno); Crazy difficulty; Crazy tempo
-  // 10 - waltz; Crazy difficulty; Crazy tempo - Victory music
+  // Arcade Pacing:
+  // Starts at Easy (0-3 bits), scales to Medium (4-7 bits), and scales to Hard at 8 bits unlocked (Bits 8 & 9 Boss)
   const getArcadePacing = (
-    subP: number,
+    _subP: number,
     bCount: number,
-    resCount: number,
+    _resCount: number,
     pulseCount: number
   ): { genre: MusicGenre; zone: SpeedZone } => {
     const genresCycle: MusicGenre[] = ['slow_waltz', 'math_rock', 'arcade_techno'];
     const cycleIndex = Math.floor(pulseCount / 8) % 3;
 
-    if (subP === 1) {
-      switch (bCount) {
-        case 1:
-        case 2:
-          return { genre: 'slow_waltz', zone: 'easy' };
-        case 3:
-          return { genre: 'math_rock', zone: 'easy' };
-        case 4:
-          return { genre: 'arcade_techno', zone: 'easy' };
-        case 5:
-          return { genre: genresCycle[cycleIndex], zone: 'easy' };
-        case 6:
-          return { genre: 'slow_waltz', zone: 'medium' };
-        case 7:
-          return { genre: 'math_rock', zone: 'medium' };
-        case 8:
-          return { genre: 'arcade_techno', zone: 'medium' };
-        case 9:
-          return { genre: genresCycle[cycleIndex], zone: 'medium' };
-        case 10:
-        default:
-          return { genre: 'slow_waltz', zone: 'hard' }; // Fast difficulty; Fast tempo
-      }
+    if (bCount < 4) {
+      // Bits 0 (pre-N=1 void or N=1 initial), 1, 2, 3: EASY difficulty
+      const genre: MusicGenre = bCount === 3 ? 'math_rock' : 'slow_waltz';
+      return { genre, zone: 'easy' };
+    } else if (bCount < 8) {
+      // Bits 4, 5, 6, 7: MEDIUM difficulty
+      const genre: MusicGenre =
+        bCount === 4
+          ? 'arcade_techno'
+          : bCount === 5
+          ? 'slow_waltz'
+          : bCount === 6
+          ? 'math_rock'
+          : genresCycle[cycleIndex];
+      return { genre, zone: 'medium' };
     } else {
-      const res = Math.max(1, resCount);
-      switch (res) {
-        case 1:
-        case 2:
-          return { genre: 'slow_waltz', zone: 'hard' };
-        case 3:
-          return { genre: 'math_rock', zone: 'hard' };
-        case 4:
-          return { genre: 'arcade_techno', zone: 'hard' };
-        case 5:
-          return { genre: genresCycle[cycleIndex], zone: 'hard' };
-        case 6:
-          return { genre: 'slow_waltz', zone: 'crazy' };
-        case 7:
-          return { genre: 'math_rock', zone: 'crazy' };
-        case 8:
-          return { genre: 'arcade_techno', zone: 'crazy' };
-        case 9:
-          return { genre: genresCycle[cycleIndex], zone: 'crazy' };
-        case 10:
-        default:
-          return { genre: 'slow_waltz', zone: 'crazy' }; // Victory music
-      }
+      // Bit 8 unlocked and Bit 9 Boss 1: HARD difficulty
+      const genre: MusicGenre = bCount >= 9 ? genresCycle[cycleIndex] : 'arcade_techno';
+      return { genre, zone: 'hard' };
     }
   };
 
@@ -1584,11 +1782,20 @@ export const DimensionCanvas: React.FC<Props> = ({
         hasNRef.current = true;
         setAct1Phase('point');
         phaseRef.current = 'point';
+
+        if (gameModeRef.current === 'arcade') {
+          arcadeLivesRef.current = 2;
+          setArcadeLives(2);
+          addCombatText('💖 +1 LIFE UNLOCKED (N=1)! [LIVES: 2]', playerXRef.current, 190, '#ff55bb');
+          onLogAction("💖 ARCADE LIFE GRANTED: N=1 materialized! Extra life awarded (Total Lives = 2)!");
+        }
+
         onUpdateState(prev => ({
           ...prev,
           currentN: 1,
           act1PurchasedN: true,
           act1Phase: 'point',
+          arcadeLives: prev.gameMode === 'arcade' ? 2 : prev.arcadeLives,
           resources: {
             ...prev.resources,
             hertz: Math.max(0, prev.resources.hertz - 2),
@@ -1886,7 +2093,7 @@ export const DimensionCanvas: React.FC<Props> = ({
     setDeathScreen(null);
     setStoryCompleteModal(null);
 
-    // Player starts with 1 bit already unlocked and 1 life
+    // Arcade starts at start of story mode state (0D Void, 0 Bits) with 1 Life
     runHzRef.current = 0;
     runVoltsRef.current = 0;
     runBaudRef.current = 0;
@@ -1894,16 +2101,16 @@ export const DimensionCanvas: React.FC<Props> = ({
     setRunVolts(0);
     setRunBaud(0);
 
-    setHasN(true);
-    hasNRef.current = true;
-    setBits(1);
-    bitsRef.current = 1;
+    setHasN(false);
+    hasNRef.current = false;
+    setBits(0);
+    bitsRef.current = 0;
     setSubPart(1);
     subPartRef.current = 1;
     setResolution(0);
     resolutionRef.current = 0;
-    setAct1Phase('point');
-    phaseRef.current = 'point';
+    setAct1Phase('void');
+    phaseRef.current = 'void';
     setIntegrity(100);
     setOvershields(0);
     overshieldsRef.current = 0;
@@ -1924,12 +2131,12 @@ export const DimensionCanvas: React.FC<Props> = ({
     onUpdateState(prev => ({
       ...prev,
       gameMode: 'arcade',
-      act1PurchasedN: true,
-      currentN: 1,
-      act1Bits: 1,
+      act1PurchasedN: false,
+      currentN: 0,
+      act1Bits: 0,
       act1SubPart: 1,
       act1Resolution: 0,
-      act1Phase: 'point',
+      act1Phase: 'void',
       overshields: 0,
       arcadeLives: 1,
       arcadeTime: 0,
@@ -1941,7 +2148,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       },
     }));
 
-    onLogAction("🕹️ ARCADE MODE ENGAGED: Starting with 1 Bit unlocked & 1 Life! Linear scaling active. Extra life at N=2!");
+    onLogAction("🕹️ ARCADE MODE ENGAGED: Starting from 0D Void with 1 Life! Scales to Hard at 8 Bits. Second life unlocks at N=1!");
   };
 
   // Death Screen Trigger (reads refs for 100% accurate resource banking)
@@ -1981,7 +2188,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         screenShakeRef.current = 16;
         soundEngine.playHitSound('quantum');
         addCombatText('💔 LIFE EXPENDED! [1 LIFE REMAINING]', playerXRef.current, 190, '#ff4466');
-        onLogAction(`⚠️ ARCADE DAMAGE: Fatal blow absorbed! Life expended (1 LIFE REMAINING).`);
+        onLogAction(`⚠️ ARCADE DAMAGE: Blow absorbed! Life expended (1 LIFE REMAINING).`);
         bossImmunityCooldownRef.current = 45;
         return;
       }
@@ -1994,8 +2201,8 @@ export const DimensionCanvas: React.FC<Props> = ({
       const isPart1Boss = phaseRef.current === 'boss';
       const isPart2Boss = currentPart === 2 && currentR >= 9;
 
-      let stageName = `Bit ${currentB}`;
-      let stageNum = currentB;
+      let stageName = !hasNRef.current ? '0D Void (Pre-N=1)' : `Bit ${currentB}`;
+      let stageNum = !hasNRef.current ? 0 : currentB;
       if (isPart1Boss) {
         stageName = `Boss 1: Corrupted Sovereign (Bit 9)`;
         stageNum = 9.5;
@@ -2037,7 +2244,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         };
       });
 
-      onLogAction(`💀 ARCADE RUN TERMINATED (${reason}) at ${stageName} after ${formatTime(finalTime)}. Record saved in Records Vault.`);
+      onLogAction(`💀 ARCADE RUN TERMINATED at ${stageName} after ${formatTime(finalTime)}. Record saved in Records Vault.`);
       return;
     }
 
@@ -2073,7 +2280,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           },
         };
       });
-      onLogAction(`SURVIVAL COLLAPSED (${reason}) after ${formatTime(finalSurvTime)}! Collected +${hzGained} Hz, +${vGained} V, +${baudGained} Flux.`);
+      onLogAction(`SURVIVAL COLLAPSED after ${formatTime(finalSurvTime)}! Collected +${hzGained} Hz, +${vGained} V, +${baudGained} Flux.`);
       return;
     }
 
@@ -2109,11 +2316,11 @@ export const DimensionCanvas: React.FC<Props> = ({
         target: 'resolution',
         currentResolution: resolutionRef.current,
         upgradeName: upgrade.name,
-        upgradeDesc: `${upgrade.fps} // ${upgrade.desc}`,
-        message: `PERIMETER COLLAPSED (${reason}).\nCOLLECTED THIS RUN: +${hzGained} HZ, +${vGained} V, +${baudGained} FLUX.\nTOTAL BANKED RESERVES: ${currentTotalHz} HZ, ${currentTotalV} V, ${currentTotalBaud} FLUX.\nSPEND ${upgrade.costBaud} FLUX (1X), ${upgrade.costHz} HZ (2X), AND ${upgrade.costV} V (2X) TO COMPILE ${upgrade.name}?`,
+        upgradeDesc: `${upgrade.fps} · ${upgrade.desc}`,
+        message: `PERIMETER COLLAPSED.\nCOLLECTED: +${hzGained} HZ, +${vGained} V, +${baudGained} FLUX.\nBANKED: ${currentTotalHz} HZ, ${currentTotalV} V, ${currentTotalBaud} FLUX.\nCOMPILE ${upgrade.name}?`,
       };
       setDeathScreen(screen);
-      onLogAction(`Resolution perimeter collapsed (${reason}). Collected +${hzGained} Hz, +${vGained} V, +${baudGained} Flux. Banked: ${currentTotalHz} Hz, ${currentTotalV} V, ${currentTotalBaud} Flux. Spend 1X Flux, 2X Hz, 2X V to compile ${upgrade.name}?`);
+      onLogAction(`Resolution perimeter collapsed. Collected +${hzGained} Hz, +${vGained} V, +${baudGained} Flux. Banked: ${currentTotalHz} Hz, ${currentTotalV} V, ${currentTotalBaud} Flux. Compile ${upgrade.name}?`);
     } else if (!hasN) {
       // Phase 0: Asking to buy N (Equal cost: 2 Hz and 2 V)
       const screen: DeathScreenState = {
@@ -2129,7 +2336,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         message: `OH NO YOU DIED.\nYOU COLLECTED ${hzGained} HZ AND ${vGained} V.\nYOU NOW HAVE ${currentTotalHz} HZ AND ${currentTotalV} V.\nSPEND 2 HZ AND 2 V FOR 1 N?`,
       };
       setDeathScreen(screen);
-      onLogAction(`Entity dissolved in 0-bit void (${reason}). Collected ${hzGained} HZ, ${vGained} V. Spend 2 HZ & 2 V for 1 N?`);
+      onLogAction(`Entity dissolved in 0-bit void. Collected ${hzGained} HZ, ${vGained} V. Spend 2 HZ & 2 V for 1 N?`);
     } else {
       // Phase 1: Asking to buy next Bit (Equal cost: X Hz and X V)
       const nextBitIdx = Math.min(BIT_GRAPHICS_UPGRADES.length - 1, bitsRef.current);
@@ -2147,7 +2354,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         message: `OH NO YOU DIED.\nYOU COLLECTED ${hzGained} HZ AND ${vGained} V.\nYOU NOW HAVE ${currentTotalHz} HZ AND ${currentTotalV} V.\nSPEND ${upgrade.costHz} HZ AND ${upgrade.costV} V TO COMPILE ${upgrade.name}?\n"${upgrade.desc}"`,
       };
       setDeathScreen(screen);
-      onLogAction(`Perimeter dissolved (${reason}). Collected ${hzGained} HZ, ${vGained} V. Next upgrade: ${upgrade.name} (${upgrade.costHz} Hz, ${upgrade.costV} V).`);
+      onLogAction(`Perimeter dissolved. Collected ${hzGained} HZ, ${vGained} V. Next upgrade: ${upgrade.name} (${upgrade.costHz} Hz, ${upgrade.costV} V).`);
     }
 
     pulsesRef.current = [];
@@ -2206,7 +2413,15 @@ export const DimensionCanvas: React.FC<Props> = ({
           },
         }));
         setHasN(true);
+        hasNRef.current = true;
         setAct1Phase('point');
+        phaseRef.current = 'point';
+        if (gameModeRef.current === 'arcade') {
+          arcadeLivesRef.current = 2;
+          setArcadeLives(2);
+          addCombatText('💖 +1 LIFE UNLOCKED (N=1)! [LIVES: 2]', playerXRef.current, 190, '#ff55bb');
+          onLogAction("💖 ARCADE LIFE GRANTED: N=1 materialized! Extra life awarded (Total Lives = 2)!");
+        }
         soundEngine.triggerNote('G4');
         soundEngine.playCadenceResolution();
         onLogAction("BOUGHT 1 N! N=1 materialized in the top-left corner. A single stationary white pixel appears in the void.");
@@ -2436,19 +2651,25 @@ export const DimensionCanvas: React.FC<Props> = ({
         return;
       }
 
-      // Escape opens main menu ONLY on kill screen / death screen per user requirements
-      // "Remove option to go to main menu mid run. You must reach kill screen to have the option to go to main menu for all games."
-      if (e.key === 'Escape' && onOpenMainMenu) {
-        const isKillScreen = Boolean(
-          deathScreenRef.current ||
-          survivalDeathModalRef.current ||
-          arcadeKillModalRef.current ||
-          speedrunCompleteModalRef.current ||
-          arcadeVictoryModalRef.current
-        );
-        if (isKillScreen) {
+      // Escape closes options modal first if open, or opens main menu on kill screen
+      if (e.key === 'Escape') {
+        if (isOptionsMenuOpenRef.current) {
           e.preventDefault();
-          onOpenMainMenu();
+          setIsOptionsMenuOpen(false);
+          return;
+        }
+        if (onOpenMainMenu) {
+          const isKillScreen = Boolean(
+            deathScreenRef.current ||
+            survivalDeathModalRef.current ||
+            arcadeKillModalRef.current ||
+            speedrunCompleteModalRef.current ||
+            arcadeVictoryModalRef.current
+          );
+          if (isKillScreen) {
+            e.preventDefault();
+            onOpenMainMenu();
+          }
         }
         return;
       }
@@ -2471,6 +2692,9 @@ export const DimensionCanvas: React.FC<Props> = ({
       if (isMainMenuOpenRef.current) return;
       if (deathScreenRef.current || deathBufferSecondsRef.current > 0) return;
 
+      // Ignore emulated mouse events following touch interactions
+      if (Date.now() - lastTouchTimeRef.current < 500) return;
+
       // Ignore clicks on buttons, inputs, interactive controls, or modals
       const target = e.target as HTMLElement | null;
       if (target) {
@@ -2486,10 +2710,18 @@ export const DimensionCanvas: React.FC<Props> = ({
         }
       }
 
+      // STRICT REQUIREMENT: Tapping or clicking the left half NEVER cycles the polarizer!
+      const canvas = canvasRef.current;
+      const rect = canvas ? canvas.getBoundingClientRect() : null;
+      const midX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+      if (e.clientX < midX) {
+        return;
+      }
+
       const cycleInput = userSettingsRef.current?.controls?.cyclePolarizerInput ?? 'space';
 
       if (e.button === 0) {
-        // Universal Left click cycles polarity
+        // Universal Left click on the right half cycles polarity
         cyclePolarizer();
       } else if (e.button === 2 && cycleInput === 'rmb') {
         // Right Mouse Button cycles polarity when RMB toggle is selected
@@ -3551,36 +3783,45 @@ export const DimensionCanvas: React.FC<Props> = ({
           const stageDesc = `[ZONE: ${zoneName}] ${genreName} (${bpmVal} BPM)`;
 
           // Part Two Telemetry HUD
-          if (subPartRef.current === 2) {
-            ctx.fillStyle = integrity < 35 ? '#ff3355' : integrity < 65 ? '#ffaa33' : '#33ff66';
-            ctx.font = '11px monospace';
-            const polText = polarityRef.current === 1 ? '▲ UP (Crests -> HZ)' : polarityRef.current === -1 ? '▼ DOWN (Troughs -> V)' : '■ NEUTRAL (Packets -> +40 HP / FLUX)';
-            const barFilled = Math.round(integrity / 10);
-            const barStr = '[' + '█'.repeat(barFilled) + '░'.repeat(10 - barFilled) + ']';
-            const sectorName = playerX < 240 ? 'ATTENUATION (1X)' : playerX < 430 ? 'HARMONIC SLIT (2X)' : 'EMITTER MAW (4X)';
-            const overshieldText = overshieldsRef.current > 0 ? ` | 🛡️ OVERSHIELD: +${overshieldsRef.current * 20} HP (${overshieldsRef.current}/10)` : '';
+          // Lower Telemetry HUD (Clean left-aligned HUD clear of joystick)
+          const roundedIntegrity = Math.round(integrity);
+          const barFilled = Math.max(0, Math.min(10, Math.round(roundedIntegrity / 10)));
+          const barStr = '[' + '█'.repeat(barFilled) + '░'.repeat(10 - barFilled) + ']';
+          const hudX = 20;
+          ctx.textAlign = 'left';
 
-            ctx.fillText(`INTEGRITY: ${barStr} ${integrity}%${overshieldText} | SECTOR: [${sectorName}] | POLARIZER: [ ${polText} ]`, 24, h - 34);
-            ctx.fillStyle = '#88ffaa';
-            ctx.font = '10px monospace';
-            ctx.fillText(`RUN HARVEST: +${runHzRef.current} Hz | +${runVoltsRef.current} V | +${runBaudRef.current} Flux  [Target: Res ${Math.min(10, resolutionRef.current + 1)}]`, 24, h - 18);
+          if (subPartRef.current === 2) {
+            ctx.fillStyle = roundedIntegrity < 35 ? '#ff3355' : roundedIntegrity < 65 ? '#ffaa33' : '#33ff66';
+            const shortPol = polarityRef.current === 1 ? '▲ UP' : polarityRef.current === -1 ? '▼ DOWN' : '■ NEUTRAL';
+            const sectorName = playerX < 240 ? 'ATTENUATION (1X)' : playerX < 430 ? 'HARMONIC SLIT (2X)' : 'EMITTER MAW (4X)';
+            const overshieldText = overshieldsRef.current > 0 ? ` | 🛡️ +${overshieldsRef.current * 20} HP` : '';
+
+            if (w < 640) {
+              ctx.font = '10px monospace';
+              ctx.fillText(`INTEGRITY: ${barStr} ${roundedIntegrity}%${overshieldText} | [${sectorName}] | ${shortPol}`, hudX, h - 26);
+              ctx.fillStyle = '#88ffaa';
+              ctx.font = '9.5px monospace';
+              ctx.fillText(`HARVEST: +${runHzRef.current} Hz | +${runVoltsRef.current} V | +${runBaudRef.current} Flux  [Target: Res ${Math.min(10, resolutionRef.current + 1)}]`, hudX, h - 12);
+            } else {
+              ctx.font = '11px monospace';
+              ctx.fillText(`INTEGRITY: ${barStr} ${roundedIntegrity}%${overshieldText} | SECTOR: [${sectorName}] | POLARIZER: [ ${shortPol} ]`, hudX, h - 26);
+              ctx.fillStyle = '#88ffaa';
+              ctx.font = '10px monospace';
+              ctx.fillText(`RUN HARVEST: +${runHzRef.current} Hz | +${runVoltsRef.current} V | +${runBaudRef.current} Flux  [Target: Res ${Math.min(10, resolutionRef.current + 1)}]`, hudX, h - 12);
+            }
           } else if (currentBits >= 6) {
-            // BIT 6+: Real-time Telemetry HUD (Integrity Gauge & Signal Meter)
-            ctx.fillStyle = integrity < 35 ? '#ff3355' : integrity < 65 ? '#ffaa33' : '#33ff66';
-            ctx.font = '11px monospace';
-            const polText = polarityRef.current === 1 ? '▲ UP (Crests -> +1 HZ)' : polarityRef.current === -1 ? '▼ DOWN (Troughs -> +1 V)' : '■ NEUTRAL (Packets -> +40 HP)';
-            const barFilled = Math.round(integrity / 10);
-            const barStr = '[' + '█'.repeat(barFilled) + '░'.repeat(10 - barFilled) + ']';
-            ctx.fillText(`INTEGRITY: ${barStr} ${integrity}% | RHYTHM: [ ${stageDesc} ] | POLARIZER: [ ${polText} ]`, 24, h - 34);
+            ctx.fillStyle = roundedIntegrity < 35 ? '#ff3355' : roundedIntegrity < 65 ? '#ffaa33' : '#33ff66';
+            const shortPol = polarityRef.current === 1 ? '▲ UP' : polarityRef.current === -1 ? '▼ DOWN' : '■ NEUTRAL';
+            ctx.font = w < 640 ? '10px monospace' : '11px monospace';
+            ctx.fillText(`INTEGRITY: ${barStr} ${roundedIntegrity}% | ${stageDesc} | POL: [ ${shortPol} ]`, hudX, h - 26);
             ctx.fillStyle = '#88ffaa';
-            ctx.font = '10px monospace';
-            ctx.fillText(`RUN HARVEST: +${runHzRef.current} Hz | +${runVoltsRef.current} V  [Target: Bit ${Math.min(10, currentBits + 1)}]`, 24, h - 18);
+            ctx.font = w < 640 ? '9.5px monospace' : '10px monospace';
+            ctx.fillText(`RUN HARVEST: +${runHzRef.current} Hz | +${runVoltsRef.current} V  [Target: Bit ${Math.min(10, currentBits + 1)}]`, hudX, h - 12);
           } else if (currentBits >= 1) {
-            // Minimal Bit 1-5 status
-            ctx.fillStyle = integrity < 35 ? '#ff3355' : '#33ff66';
+            ctx.fillStyle = roundedIntegrity < 35 ? '#ff3355' : '#33ff66';
             ctx.font = '11px monospace';
-            const polText = polarityRef.current === 1 ? '▲ UP (+1 HZ)' : polarityRef.current === -1 ? '▼ DOWN (+1 V)' : '■ NEUTRAL (+40 HP)';
-            ctx.fillText(`INTEGRITY: ${integrity}% | RHYTHM: [ ${stageDesc} ] | POLARIZER: [ ${polText} ]`, 24, h - 24);
+            const shortPol = polarityRef.current === 1 ? '▲ UP' : polarityRef.current === -1 ? '▼ DOWN' : '■ NEUTRAL';
+            ctx.fillText(`INTEGRITY: ${roundedIntegrity}% | ${stageDesc} | POL: [ ${shortPol} ]`, hudX, h - 14);
           }
         } else if (phase === 'ray') {
           // SUB-PHASE 3: BECOMING A RAY (90° FOLD)
@@ -3757,6 +3998,31 @@ export const DimensionCanvas: React.FC<Props> = ({
                   addCombatText('✦ SOVEREIGN CONQUERED! ✦', TRACE_END, TRACE_Y - 30, '#55ff99');
                   survivalResourcesRef.current.hz += 50;
                   survivalResourcesRef.current.volts += 50;
+                } else if (gameModeRef.current === 'arcade') {
+                  // Arcade mode ENDS at the first boss!
+                  const finalTime = arcadeTimeRef.current;
+                  const lives = arcadeLivesRef.current;
+                  setArcadeVictoryModal({
+                    time: finalTime,
+                    livesRemaining: lives,
+                  });
+                  onUpdateState(prev => {
+                    const curBestTime = prev.highScores?.arcadeBestTime || 0;
+                    const isNewBest = !curBestTime || finalTime < curBestTime;
+                    return {
+                      ...prev,
+                      arcadeTime: finalTime,
+                      arcadeFurthestStage: 'Victory! (Boss 1 Conquered)',
+                      arcadeFurthestStageNum: 9.5,
+                      highScores: {
+                        ...prev.highScores,
+                        arcadeBestStage: 'Victory! (Boss 1 Conquered)',
+                        arcadeBestStageNum: 9.5,
+                        arcadeBestTime: isNewBest ? finalTime : curBestTime,
+                      },
+                    };
+                  });
+                  onLogAction(`👑 ARCADE VICTORY! Conquered Corrupted Sovereign in ${formatTime(finalTime)} with ${lives} lives remaining! Recorded in Vault.`);
                 } else {
                   setBits(10);
                   bitsRef.current = 10;
@@ -3766,13 +4032,6 @@ export const DimensionCanvas: React.FC<Props> = ({
                   resolutionRef.current = 0;
                   setAct1Phase('point');
                   phaseRef.current = 'point';
-
-                  if (gameModeRef.current === 'arcade') {
-                    arcadeLivesRef.current = 2;
-                    setArcadeLives(2);
-                    addCombatText('💖 +1 LIFE UNLOCKED (N=2)! [LIVES: 2]', playerXRef.current, 190, '#ff55bb');
-                    onLogAction("💖 ARCADE LIFE GRANTED: N=2 unlocked! Extra life awarded (Total Lives = 2)!");
-                  }
 
                   onUpdateState(prev => ({
                     ...prev,
@@ -3848,7 +4107,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                   integrityRef.current = nextH;
                   setIntegrity(nextH);
                   if (nextH <= 0) {
-                    triggerDeath("Crest chord clash collapsed integrity. Align polarizer to UP [▲] to match Crests!");
+                    triggerDeath("Crest chord clash collapsed integrity.");
                   }
                 }
                 addSparks(playerX, TRACE_Y, '#ff3344', 16);
@@ -3894,7 +4153,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                   integrityRef.current = nextH;
                   setIntegrity(nextH);
                   if (nextH <= 0) {
-                    triggerDeath("Trough chord clash collapsed integrity. Align polarizer to DOWN [▼] to match Troughs!");
+                    triggerDeath("Trough chord clash collapsed integrity.");
                   }
                 }
                 addSparks(playerX, TRACE_Y, '#ff3377', 16);
@@ -4026,6 +4285,15 @@ export const DimensionCanvas: React.FC<Props> = ({
           const hudY = (hasN && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
           ctx.fillText(`⚔️ SURVIVAL: ${formatTime(survivalTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]`, hudX, hudY);
           ctx.restore();
+        } else if (gameModeRef.current === 'arcade') {
+          ctx.save();
+          ctx.fillStyle = '#c084fc';
+          ctx.font = 'bold 12px monospace';
+          const hudX = (subPartRef.current === 2 || (hasN && currentBits > 0)) ? 320 : 24;
+          const hudY = (hasN && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
+          const livesStr = arcadeLivesRef.current === 2 ? '💖💖 2 LIVES' : '💖 1 LIFE';
+          ctx.fillText(`🕹️ ARCADE: ${formatTime(arcadeTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]  [${livesStr}]`, hudX, hudY);
+          ctx.restore();
         }
 
         if (phase === 'boss' || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
@@ -4107,6 +4375,7 @@ export const DimensionCanvas: React.FC<Props> = ({
 
   const handleCanvasTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     if (isMainMenuOpenRef.current || deathScreenRef.current || deathBufferSecondsRef.current > 0) return;
+    lastTouchTimeRef.current = Date.now();
     if (!stateRef.current.carrierActive) {
       handleStartAudio();
     }
@@ -4128,12 +4397,14 @@ export const DimensionCanvas: React.FC<Props> = ({
     const rect = canvas.getBoundingClientRect();
     const scale = canvas.width / rect.width;
     const agility =
-      resolutionRef.current === 2
-        ? 0.35
+      resolutionRef.current <= 2
+        ? 0.08
         : resolutionRef.current === 3
-        ? 0.55
+        ? 0.25
         : resolutionRef.current === 4
-        ? 0.8
+        ? 0.55
+        : resolutionRef.current === 5
+        ? 0.85
         : 1.0;
     const deltaCanvas = diff * scale * agility;
     const TRACE_START = 80;
@@ -4145,12 +4416,21 @@ export const DimensionCanvas: React.FC<Props> = ({
   };
 
   const handleCanvasTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    lastTouchTimeRef.current = Date.now();
     if (isMainMenuOpenRef.current || deathBufferSecondsRef.current > 0) return;
     if (touchStartXRef.current !== null && e.changedTouches.length > 0) {
-      const diffX = Math.abs(e.changedTouches[0].clientX - touchStartXRef.current);
+      const touch = e.changedTouches[0];
+      const diffX = Math.abs(touch.clientX - touchStartXRef.current);
       const duration = Date.now() - touchStartTimeRef.current;
-      // If it was a quick tap (< 250ms and moved < 15px), treat as tap to cycle polarizer
-      if (duration < 250 && diffX < 15 && !deathScreenRef.current && deathBufferSecondsRef.current <= 0) {
+
+      const canvas = canvasRef.current;
+      const rect = canvas ? canvas.getBoundingClientRect() : null;
+      const midX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
+      const isRightHalf = touch.clientX >= midX;
+
+      // Quick tap (< 250ms and moved < 15px) strictly on the RIGHT half cycles the polarizer.
+      // Tapping the LEFT half NEVER cycles the polarizer!
+      if (isRightHalf && duration < 250 && diffX < 15 && !deathScreenRef.current && deathBufferSecondsRef.current <= 0) {
         cyclePolarizer();
       }
     }
@@ -4159,137 +4439,101 @@ export const DimensionCanvas: React.FC<Props> = ({
 
   return (
     <div className="relative w-full h-full bg-black overflow-hidden select-none flex items-center justify-center">
-      {/* FULLSCREEN GAMEPLAY CANVAS */}
-      <canvas
-        ref={canvasRef}
-        width={920}
-        height={440}
-        className="w-full h-full object-contain cursor-crosshair touch-none select-none"
-        onClick={() => {
-          if (isMainMenuOpenRef.current) return;
-          if (!gameState.carrierActive) handleStartAudio();
-        }}
-        onTouchStart={handleCanvasTouchStart}
-        onTouchMove={handleCanvasTouchMove}
-        onTouchEnd={handleCanvasTouchEnd}
-      />
-
-      {/* DEV TOOLS: NEARLY TRANSPARENT BUTTONS ON TOP OF TOP RIGHT QUADRANT */}
-      {!isMainMenuOpen && !deathScreen && !speedrunCompleteModal && !survivalDeathModal && !arcadeKillModal && !arcadeVictoryModal && (
-        <div
-          style={{ right: 'max(12px, env(safe-area-inset-right, 12px))' }}
-          className="absolute top-3 sm:top-4 z-30 flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-opacity"
-        >
-          {onDevAddBit && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDevAddBit();
-              }}
-              aria-label="Dev Tool: Add 1 Bit"
-              className="px-2.5 py-1.5 min-h-[44px] min-w-[44px] text-[10px] font-mono font-bold rounded bg-white/5 hover:bg-white/15 active:bg-white/20 text-white/60 hover:text-white border border-white/10 hover:border-white/30 backdrop-blur-sm transition-all cursor-pointer select-none touch-manipulation flex items-center justify-center"
-            >
-              +1 BIT
-            </button>
-          )}
-          {onDevAddRes && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDevAddRes();
-              }}
-              aria-label="Dev Tool: Add 1 Resolution"
-              className="px-2.5 py-1.5 min-h-[44px] min-w-[44px] text-[10px] font-mono font-bold rounded bg-white/5 hover:bg-white/15 active:bg-white/20 text-white/60 hover:text-white border border-white/10 hover:border-white/30 backdrop-blur-sm transition-all cursor-pointer select-none touch-manipulation flex items-center justify-center"
-            >
-              +1 RES
-            </button>
-          )}
-          {onTogglePipeline && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onTogglePipeline();
-              }}
-              aria-label="Dev Tool: Pipeline Drawer"
-              className="px-2.5 py-1.5 min-h-[44px] min-w-[44px] text-[10px] font-mono font-bold rounded bg-white/5 hover:bg-white/15 active:bg-white/20 text-white/60 hover:text-white border border-white/10 hover:border-white/30 backdrop-blur-sm transition-all cursor-pointer select-none touch-manipulation flex items-center justify-center"
-            >
-              PIPELINE
-            </button>
-          )}
+      {/* Mobile Portrait Orientation Advisory */}
+      {isPortrait && isMobile && (
+        <div className="absolute top-2 inset-x-2 z-40 bg-neutral-900/90 border border-cyan-500/40 rounded-lg py-1.5 px-3 text-center text-[11px] font-mono text-cyan-300 backdrop-blur-md flex items-center justify-center gap-2 shadow-lg">
+          <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Rotate to landscape for edge-to-edge dual-thumb play</span>
         </div>
       )}
 
-      {/* NEARLY TRANSPARENT CYBERNETIC JOYSTICK: ONLY DISPLAYED WHEN LEFT-RIGHT MOVEMENT IS UNLOCKED (Part 2, Res >= 2) */}
-      {!isMainMenuOpen && !deathScreen && !speedrunCompleteModal && !survivalDeathModal && !arcadeKillModal && !arcadeVictoryModal && (subPart === 2 && resolution >= 2) && (
-        <div
-          style={{ top: '52%', left: 'max(12px, env(safe-area-inset-left, 12px))' }}
-          className="absolute z-20 -translate-y-1/2 flex flex-col items-start gap-1.5"
-        >
+      {/* ASPECT-RATIO LOCKED GAME CANVAS & HUD CONTAINER */}
+      <div className="relative w-full h-full max-w-full max-h-full aspect-[920/440] flex items-center justify-center overflow-hidden">
+        {/* FULLSCREEN GAMEPLAY CANVAS */}
+        <canvas
+          ref={canvasRef}
+          width={920}
+          height={440}
+          className="w-full h-full object-contain cursor-crosshair touch-none select-none"
+          onClick={() => {
+            if (isMainMenuOpenRef.current) return;
+            if (!gameState.carrierActive) handleStartAudio();
+          }}
+          onTouchStart={handleCanvasTouchStart}
+          onTouchMove={handleCanvasTouchMove}
+          onTouchEnd={handleCanvasTouchEnd}
+        />
+
+        {/* DEV TOOLS: NEARLY TRANSPARENT BUTTONS ON TOP OF TOP RIGHT QUADRANT */}
+        {!isMainMenuOpen && !deathScreen && !speedrunCompleteModal && !survivalDeathModal && !arcadeKillModal && !arcadeVictoryModal && (
           <div
-            ref={joystickTrackRef}
-            onPointerDown={handleJoystickPointerDown}
-            onPointerMove={handleJoystickPointerMove}
-            onPointerUp={handleJoystickPointerUp}
-            onPointerCancel={handleJoystickPointerUp}
-            aria-label="Dimensional Vector Joystick"
+            style={{ right: 'max(12px, env(safe-area-inset-right, 12px))' }}
+            className="absolute top-3 sm:top-4 z-30 flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-opacity"
+          >
+            {onDevAddBit && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDevAddBit();
+                }}
+                aria-label="Dev Tool: Add 1 Bit"
+                className="px-2.5 py-1.5 min-h-[44px] min-w-[44px] text-[10px] font-mono font-bold rounded bg-white/5 hover:bg-white/15 active:bg-white/20 text-white/60 hover:text-white border border-white/10 hover:border-white/30 backdrop-blur-sm transition-all cursor-pointer select-none touch-manipulation flex items-center justify-center"
+              >
+                +1 BIT
+              </button>
+            )}
+            {onDevAddRes && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDevAddRes();
+                }}
+                aria-label="Dev Tool: Add 1 Resolution"
+                className="px-2.5 py-1.5 min-h-[44px] min-w-[44px] text-[10px] font-mono font-bold rounded bg-white/5 hover:bg-white/15 active:bg-white/20 text-white/60 hover:text-white border border-white/10 hover:border-white/30 backdrop-blur-sm transition-all cursor-pointer select-none touch-manipulation flex items-center justify-center"
+              >
+                +1 RES
+              </button>
+            )}
+            {onTogglePipeline && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTogglePipeline();
+                }}
+                aria-label="Dev Tool: Pipeline Drawer"
+                className="px-2.5 py-1.5 min-h-[44px] min-w-[44px] text-[10px] font-mono font-bold rounded bg-white/5 hover:bg-white/15 active:bg-white/20 text-white/60 hover:text-white border border-white/10 hover:border-white/30 backdrop-blur-sm transition-all cursor-pointer select-none touch-manipulation flex items-center justify-center"
+              >
+                PIPELINE
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* INVISIBLE DRAG MOBILITY ZONE: BOTTOM-LEFT QUADRANT (Only active when Res >= 2 in Part 2) */}
+        {!isMainMenuOpen && !deathScreen && !speedrunCompleteModal && !survivalDeathModal && !arcadeKillModal && !arcadeVictoryModal && subPart === 2 && resolution >= 2 && (
+          <div
+            onPointerDown={handleDragPointerDown}
+            onPointerMove={handleDragPointerMove}
+            onPointerUp={handleDragPointerUp}
+            onPointerCancel={handleDragPointerUp}
+            aria-label="Bottom-left quadrant drag to control horizontal movement"
             role="slider"
             aria-valuenow={Math.round(joystickDeflection * 100)}
             aria-valuemin={-100}
             aria-valuemax={100}
-            className="relative w-40 sm:w-48 h-10 sm:h-9 rounded-md bg-[#030714]/75 hover:bg-[#030714]/90 border border-cyan-500/40 hover:border-cyan-400/70 backdrop-blur-md shadow-[0_0_15px_rgba(0,240,255,0.18)] flex items-center px-1.5 touch-none select-none cursor-ew-resize transition-all"
-          >
-            {/* Glowing Laser Rail Track */}
-            <div className="absolute inset-x-3.5 h-[2px] bg-gradient-to-r from-cyan-400/30 via-cyan-400/80 to-purple-500/40 shadow-[0_0_8px_rgba(0,240,255,0.4)] pointer-events-none" />
-
-            {/* Part Two Sector Marker Notches: Attenuation (left), Harmonic (mid), Emitter (right) */}
-            <div className="absolute left-[24%] -translate-x-1/2 top-1.5 bottom-1.5 w-[1px] bg-cyan-400/30 pointer-events-none" />
-            <div className="absolute left-1/2 -translate-x-1/2 top-1 bottom-1 w-[1px] bg-teal-300/40 pointer-events-none" />
-            <div className="absolute left-[76%] -translate-x-1/2 top-1.5 bottom-1.5 w-[1px] bg-purple-400/30 pointer-events-none" />
-
-            {/* Dynamic Directional Chevrons */}
-            <span
-              className={`absolute left-2 text-[10px] font-mono transition-colors pointer-events-none select-none ${
-                joystickDeflection < -0.08
-                  ? 'text-cyan-300 drop-shadow-[0_0_6px_#00f0ff]'
-                  : 'text-cyan-500/35'
-              }`}
-            >
-              ◀
-            </span>
-            <span
-              className={`absolute right-2 text-[10px] font-mono transition-colors pointer-events-none select-none ${
-                joystickDeflection > 0.08
-                  ? 'text-cyan-300 drop-shadow-[0_0_6px_#00f0ff]'
-                  : 'text-cyan-500/35'
-              }`}
-            >
-              ▶
-            </span>
-
-            {/* Square Quantum Particle Knob (Matching Player's Part Two Sprite) */}
-            <div
-              style={{
-                left: `calc(50% + ${joystickDeflection * 54}px - 14px)`,
-              }}
-              className="absolute top-1/2 -translate-y-1/2 w-6 h-6 sm:w-7 sm:h-7 rounded-[2px] border border-cyan-400/90 active:border-cyan-200 bg-gradient-to-br from-cyan-500/30 via-cyan-950/85 to-indigo-950/90 shadow-[0_0_10px_rgba(0,240,255,0.6)] hover:shadow-[0_0_14px_rgba(0,240,255,0.8)] active:shadow-[0_0_22px_rgba(0,240,255,1)] flex items-center justify-center cursor-grab active:cursor-grabbing backdrop-blur-md transition-shadow"
-            >
-              {/* Centered Glowing Quantum Core */}
-              <div className="w-2 h-2 rounded-none bg-cyan-300 shadow-[0_0_6px_#00f0ff] pointer-events-none" />
-            </div>
-          </div>
-
-          {/* Part Two Cybernetic Telemetry Indicator */}
-          <div className="flex items-center gap-1.5 text-[9px] font-mono text-cyan-400/70 tracking-wider pl-1 select-none pointer-events-none">
-            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_4px_#00f0ff]" />
-            <span>
-              1D MOBILITY // {resolution >= 5 ? '100% AGILE' : resolution === 4 ? '66% CONTROL' : resolution === 3 ? '33% CONTROL' : 'SLUGGISH (24 FPS)'}
-            </span>
-          </div>
-        </div>
-      )}
+            style={{
+              left: 0,
+              top: '50%',
+              width: '50%',
+              height: '50%',
+            }}
+            className="absolute z-20 touch-none select-none pointer-events-auto cursor-ew-resize opacity-0"
+          />
+        )}
+      </div>
 
 
 
@@ -4315,14 +4559,14 @@ export const DimensionCanvas: React.FC<Props> = ({
                 )}
                 {deathScreen.target === 'resolution' && (
                   <div className="text-[11px] text-cyan-400 border-t border-neutral-800 pt-1.5">
-                    <span className="font-bold">Next Resolution Upgrade:</span> {deathScreen.upgradeName}
+                    <span className="font-bold">Next:</span> {deathScreen.upgradeName}
                     <div className="text-neutral-400 text-[10px] mt-0.5">{deathScreen.upgradeDesc}</div>
                   </div>
                 )}
                 {deathScreen.target === 'N' && (
                   <div className="text-[11px] text-emerald-400 border-t border-neutral-800 pt-1.5">
-                    <span className="font-bold">Next Milestone:</span> N=1 The Stationary Point
-                    <div className="text-neutral-400 text-[10px] mt-0.5">Compiles the stationary white square entity and sets N=1 coordinate origin.</div>
+                    <span className="font-bold">Next:</span> N=1 (Stationary Pixel)
+                    <div className="text-neutral-400 text-[10px] mt-0.5">Origin point.</div>
                   </div>
                 )}
               </div>
@@ -4367,10 +4611,10 @@ export const DimensionCanvas: React.FC<Props> = ({
                   <Sparkles className="w-4 h-4 text-blue-200" />
                   <span>
                     {deathScreen.target === 'N'
-                      ? 'COMPILE 1 N [ENTER / B]'
+                      ? 'COMPILE 1 N'
                       : deathScreen.target === 'resolution'
-                      ? `COMPILE RES ${resolution + 1} [ENTER / B]`
-                      : `COMPILE BIT ${bits + 1} [ENTER / B]`}
+                      ? `COMPILE RES ${resolution + 1}`
+                      : `COMPILE BIT ${bits + 1}`}
                   </span>
                 </button>
 
@@ -4383,7 +4627,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                       : 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white border-emerald-400/40 shadow-lg shadow-emerald-950/50 active:scale-95 cursor-pointer'
                   }`}
                 >
-                  <span>RETRY RUN [ENTER / C]</span>
+                  <span>RETRY RUN</span>
                 </button>
 
                 {(gameState.gameMode === 'story' || gameState.hasCompletedStory || onOpenMainMenu) && (
@@ -4403,6 +4647,23 @@ export const DimensionCanvas: React.FC<Props> = ({
                     <span>MAIN MENU</span>
                   </button>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (deathBufferSeconds > 0) return;
+                    setIsOptionsMenuOpen(true);
+                  }}
+                  disabled={deathBufferSeconds > 0}
+                  className={`w-full sm:w-auto px-4 py-3 rounded-lg text-xs transition-all font-mono font-bold flex items-center justify-center gap-1.5 border ${
+                    deathBufferSeconds > 0
+                      ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
+                      : 'bg-neutral-900 hover:bg-neutral-800 text-cyan-300 border-cyan-600/60 active:scale-95 cursor-pointer'
+                  }`}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>OPTIONS</span>
+                </button>
               </div>
 
               {Math.abs(gameState.resources.volts - gameState.resources.hertz) >= 20 && (
@@ -4433,15 +4694,6 @@ export const DimensionCanvas: React.FC<Props> = ({
                   <span>HARMONIZE RESERVES (Equalize {gameState.resources.hertz} Hz ⇄ {gameState.resources.volts} V)</span>
                 </button>
               )}
-
-              <div className="text-[10px] text-neutral-400 font-mono pt-1 border-t border-neutral-800/80 space-y-0.5">
-                <div>⚡ Upgrades compile graphics &amp; resolution engines. <span className="text-amber-400 font-semibold">Extra lives cannot be purchased</span> (the only extra life in the game is awarded at N=2 in Arcade mode).</div>
-                {bits < 8 && (
-                  <div className="text-amber-400/90">
-                    💡 Tap Polarizer to toggle ▲ UP (Crests &rarr; +1 HZ) and ▼ DOWN (Troughs &rarr; +1 V). NEUTRAL mode unlocks at Bit 8.
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         )}
@@ -4489,6 +4741,14 @@ export const DimensionCanvas: React.FC<Props> = ({
                   className="py-3 px-4 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 font-mono text-xs rounded-xl border border-neutral-700 transition-all cursor-pointer"
                 >
                   REPLAY RUN
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsOptionsMenuOpen(true)}
+                  className="py-3 px-4 bg-neutral-900 hover:bg-neutral-800 text-cyan-300 font-mono text-xs rounded-xl border border-cyan-600/60 transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>OPTIONS</span>
                 </button>
               </div>
             </div>
@@ -4554,6 +4814,14 @@ export const DimensionCanvas: React.FC<Props> = ({
                     <span>MAIN MENU</span>
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setIsOptionsMenuOpen(true)}
+                  className="py-3 px-4 bg-neutral-900 hover:bg-neutral-800 text-cyan-300 font-mono text-xs rounded-xl border border-cyan-600/60 transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>OPTIONS</span>
+                </button>
               </div>
             </div>
           </div>
@@ -4593,11 +4861,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                 </div>
               )}
 
-              <div className="text-xs text-neutral-400 font-mono mb-4">
-                Select mode to attempt:
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -4617,36 +4881,35 @@ export const DimensionCanvas: React.FC<Props> = ({
                   type="button"
                   onClick={() => {
                     if (deathBufferSeconds > 0) return;
-                    handleStartSpeedrunMode();
+                    setSurvivalDeathModal(null);
+                    if (onOpenMainMenu) onOpenMainMenu();
                   }}
                   disabled={deathBufferSeconds > 0}
-                  className={`flex-1 py-3 px-4 font-mono font-black text-xs sm:text-sm rounded-xl transition-all shadow-lg flex items-center justify-center gap-1.5 ${
+                  className={`py-3 px-4 font-mono text-xs rounded-xl border transition-all font-bold flex items-center justify-center gap-1.5 ${
                     deathBufferSeconds > 0
-                      ? 'bg-neutral-800 text-neutral-500 cursor-not-allowed border border-neutral-700 opacity-50'
-                      : 'bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-black cursor-pointer'
+                      ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
+                      : 'bg-neutral-900 hover:bg-neutral-800 text-amber-300 border-amber-600/60 cursor-pointer'
                   }`}
                 >
-                  <span>⚡ SWITCH TO SPEED RUN</span>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>MAIN MENU</span>
                 </button>
-                {onOpenMainMenu && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (deathBufferSeconds > 0) return;
-                      setSurvivalDeathModal(null);
-                      onOpenMainMenu();
-                    }}
-                    disabled={deathBufferSeconds > 0}
-                    className={`py-3 px-4 font-mono text-xs rounded-xl border transition-all font-bold flex items-center justify-center gap-1.5 ${
-                      deathBufferSeconds > 0
-                        ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
-                        : 'bg-neutral-900 hover:bg-neutral-800 text-amber-300 border-amber-600/60 cursor-pointer'
-                    }`}
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>MAIN MENU</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (deathBufferSeconds > 0) return;
+                    setIsOptionsMenuOpen(true);
+                  }}
+                  disabled={deathBufferSeconds > 0}
+                  className={`py-3 px-4 font-mono text-xs rounded-xl border transition-all font-bold flex items-center justify-center gap-1.5 ${
+                    deathBufferSeconds > 0
+                      ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
+                      : 'bg-neutral-900 hover:bg-neutral-800 text-cyan-300 border-cyan-600/60 cursor-pointer'
+                  }`}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>OPTIONS</span>
+                </button>
               </div>
             </div>
           </div>
@@ -4669,11 +4932,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                   <span className="text-neutral-400">Time Elapsed:</span>
                   <span className="text-sm font-bold text-amber-300">{formatTime(arcadeKillModal.time)}</span>
                 </div>
-                <div className="pt-2 border-t border-neutral-800 text-[11px] text-neutral-400">
-                  <span className="text-rose-400 font-bold">Fatal Event: </span>
-                  {arcadeKillModal.reason}
-                </div>
-                <div className="text-[10px] text-purple-400/90 italic pt-1">
+                <div className="text-[10px] text-purple-400/90 italic pt-1 border-t border-neutral-800">
                   ✓ Recorded into the High Scores Records Vault.
                 </div>
               </div>
@@ -4702,25 +4961,39 @@ export const DimensionCanvas: React.FC<Props> = ({
                 >
                   <span>🕹️ RETRY ARCADE</span>
                 </button>
-                {onOpenMainMenu && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (deathBufferSeconds > 0) return;
-                      setArcadeKillModal(null);
-                      onOpenMainMenu();
-                    }}
-                    disabled={deathBufferSeconds > 0}
-                    className={`py-3 px-4 font-mono text-xs rounded-xl border transition-all font-bold flex items-center justify-center gap-1.5 ${
-                      deathBufferSeconds > 0
-                        ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
-                        : 'bg-neutral-900 hover:bg-neutral-800 text-amber-300 border-amber-600/60 cursor-pointer'
-                    }`}
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>MAIN MENU</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (deathBufferSeconds > 0) return;
+                    setArcadeKillModal(null);
+                    if (onOpenMainMenu) onOpenMainMenu();
+                  }}
+                  disabled={deathBufferSeconds > 0}
+                  className={`py-3 px-4 font-mono text-xs rounded-xl border transition-all font-bold flex items-center justify-center gap-1.5 ${
+                    deathBufferSeconds > 0
+                      ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
+                      : 'bg-neutral-900 hover:bg-neutral-800 text-amber-300 border-amber-600/60 cursor-pointer'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>MAIN MENU</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (deathBufferSeconds > 0) return;
+                    setIsOptionsMenuOpen(true);
+                  }}
+                  disabled={deathBufferSeconds > 0}
+                  className={`py-3 px-4 font-mono text-xs rounded-xl border transition-all font-bold flex items-center justify-center gap-1.5 ${
+                    deathBufferSeconds > 0
+                      ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
+                      : 'bg-neutral-900 hover:bg-neutral-800 text-cyan-300 border-cyan-600/60 cursor-pointer'
+                  }`}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>OPTIONS</span>
+                </button>
               </div>
             </div>
           </div>
@@ -4744,7 +5017,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                   <span className="text-sm font-bold text-rose-300">{arcadeVictoryModal.livesRemaining} / 2 LIVES</span>
                 </div>
                 <div className="pt-2 border-t border-neutral-800 text-[11px] text-emerald-400 font-bold">
-                  All 10 Bits and 10 Resolutions synthesized through crazy tempo escalation!
+                  Corrupted Sovereign conquered across escalating difficulty (Easy → Hard at 8 Bits)!
                 </div>
               </div>
 
@@ -4756,23 +5029,190 @@ export const DimensionCanvas: React.FC<Props> = ({
                 >
                   🕹️ REPLAY ARCADE
                 </button>
-                {onOpenMainMenu && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setArcadeVictoryModal(null);
-                      onOpenMainMenu();
-                    }}
-                    className="py-3 px-4 bg-neutral-900 hover:bg-neutral-800 text-amber-300 font-mono text-xs rounded-xl border border-amber-600/60 transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>MAIN MENU</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setArcadeVictoryModal(null);
+                    if (onOpenMainMenu) onOpenMainMenu();
+                  }}
+                  className="py-3 px-4 bg-neutral-900 hover:bg-neutral-800 text-amber-300 font-mono text-xs rounded-xl border border-amber-600/60 transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>MAIN MENU</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsOptionsMenuOpen(true)}
+                  className="py-3 px-4 bg-neutral-900 hover:bg-neutral-800 text-cyan-300 font-mono text-xs rounded-xl border border-cyan-600/60 transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>OPTIONS</span>
+                </button>
               </div>
             </div>
           </div>
         )}
-    </div>
+
+        {/* IN-GAME OPTIONS & SETTINGS MODAL (Accessible from any kill screen) */}
+        {isOptionsMenuOpen && (
+          <div className="absolute inset-0 z-[60] bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className="bg-[#12131a] border-2 border-cyan-500 rounded-2xl max-w-md w-full max-h-[92vh] overflow-y-auto my-auto p-5 sm:p-6 text-center shadow-2xl shadow-cyan-950/80 animate-in fade-in zoom-in-95 duration-200 space-y-4">
+              <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
+                <div className="flex items-center gap-2 text-cyan-400 font-mono font-black text-base sm:text-lg">
+                  <Settings className="w-5 h-5 text-cyan-400 animate-spin-slow" />
+                  <span>GAME OPTIONS</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsOptionsMenuOpen(false)}
+                  className="p-1 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex bg-neutral-900 p-1 rounded-lg border border-neutral-800">
+                <button
+                  type="button"
+                  onClick={() => setOptionsSubTab('audio')}
+                  className={`flex-1 py-1.5 px-3 rounded text-xs font-mono font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    optionsSubTab === 'audio'
+                      ? 'bg-cyan-600 text-white shadow'
+                      : 'text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  <Volume2 className="w-3.5 h-3.5" />
+                  <span>AUDIO</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOptionsSubTab('control')}
+                  className={`flex-1 py-1.5 px-3 rounded text-xs font-mono font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    optionsSubTab === 'control'
+                      ? 'bg-cyan-600 text-white shadow'
+                      : 'text-neutral-400 hover:text-neutral-200'
+                  }`}
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>CONTROLS</span>
+                </button>
+              </div>
+
+              {optionsSubTab === 'audio' && (
+                <div className="space-y-3 text-left">
+                  <div className="p-3 rounded-xl bg-neutral-900/80 border border-neutral-800 flex items-center justify-between">
+                    <div className="text-xs font-mono font-bold text-neutral-200 flex items-center gap-2">
+                      {userSettingsRef.current?.audio?.muteAll ? (
+                        <VolumeX className="w-4 h-4 text-rose-400" />
+                      ) : (
+                        <Volume2 className="w-4 h-4 text-emerald-400" />
+                      )}
+                      <span>Master Audio</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleToggleMuteAll}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer ${
+                        userSettingsRef.current?.audio?.muteAll
+                          ? 'bg-rose-950/80 border-rose-500 text-rose-300'
+                          : 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+                      }`}
+                    >
+                      {userSettingsRef.current?.audio?.muteAll ? 'MUTED' : 'ACTIVE'}
+                    </button>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-neutral-900/80 border border-neutral-800 space-y-2">
+                    <div className="flex items-center justify-between text-xs font-mono">
+                      <span className="font-bold text-neutral-200">Music Volume</span>
+                      <span className="text-cyan-300 font-bold">{userSettingsRef.current?.audio?.musicVolume ?? 5} / 10</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      step="1"
+                      value={userSettingsRef.current?.audio?.musicVolume ?? 5}
+                      onChange={(e) => handleMusicVolumeChange(Number(e.target.value))}
+                      className="w-full accent-cyan-500 cursor-pointer h-2 bg-neutral-800 rounded-lg appearance-none"
+                    />
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-neutral-900/80 border border-neutral-800 space-y-2">
+                    <div className="flex items-center justify-between text-xs font-mono">
+                      <span className="font-bold text-neutral-200">SFX Volume</span>
+                      <span className="text-emerald-300 font-bold">{userSettingsRef.current?.audio?.sfxVolume ?? 5} / 10</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      step="1"
+                      value={userSettingsRef.current?.audio?.sfxVolume ?? 5}
+                      onChange={(e) => handleSfxVolumeChange(Number(e.target.value))}
+                      className="w-full accent-emerald-500 cursor-pointer h-2 bg-neutral-800 rounded-lg appearance-none"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {optionsSubTab === 'control' && (
+                <div className="space-y-3 text-left">
+                  <div className="p-3 rounded-xl bg-neutral-900/80 border border-neutral-800 flex items-center justify-between">
+                    <span className="text-xs font-mono font-bold text-neutral-200">Invert Scroll Wheel</span>
+                    <button
+                      type="button"
+                      onClick={handleToggleWheelInversion}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer ${
+                        userSettingsRef.current?.controls?.scrollWheelInversion
+                          ? 'bg-amber-950/80 border-amber-500 text-amber-300'
+                          : 'bg-neutral-800 border-neutral-700 text-neutral-400'
+                      }`}
+                    >
+                      {userSettingsRef.current?.controls?.scrollWheelInversion ? 'INVERTED' : 'NORMAL'}
+                    </button>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-neutral-900/80 border border-neutral-800 space-y-2">
+                    <span className="text-xs font-mono font-bold text-neutral-200 block">Cycle Polarizer Key</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSetPolarizerInput('space')}
+                        className={`py-2 px-3 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer ${
+                          (userSettingsRef.current?.controls?.cyclePolarizerInput ?? 'space') === 'space'
+                            ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+                            : 'bg-neutral-950 border-neutral-800 text-neutral-400'
+                        }`}
+                      >
+                        SPACEBAR
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetPolarizerInput('rmb')}
+                        className={`py-2 px-3 rounded-lg border text-xs font-mono font-bold transition-all cursor-pointer ${
+                          userSettingsRef.current?.controls?.cyclePolarizerInput === 'rmb'
+                            ? 'bg-cyan-950/80 border-cyan-500 text-cyan-300'
+                            : 'bg-neutral-950 border-neutral-800 text-neutral-400'
+                        }`}
+                      >
+                        RIGHT CLICK
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setIsOptionsMenuOpen(false)}
+                className="w-full py-3 px-4 bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white font-mono font-black text-xs sm:text-sm rounded-xl transition-all shadow-lg cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>DONE / RETURN TO SCREEN</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
   );
 };
