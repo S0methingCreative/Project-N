@@ -8,6 +8,7 @@ export interface AudioSettings {
 export interface ControlSettings {
   scrollWheelInversion: boolean; // default false
   cyclePolarizerInput: 'space' | 'rmb'; // default 'space'
+  devToolsEnabled: boolean; // default false
 }
 
 export interface UserSettings {
@@ -25,6 +26,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   controls: {
     scrollWheelInversion: false,
     cyclePolarizerInput: 'space',
+    devToolsEnabled: false,
   },
 };
 
@@ -45,6 +47,7 @@ export function loadUserSettings(): UserSettings {
       controls: {
         scrollWheelInversion: typeof parsed.controls?.scrollWheelInversion === 'boolean' ? parsed.controls.scrollWheelInversion : false,
         cyclePolarizerInput: parsed.controls?.cyclePolarizerInput === 'rmb' ? 'rmb' : 'space',
+        devToolsEnabled: typeof parsed.controls?.devToolsEnabled === 'boolean' ? parsed.controls.devToolsEnabled : false,
       },
     };
   } catch {

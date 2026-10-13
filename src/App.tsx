@@ -531,7 +531,7 @@ export default function App() {
         />
 
         {/* Slide-over Engine Pipeline Drawer */}
-        {isPipelineOpen && (
+        {isPipelineOpen && Boolean(userSettings.controls.devToolsEnabled) && (
           <aside className="absolute top-2 right-2 bottom-2 w-full max-w-[480px] z-40 bg-neutral-950/95 border border-neutral-800 rounded-xl shadow-2xl backdrop-blur-xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
             {/* Drawer Header */}
             <div className="flex items-center justify-between px-4 py-2.5 bg-neutral-900 border-b border-neutral-800 text-xs font-mono">

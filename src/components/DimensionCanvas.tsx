@@ -1437,6 +1437,33 @@ export const DimensionCanvas: React.FC<Props> = ({
     updateSettingsFromCanvas(updated);
   };
 
+  const [isDevCodePromptOpen, setIsDevCodePromptOpen] = useState<boolean>(false);
+  const [devCodeInput, setDevCodeInput] = useState<string>('');
+  const [devCodeError, setDevCodeError] = useState<string>('');
+
+  const handleToggleDevTools = (enable: boolean) => {
+    const current = userSettingsRef.current ?? DEFAULT_USER_SETTINGS;
+    const updated: UserSettings = {
+      ...current,
+      controls: {
+        ...current.controls,
+        devToolsEnabled: enable,
+      },
+    };
+    updateSettingsFromCanvas(updated);
+  };
+
+  const handleVerifyDevCode = () => {
+    if (devCodeInput.trim() === '1111') {
+      handleToggleDevTools(true);
+      setIsDevCodePromptOpen(false);
+      setDevCodeInput('');
+      setDevCodeError('');
+    } else {
+      setDevCodeError('Invalid code. Access denied.');
+    }
+  };
+
   // Phase 0 / Run Stats (State for rendering, Refs for 100% accurate closure reads)
   const [runHz, setRunHz] = useState<number>(0);
   const [runVolts, setRunVolts] = useState<number>(0);
@@ -4474,7 +4501,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         />
 
         {/* DEV TOOLS: NEARLY TRANSPARENT BUTTONS ON TOP OF TOP RIGHT QUADRANT */}
-        {!isMainMenuOpen && !deathScreen && !speedrunCompleteModal && !survivalDeathModal && !arcadeKillModal && !arcadeVictoryModal && (
+        {Boolean(userSettings?.controls?.devToolsEnabled) && !isMainMenuOpen && !deathScreen && !speedrunCompleteModal && !survivalDeathModal && !arcadeKillModal && !arcadeVictoryModal && (
           <div
             style={{ right: 'max(12px, env(safe-area-inset-right, 12px))' }}
             className="absolute top-3 sm:top-4 z-30 flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-opacity"
@@ -5208,6 +5235,77 @@ export const DimensionCanvas: React.FC<Props> = ({
                         RIGHT CLICK
                       </button>
                     </div>
+                  </div>
+
+                  {/* Developer Tools Toggle (Requires passcode 1111) */}
+                  <div className="p-3 rounded-xl bg-neutral-900/80 border border-neutral-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-mono font-bold text-neutral-200 block">Developer Tools</span>
+                        <span className="text-[10px] text-neutral-400 font-mono block">+1 RES, +1 BIT, PIPELINE</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (userSettingsRef.current?.controls?.devToolsEnabled) {
+                            handleToggleDevTools(false);
+                          } else {
+                            setIsDevCodePromptOpen(true);
+                            setDevCodeInput('');
+                            setDevCodeError('');
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer ${
+                          userSettingsRef.current?.controls?.devToolsEnabled
+                            ? 'bg-emerald-950/80 border-emerald-500 text-emerald-300'
+                            : 'bg-neutral-800 border-neutral-700 text-neutral-400'
+                        }`}
+                      >
+                        {userSettingsRef.current?.controls?.devToolsEnabled ? 'ENABLED' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {isDevCodePromptOpen && (
+                      <div className="p-2.5 rounded-lg bg-neutral-950 border border-neutral-800 space-y-2">
+                        <div className="text-[11px] font-mono text-neutral-300 flex items-center justify-between">
+                          <span>Enter Passcode:</span>
+                          <button
+                            type="button"
+                            onClick={() => setIsDevCodePromptOpen(false)}
+                            className="text-neutral-500 hover:text-neutral-300 text-xs px-1 cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="password"
+                            maxLength={6}
+                            placeholder="Passcode"
+                            value={devCodeInput}
+                            onChange={(e) => {
+                              setDevCodeInput(e.target.value);
+                              setDevCodeError('');
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleVerifyDevCode();
+                            }}
+                            className="flex-1 bg-neutral-900 border border-neutral-700 focus:border-cyan-500 px-2 py-1 text-xs font-mono rounded text-white tracking-widest text-center outline-none"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={handleVerifyDevCode}
+                            className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-xs font-bold rounded transition-colors cursor-pointer"
+                          >
+                            UNLOCK
+                          </button>
+                        </div>
+                        {devCodeError && (
+                          <p className="text-[10px] font-mono text-red-400">{devCodeError}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
