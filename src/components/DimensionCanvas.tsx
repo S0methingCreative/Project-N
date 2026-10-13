@@ -1257,6 +1257,7 @@ export const DimensionCanvas: React.FC<Props> = ({
 
   // Main menu tracking ref & soundtrack coordination
   const isMainMenuOpenRef = useRef<boolean>(isMainMenuOpen);
+  isMainMenuOpenRef.current = isMainMenuOpen;
   useEffect(() => {
     isMainMenuOpenRef.current = isMainMenuOpen;
     if (isMainMenuOpen) {
@@ -1571,6 +1572,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         setArcadeKillModal(null);
         setArcadeVictoryModal(null);
         soundEngine.setBossMusic(false);
+        spawnCooldownRef.current = 65;
         // If starting fresh story from 0D void with 0 materials, clear all active run harvests
         if (
           !gameState.act1PurchasedN &&
@@ -1603,10 +1605,11 @@ export const DimensionCanvas: React.FC<Props> = ({
         setArcadeKillModal(null);
         setArcadeVictoryModal(null);
         soundEngine.setBossMusic(false);
+        spawnCooldownRef.current = 65;
       }
     }
     stateRef.current = gameState;
-  }, [gameState.act1Bits, gameState.act1PurchasedN, gameState.act1Phase, gameState.act1SubPart, gameState.act1Resolution, gameState.overshields, gameState.gameMode, gameState.currentN]);
+  }, [gameState.act1Bits, gameState.act1PurchasedN, gameState.act1Phase, gameState.act1SubPart, gameState.act1Resolution, gameState.overshields, gameState.gameMode, gameState.currentN, gameState.carrierActive, gameState.deathScreen]);
 
   // Refs for requestAnimationFrame loop
   const stateRef = useRef(gameState);
@@ -1625,8 +1628,7 @@ export const DimensionCanvas: React.FC<Props> = ({
   overshieldsRef.current = overshields;
   const polarityRef = useRef(playerPolarity);
   polarityRef.current = playerPolarity;
-  const integrityRef = useRef(integrity);
-  integrityRef.current = integrity;
+  const integrityRef = useRef<number>(100);
   const bossHpRef = useRef(bossHp);
   bossHpRef.current = bossHp;
   const boss2HpRef = useRef(boss2Hp);
@@ -1645,6 +1647,7 @@ export const DimensionCanvas: React.FC<Props> = ({
   const damageFlashRef = useRef<number>(0);
   const troughTrainActiveRef = useRef<boolean>(false);
   const bossMissesRef = useRef<number>(0);
+  const spawnCooldownRef = useRef<number>(0);
 
   // Wave / Pulse tracking
   const pulsesRef = useRef<Array<{
@@ -1730,37 +1733,62 @@ export const DimensionCanvas: React.FC<Props> = ({
   // 8 - arcade techno; Medium difficulty; Medium tempo
   // 9 - cycle through (Waltz, math rock, arcade techno); Medium difficulty; Medium tempo
   // 10 - waltz; Fast difficulty; Fast tempo
-  // Arcade Pacing:
-  // Starts at Easy (0-3 bits), scales to Medium (4-7 bits), and scales to Hard at 8 bits unlocked (Bits 8 & 9 Boss)
+  // Arcade Mode Progression:
+  // Rhythmic escalation from the beginning with repeating styles cycle (waltz, math rock, arcade techno)
+  // Scaling difficulty from Easy through Medium, Hard, and Crazy as the run progresses
   const getArcadePacing = (
     _subP: number,
     bCount: number,
     _resCount: number,
     pulseCount: number
   ): { genre: MusicGenre; zone: SpeedZone } => {
-    const genresCycle: MusicGenre[] = ['slow_waltz', 'math_rock', 'arcade_techno'];
-    const cycleIndex = Math.floor(pulseCount / 8) % 3;
+    // 3 styles cycle and repeat continuously: [waltz, math_rock, arcade_techno]
+    const styles: MusicGenre[] = ['slow_waltz', 'math_rock', 'arcade_techno'];
 
-    if (bCount < 4) {
-      // Bits 0 (pre-N=1 void or N=1 initial), 1, 2, 3: EASY difficulty
-      const genre: MusicGenre = bCount === 3 ? 'math_rock' : 'slow_waltz';
-      return { genre, zone: 'easy' };
-    } else if (bCount < 8) {
-      // Bits 4, 5, 6, 7: MEDIUM difficulty
-      const genre: MusicGenre =
-        bCount === 4
-          ? 'arcade_techno'
-          : bCount === 5
-          ? 'slow_waltz'
-          : bCount === 6
-          ? 'math_rock'
-          : genresCycle[cycleIndex];
-      return { genre, zone: 'medium' };
+    // 12 pulses per style segment (initial waltz is 8 pulses to get into math rock quickly)
+    let styleIndex: number;
+    if (pulseCount <= 8) {
+      styleIndex = 0; // slow_waltz
     } else {
-      // Bit 8 unlocked and Bit 9 Boss 1: HARD difficulty
-      const genre: MusicGenre = bCount >= 9 ? genresCycle[cycleIndex] : 'arcade_techno';
-      return { genre, zone: 'hard' };
+      styleIndex = Math.floor((pulseCount - 8) / 12 + 1) % 3;
     }
+    const genre: MusicGenre = styles[styleIndex];
+
+    // Difficulty escalation as run progresses from the very beginning:
+    let zoneFromPulses: SpeedZone;
+    if (pulseCount <= 32) {
+      zoneFromPulses = 'easy';
+    } else if (pulseCount <= 66) {
+      zoneFromPulses = 'medium';
+    } else if (pulseCount <= 100) {
+      zoneFromPulses = 'hard';
+    } else if (pulseCount <= 135) {
+      zoneFromPulses = 'crazy';
+    } else {
+      zoneFromPulses = 'difficult';
+    }
+
+    // Bit milestone scaling floor:
+    // Bits 0-3 start Easy; Bits 4-7 scale floor to Medium; Bit 8+ scales floor to Hard
+    let zoneFloor: SpeedZone = 'easy';
+    if (bCount >= 8) {
+      zoneFloor = 'hard';
+    } else if (bCount >= 4) {
+      zoneFloor = 'medium';
+    }
+
+    const zoneRank: Record<SpeedZone, number> = {
+      easy: 1,
+      medium: 2,
+      hard: 3,
+      crazy: 4,
+      difficult: 5,
+    };
+    const zoneRankRev: SpeedZone[] = ['easy', 'medium', 'hard', 'crazy', 'difficult'];
+    const highestRank = Math.max(zoneRank[zoneFromPulses], zoneRank[zoneFloor]);
+    const zone: SpeedZone = zoneRankRev[highestRank - 1];
+
+    return { genre, zone };
   };
 
   // Auto-Purchase System for Speed Run & Arcade Modes
@@ -1912,9 +1940,14 @@ export const DimensionCanvas: React.FC<Props> = ({
     setGameMode('story');
     gameModeRef.current = 'story';
     setSpeedrunCompleteModal(null);
+    speedrunCompleteModalRef.current = null;
     setSurvivalDeathModal(null);
+    survivalDeathModalRef.current = null;
     setDeathScreen(null);
+    deathScreenRef.current = null;
     setStoryCompleteModal(null);
+    deathBufferSecondsRef.current = 0;
+    setDeathBufferSeconds(0);
 
     // Reset player state to 0D Void from the start
     runHzRef.current = 0;
@@ -1935,6 +1968,7 @@ export const DimensionCanvas: React.FC<Props> = ({
     setAct1Phase('void');
     phaseRef.current = 'void';
     setIntegrity(100);
+    integrityRef.current = 100;
     setOvershields(0);
     overshieldsRef.current = 0;
 
@@ -1945,6 +1979,10 @@ export const DimensionCanvas: React.FC<Props> = ({
     currentGenreRef.current = 'slow_waltz';
     currentZoneRef.current = 'easy';
     soundEngine.setMusicPacing('slow_waltz', 'easy');
+    if (!stateRef.current.carrierActive) {
+      handleStartAudio();
+    }
+    spawnCooldownRef.current = 56;
 
     onUpdateState(prev => ({
       ...prev,
@@ -1971,9 +2009,14 @@ export const DimensionCanvas: React.FC<Props> = ({
     setGameMode('speedrun');
     gameModeRef.current = 'speedrun';
     setSpeedrunCompleteModal(null);
+    speedrunCompleteModalRef.current = null;
     setSurvivalDeathModal(null);
+    survivalDeathModalRef.current = null;
     setDeathScreen(null);
+    deathScreenRef.current = null;
     setStoryCompleteModal(null);
+    deathBufferSecondsRef.current = 0;
+    setDeathBufferSeconds(0);
 
     // Clear player's reserves and place them back in the acoustic void
     runHzRef.current = 0;
@@ -1994,6 +2037,7 @@ export const DimensionCanvas: React.FC<Props> = ({
     setAct1Phase('void');
     phaseRef.current = 'void';
     setIntegrity(100);
+    integrityRef.current = 100;
     setOvershields(0);
     overshieldsRef.current = 0;
 
@@ -2009,6 +2053,10 @@ export const DimensionCanvas: React.FC<Props> = ({
     currentGenreRef.current = 'slow_waltz';
     currentZoneRef.current = 'easy';
     soundEngine.setMusicPacing('slow_waltz', 'easy');
+    if (!stateRef.current.carrierActive) {
+      handleStartAudio();
+    }
+    spawnCooldownRef.current = 56;
 
     onUpdateState(prev => ({
       ...prev,
@@ -2036,8 +2084,13 @@ export const DimensionCanvas: React.FC<Props> = ({
     gameModeRef.current = 'survival';
     setHasAttemptedSurvival(true);
     setSurvivalDeathModal(null);
+    survivalDeathModalRef.current = null;
     setSpeedrunCompleteModal(null);
+    speedrunCompleteModalRef.current = null;
     setDeathScreen(null);
+    deathScreenRef.current = null;
+    deathBufferSecondsRef.current = 0;
+    setDeathBufferSeconds(0);
 
     // Survival mode starts the game with all unlocks:
     setHasN(true);
@@ -2051,6 +2104,7 @@ export const DimensionCanvas: React.FC<Props> = ({
     setOvershields(5);
     overshieldsRef.current = 5;
     setIntegrity(100);
+    integrityRef.current = 100;
 
     survivalTimeRef.current = 0;
     setSurvivalTime(0);
@@ -2067,6 +2121,10 @@ export const DimensionCanvas: React.FC<Props> = ({
     currentGenreRef.current = 'arcade_techno';
     currentZoneRef.current = 'easy';
     soundEngine.setMusicPacing('arcade_techno', 'easy');
+    if (!stateRef.current.carrierActive) {
+      handleStartAudio();
+    }
+    spawnCooldownRef.current = 40;
 
     onUpdateState(prev => ({
       ...prev,
@@ -2087,11 +2145,18 @@ export const DimensionCanvas: React.FC<Props> = ({
     setGameMode('arcade');
     gameModeRef.current = 'arcade';
     setArcadeKillModal(null);
+    arcadeKillModalRef.current = null;
     setArcadeVictoryModal(null);
+    arcadeVictoryModalRef.current = null;
     setSpeedrunCompleteModal(null);
+    speedrunCompleteModalRef.current = null;
     setSurvivalDeathModal(null);
+    survivalDeathModalRef.current = null;
     setDeathScreen(null);
+    deathScreenRef.current = null;
     setStoryCompleteModal(null);
+    deathBufferSecondsRef.current = 0;
+    setDeathBufferSeconds(0);
 
     // Arcade starts at start of story mode state (0D Void, 0 Bits) with 1 Life
     runHzRef.current = 0;
@@ -2112,6 +2177,7 @@ export const DimensionCanvas: React.FC<Props> = ({
     setAct1Phase('void');
     phaseRef.current = 'void';
     setIntegrity(100);
+    integrityRef.current = 100;
     setOvershields(0);
     overshieldsRef.current = 0;
 
@@ -2127,6 +2193,10 @@ export const DimensionCanvas: React.FC<Props> = ({
     currentGenreRef.current = 'slow_waltz';
     currentZoneRef.current = 'easy';
     soundEngine.setMusicPacing('slow_waltz', 'easy');
+    if (!stateRef.current.carrierActive) {
+      handleStartAudio();
+    }
+    spawnCooldownRef.current = 56;
 
     onUpdateState(prev => ({
       ...prev,
@@ -2184,6 +2254,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         arcadeLivesRef.current -= 1;
         setArcadeLives(1);
         setIntegrity(100);
+        integrityRef.current = 100;
         damageFlashRef.current = 1;
         screenShakeRef.current = 16;
         soundEngine.playHitSound('quantum');
@@ -2364,7 +2435,11 @@ export const DimensionCanvas: React.FC<Props> = ({
   const handleContinueAfterDeath = () => {
     if (deathBufferSecondsRef.current > 0) return;
     setDeathScreen(null);
+    deathScreenRef.current = null;
+    deathBufferSecondsRef.current = 0;
+    setDeathBufferSeconds(0);
     setIntegrity(100);
+    integrityRef.current = 100;
     setOvershields(0);
     overshieldsRef.current = 0;
     runHzRef.current = 0;
@@ -2393,6 +2468,18 @@ export const DimensionCanvas: React.FC<Props> = ({
     bottomWavesSpawnedRef.current = 0;
     combatTextsRef.current = [];
     bossHitFlashRef.current = 0;
+
+    // Guarantee audio carrier is engaged so gameplay begins immediately
+    onUpdateState(prev => ({
+      ...prev,
+      carrierActive: true,
+      audioActive: true,
+      deathScreen: null,
+      hp: 100,
+    }));
+    handleStartAudio();
+    // Set spawn cooldown so the first pulse spawns promptly:
+    spawnCooldownRef.current = 65;
   };
 
   // Handle Purchasing N, Bit, or Resolution Upgrade
@@ -2752,20 +2839,23 @@ export const DimensionCanvas: React.FC<Props> = ({
     let animId: number;
     let lastTime = performance.now();
     let tickCount = 0;
-    let spawnCooldown = 0;
 
     const render = (time: number) => {
-      const dt = Math.min(0.1, (time - lastTime) / 1000);
-      lastTime = time;
-      tickCount++;
+      try {
+        const dt = Math.min(0.1, (time - lastTime) / 1000);
+        lastTime = time;
+        tickCount++;
 
-      const canvas = canvasRef.current;
-      if (!canvas) {
-        animId = requestAnimationFrame(render);
-        return;
-      }
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+        const canvas = canvasRef.current;
+        if (!canvas) {
+          animId = requestAnimationFrame(render);
+          return;
+        }
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          animId = requestAnimationFrame(render);
+          return;
+        }
 
       const w = canvas.width;
       const h = canvas.height;
@@ -2785,9 +2875,10 @@ export const DimensionCanvas: React.FC<Props> = ({
         if (screenShakeRef.current < 0.2) screenShakeRef.current = 0;
       }
 
-      // When at main menu, render authentic 6-bit background image and halt entity simulation
+      // When at main menu, halt entity simulation and keep canvas clear (MainMenuModal renders its own canvas)
       if (isMainMenuOpenRef.current) {
-        draw6BitBackground(ctx, w, h, time);
+        ctx.fillStyle = '#01160d';
+        ctx.fillRect(0, 0, w, h);
         ctx.restore();
         animId = requestAnimationFrame(render);
         return;
@@ -2823,18 +2914,18 @@ export const DimensionCanvas: React.FC<Props> = ({
 
       // CRT Scanline Overlay (drawn only when bits >= 1 so 0-bit remains pure black!)
       const drawCrtOverlay = () => {
-        if (!hasN || bitsRef.current === 0) return;
+        if (!hasNRef.current || bitsRef.current === 0) return;
         ctx.fillStyle = 'rgba(0, 20, 5, 0.04)';
         ctx.fillRect(0, 0, w, h);
 
         ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
         ctx.lineWidth = 1;
+        ctx.beginPath();
         for (let y = 0; y < h; y += 4) {
-          ctx.beginPath();
           ctx.moveTo(0, y);
           ctx.lineTo(w, y);
-          ctx.stroke();
         }
+        ctx.stroke();
 
         // Screen Vignette
         const grad = ctx.createRadialGradient(w / 2, h / 2, w * 0.35, w / 2, h / 2, w * 0.65);
@@ -3124,7 +3215,7 @@ export const DimensionCanvas: React.FC<Props> = ({
             }
           }
 
-          spawnCooldown++;
+          spawnCooldownRef.current++;
 
           // Dynamic spawn cooldown and pulse velocity tailored to Zone & Genre:
           let cooldownThreshold = 74;
@@ -3192,8 +3283,8 @@ export const DimensionCanvas: React.FC<Props> = ({
             pulseSpeed = -8.5;
           }
 
-          if (spawnCooldown >= cooldownThreshold) {
-            spawnCooldown = 0;
+          if (spawnCooldownRef.current >= cooldownThreshold) {
+            spawnCooldownRef.current = 0;
             runPulsesRef.current++;
             mathBurstStepRef.current++;
 
@@ -3294,12 +3385,10 @@ export const DimensionCanvas: React.FC<Props> = ({
         // ==========================================
         // GRAPHICAL PIPELINE RENDERING PER PHASE & BITS
         // ==========================================
-        if (!hasN) {
+        if (!hasNRef.current) {
           // ------------------------------------------
-          // 0-BIT: THE BLACK SCREEN (ACOUSTIC VOID)
+          // 0-BIT: ACOUSTIC VOID (PRE-N=1)
           // ------------------------------------------
-          // "The screen is black. There is a tone consistently playing... N=0"
-          // Absolutely black screen. No pixels, no traces drawn.
           if (!stateRef.current.carrierActive) {
             ctx.fillStyle = 'rgba(0, 0, 0, 0.88)';
             ctx.fillRect(w / 2 - 250, h / 2 - 42, 500, 84);
@@ -3317,8 +3406,63 @@ export const DimensionCanvas: React.FC<Props> = ({
             ctx.fillText(isTouchActive ? 'TAP ANYWHERE TO ENGAGE SOUNDTRACK' : 'CLICK [LMB], TAP OR PRESS [SPACEBAR] TO ENGAGE SOUNDTRACK', w / 2, h / 2 + 8);
             ctx.fillText('0-BIT ACOUSTIC VOID — SCREEN IS BLACK', w / 2, h / 2 + 26);
             ctx.textAlign = 'start';
+          } else {
+            // Live Acoustic Void: Subtle vibrating oscilloscope carrier & acoustic listener reticle
+            // 1. Oscilloscope Carrier Ripple along center horizontal axis
+            ctx.save();
+            ctx.strokeStyle = 'rgba(51, 255, 102, 0.35)';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            for (let x = TRACE_START; x <= TRACE_END; x += 12) {
+              const ripple = Math.sin(x * 0.035 + time * 0.005) * 3;
+              if (x === TRACE_START) ctx.moveTo(x, TRACE_Y + ripple);
+              else ctx.lineTo(x, TRACE_Y + ripple);
+            }
+            ctx.stroke();
+
+            // 2. Listening Reticle & Polarizer Orientation at player position (x = 240)
+            const curPol = polarityRef.current;
+            ctx.fillStyle = curPol === 1 ? '#33ff66' : curPol === -1 ? '#ff5599' : '#66ccff';
+            ctx.strokeStyle = curPol === 1 ? '#33ff66' : curPol === -1 ? '#ff5599' : '#66ccff';
+            ctx.lineWidth = 2;
+
+            // Reticle Diode Symbol
+            ctx.beginPath();
+            ctx.arc(playerX, TRACE_Y, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Directional tuning arrow indicating current polarity
+            if (curPol === 1) {
+              ctx.beginPath();
+              ctx.moveTo(playerX - 6, TRACE_Y - 9);
+              ctx.lineTo(playerX, TRACE_Y - 17);
+              ctx.lineTo(playerX + 6, TRACE_Y - 9);
+              ctx.stroke();
+            } else if (curPol === -1) {
+              ctx.beginPath();
+              ctx.moveTo(playerX - 6, TRACE_Y + 9);
+              ctx.lineTo(playerX, TRACE_Y + 17);
+              ctx.lineTo(playerX + 6, TRACE_Y + 9);
+              ctx.stroke();
+            }
+
+            // 3. Top HUD: 0D Void Resonance Telemetry
+            ctx.font = 'bold 12px monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(`0D ACOUSTIC VOID [N = 0] // RESONANCE HARVEST: +${runHzRef.current} HZ / +${runVoltsRef.current} V  [TARGET: 2 HZ & 2 V TO COMPILE N=1]`, 24, 26);
+
+            // 4. Polarizer Orientation & Instruction Guides
+            const polText = curPol === 1 ? '▲ POLARITY: UP' : curPol === -1 ? '▼ POLARITY: DOWN' : '■ NEUTRAL';
+            ctx.font = '11px monospace';
+            ctx.fillText(`TUNED: [ ${polText} ]`, 24, 46);
+
+            ctx.fillStyle = 'rgba(102, 255, 170, 0.75)';
+            ctx.font = '10.5px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('PRESS [SPACEBAR] OR [CLICK RIGHT] TO TUNE POLARITY // ABSORB WAVEFORMS TO MATERIALIZE N=1', w / 2, h - 16);
+            ctx.textAlign = 'start';
+            ctx.restore();
           }
-          // When carrier is active, the screen is 100% pure black 0-bit.
         } else if (currentBits === 0) {
           // ------------------------------------------
           // N = 1 (0 BITS): THE SINGLE STATIONARY WHITE PIXEL
@@ -3784,7 +3928,7 @@ export const DimensionCanvas: React.FC<Props> = ({
 
           // Part Two Telemetry HUD
           // Lower Telemetry HUD (Clean left-aligned HUD clear of joystick)
-          const roundedIntegrity = Math.round(integrity);
+          const roundedIntegrity = Math.max(0, Math.min(100, Math.round(integrityRef.current)));
           const barFilled = Math.max(0, Math.min(10, Math.round(roundedIntegrity / 10)));
           const barStr = '[' + '█'.repeat(barFilled) + '░'.repeat(10 - barFilled) + ']';
           const hudX = 20;
@@ -4175,7 +4319,9 @@ export const DimensionCanvas: React.FC<Props> = ({
 
                 // Heal up to max 100 HP, or add Overshield if in Part Two (Res >= 1)
                 if (integrityRef.current < 100) {
-                  setIntegrity(h => Math.min(100, h + 40));
+                  const nextH = Math.min(100, integrityRef.current + 40);
+                  integrityRef.current = nextH;
+                  setIntegrity(nextH);
                 } else if (subPartRef.current === 2 && resolutionRef.current >= 1) {
                   overshieldsRef.current = Math.min(10, overshieldsRef.current + 1);
                   setOvershields(overshieldsRef.current);
@@ -4200,8 +4346,25 @@ export const DimensionCanvas: React.FC<Props> = ({
             continue;
           }
 
-          // Render Pulse (visible only once graphics are compiled: hasN && currentBits >= 1)
-          if (hasN && currentBits >= 1 && (phase === 'point' || phase === 'boss')) {
+          // Render Pulse:
+          // In 0D Void: Render as acoustic compression waves along the listening corridor
+          // In N >= 1: Render with compiled phosphor/bloom graphics
+          if (!hasNRef.current) {
+            ctx.save();
+            ctx.strokeStyle = p.pol === 1 ? 'rgba(51, 255, 102, 0.9)' : 'rgba(255, 85, 153, 0.9)';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            const hWave = p.pol === 1 ? -16 : 16;
+            ctx.moveTo(p.x - 18, TRACE_Y);
+            ctx.quadraticCurveTo(p.x, TRACE_Y + hWave, p.x + 18, TRACE_Y);
+            ctx.stroke();
+
+            ctx.fillStyle = p.pol === 1 ? '#55ff99' : '#ff66aa';
+            ctx.font = 'bold 9px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(p.pol === 1 ? '▲ CREST' : '▼ TROUGH', p.x, TRACE_Y + (p.pol === 1 ? -20 : 28));
+            ctx.restore();
+          } else if (hasNRef.current && currentBits >= 1 && (phase === 'point' || phase === 'boss')) {
             ctx.strokeStyle = p.color;
             ctx.shadowColor = p.color;
             ctx.shadowBlur = currentBits >= 8 ? 12 : 0;
@@ -4246,7 +4409,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         }
 
         // Top HUD Header
-        if (hasN) {
+        if (hasNRef.current) {
           ctx.fillStyle = '#33ff66';
           ctx.font = '13px monospace';
           if (subPartRef.current === 2) {
@@ -4273,24 +4436,24 @@ export const DimensionCanvas: React.FC<Props> = ({
           ctx.save();
           ctx.fillStyle = '#00f0ff';
           ctx.font = 'bold 12px monospace';
-          const hudX = (subPartRef.current === 2 || (hasN && currentBits > 0)) ? 320 : 24;
-          const hudY = (hasN && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
+          const hudX = (subPartRef.current === 2 || (hasNRef.current && currentBits > 0)) ? 320 : 24;
+          const hudY = (hasNRef.current && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
           ctx.fillText(`⚡ SPEED RUN: ${formatTime(speedrunTimeRef.current)}  [RUN #${speedrunRunsRef.current}]`, hudX, hudY);
           ctx.restore();
         } else if (gameModeRef.current === 'survival') {
           ctx.save();
           ctx.fillStyle = '#ff4466';
           ctx.font = 'bold 12px monospace';
-          const hudX = (subPartRef.current === 2 || (hasN && currentBits > 0)) ? 320 : 24;
-          const hudY = (hasN && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
+          const hudX = (subPartRef.current === 2 || (hasNRef.current && currentBits > 0)) ? 320 : 24;
+          const hudY = (hasNRef.current && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
           ctx.fillText(`⚔️ SURVIVAL: ${formatTime(survivalTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]`, hudX, hudY);
           ctx.restore();
         } else if (gameModeRef.current === 'arcade') {
           ctx.save();
           ctx.fillStyle = '#c084fc';
           ctx.font = 'bold 12px monospace';
-          const hudX = (subPartRef.current === 2 || (hasN && currentBits > 0)) ? 320 : 24;
-          const hudY = (hasN && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
+          const hudX = (subPartRef.current === 2 || (hasNRef.current && currentBits > 0)) ? 320 : 24;
+          const hudY = (hasNRef.current && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
           const livesStr = arcadeLivesRef.current === 2 ? '💖💖 2 LIVES' : '💖 1 LIFE';
           ctx.fillText(`🕹️ ARCADE: ${formatTime(arcadeTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]  [${livesStr}]`, hudX, hudY);
           ctx.restore();
@@ -4318,55 +4481,23 @@ export const DimensionCanvas: React.FC<Props> = ({
         ctx.globalAlpha = 1;
       }
 
-      // Apply Progressive Bit-Depth Graphical Quantization (when in Game N with 1 to 7 bits)
-      if (hasN && bitsRef.current >= 1 && bitsRef.current < 8) {
-        try {
-          const imgData = ctx.getImageData(0, 0, w, h);
-          const data = imgData.data;
-          const levels = Math.pow(2, bitsRef.current);
-          const step = 255 / (levels - 1);
-
-          for (let i = 0; i < data.length; i += 4) {
-            if (data[i] === 0 && data[i + 1] === 8 && data[i + 2] === 2) continue;
-            if (data[i] === 0 && data[i + 1] === 0 && data[i + 2] === 0) continue;
-
-            if (bitsRef.current === 1) {
-              // Strictly 1-bit binary graphics (2 colors: 0 or 255 phosphor green)
-              const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
-              if (brightness > 28) {
-                data[i] = 51;
-                data[i + 1] = 255;
-                data[i + 2] = 102;
-              } else {
-                data[i] = 0;
-                data[i + 1] = 8;
-                data[i + 2] = 2;
-              }
-            } else {
-              // Quantize channels to 2^bits levels
-              data[i] = Math.round(data[i] / step) * step;
-              data[i + 1] = Math.round(data[i + 1] / step) * step;
-              data[i + 2] = Math.round(data[i + 2] / step) * step;
-            }
-          }
-          ctx.putImageData(imgData, 0, 0);
-        } catch {
-          // Fallback if read error
-        }
-      }
 
       // Draw CRT scanlines only once 1-bit graphics or higher are unlocked
-      if (hasN && bitsRef.current >= 1) {
+      if (hasNRef.current && bitsRef.current >= 1) {
         drawCrtOverlay();
       }
 
       ctx.restore();
+    } catch (err) {
+      console.error('Canvas render error:', err);
+    } finally {
       animId = requestAnimationFrame(render);
-    };
+    }
+  };
 
-    animId = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(animId);
-  }, [hasN, bits, act1Phase, playerPolarity]);
+  animId = requestAnimationFrame(render);
+  return () => cancelAnimationFrame(animId);
+}, []);
 
   // Mobile Touch tracking for horizontal movement and quick taps
   const touchStartXRef = useRef<number | null>(null);

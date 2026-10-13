@@ -112,14 +112,14 @@ export function draw6BitBackground(
   // BIT 5: 5-BIT DITHERED PIXEL NEBULA & RISING MOTES (32 COLORS)
   // -------------------------------------------------------------
   ctx.fillStyle = 'rgba(15, 65, 40, 0.26)';
-  const nebWidth = Math.floor((w * 0.6) / 8) * 8;
-  const nebStart = Math.floor((w * 0.2) / 8) * 8;
+  const nebWidth = Math.floor((w * 0.6) / 16) * 16;
+  const nebStart = Math.floor((w * 0.2) / 16) * 16;
   const nebTop = Math.floor(h * 0.05);
   const nebBottom = Math.floor(h * 0.28);
-  for (let nx = nebStart; nx < nebStart + nebWidth; nx += 8) {
-    for (let ny = nebTop; ny < nebBottom; ny += 8) {
-      if ((nx / 8 + ny / 8) % 2 === 0) {
-        ctx.fillRect(nx, ny, 4, 4);
+  for (let nx = nebStart; nx < nebStart + nebWidth; nx += 16) {
+    for (let ny = nebTop; ny < nebBottom; ny += 16) {
+      if ((Math.floor(nx / 16) + Math.floor(ny / 16)) % 2 === 0) {
+        ctx.fillRect(nx, ny, 8, 8);
       }
     }
   }
@@ -149,27 +149,27 @@ export function draw6BitBackground(
   const cy = horizonY - 42;
   const sunR = 26;
   ctx.fillStyle = 'rgba(45, 170, 85, 0.26)';
-  for (let dy = -sunR; dy <= sunR; dy += 4) {
+  for (let dy = -sunR; dy <= sunR; dy += 6) {
     const span = Math.floor(Math.sqrt(Math.max(0, sunR * sunR - dy * dy)) / 4) * 4;
-    if (span > 0 && Math.abs(dy) % 8 !== 0) {
+    if (span > 0 && Math.abs(dy) % 6 !== 0) {
       ctx.fillRect(cx - span, cy + dy, span * 2, 3);
     }
   }
 
   // -------------------------------------------------------------
-  // CRT Scanline Overlay & Vignette
+  // CRT Scanline Overlay & Vignette (Batched single path for 60 FPS)
   // -------------------------------------------------------------
   ctx.fillStyle = 'rgba(0, 20, 5, 0.04)';
   ctx.fillRect(0, 0, w, h);
 
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
   ctx.lineWidth = 1;
+  ctx.beginPath();
   for (let y = 0; y < h; y += 4) {
-    ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(w, y);
-    ctx.stroke();
   }
+  ctx.stroke();
 
   // Screen Vignette
   const grad = ctx.createRadialGradient(w / 2, h / 2, w * 0.25, w / 2, h / 2, w * 0.7);

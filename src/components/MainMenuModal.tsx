@@ -128,7 +128,11 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   };
 
   const handleModeClick = (mode: GameMode, forceNew: boolean = false) => {
-    soundEngine.playCadenceResolution();
+    try {
+      soundEngine.playCadenceResolution();
+    } catch (e) {
+      console.warn('Mode click audio feedback ignored:', e);
+    }
     onSelectMode(mode, forceNew);
     onClose();
   };

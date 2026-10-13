@@ -980,34 +980,40 @@ class SoundEngine {
 
   // Plays the complete cadence: C4 -> F4 -> G4 -> C5 resolution
   public playCadenceResolution(): void {
-    if (!this.init() || !this.ctx) return;
-    const now = this.ctx.currentTime;
+    try {
+      if (!this.init() || !this.ctx || !this.filterNode || this.isMuted) return;
+      const now = Math.max(0, this.ctx.currentTime);
 
-    const sequence = [
-      { freq: 261.63, time: now + 0.0, type: 'triangle' as OscillatorType, vol: 0.18 }, // C4
-      { freq: 349.23, time: now + 0.15, type: 'triangle' as OscillatorType, vol: 0.22 }, // F4
-      { freq: 392.00, time: now + 0.35, type: 'sine' as OscillatorType, vol: 0.28 },     // G4 Dominant!
-      { freq: 523.25, time: now + 0.55, type: 'sine' as OscillatorType, vol: 0.32 },     // C5 Resolution!
-    ];
+      const sequence = [
+        { freq: 261.63, time: now + 0.02, type: 'triangle' as OscillatorType, vol: 0.18 }, // C4
+        { freq: 349.23, time: now + 0.15, type: 'triangle' as OscillatorType, vol: 0.22 }, // F4
+        { freq: 392.00, time: now + 0.35, type: 'sine' as OscillatorType, vol: 0.28 },     // G4 Dominant!
+        { freq: 523.25, time: now + 0.55, type: 'sine' as OscillatorType, vol: 0.32 },     // C5 Resolution!
+      ];
 
-    sequence.forEach(({ freq, time, type, vol }) => {
-      if (!this.ctx || !this.filterNode) return;
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
+      sequence.forEach(({ freq, time, type, vol }) => {
+        try {
+          if (!this.ctx || !this.filterNode) return;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
 
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, time);
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, time);
 
-      gain.gain.setValueAtTime(0.001, time);
-      gain.gain.exponentialRampToValueAtTime(vol, time + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+          gain.gain.setValueAtTime(0.001, time);
+          gain.gain.exponentialRampToValueAtTime(Math.max(0.001, vol), time + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
 
-      osc.connect(gain);
-      gain.connect(this.filterNode);
+          osc.connect(gain);
+          gain.connect(this.filterNode);
 
-      osc.start(time);
-      osc.stop(time + 0.42);
-    });
+          osc.start(time);
+          osc.stop(time + 0.42);
+        } catch {}
+      });
+    } catch (e) {
+      console.warn('Cadence resolution failed safely:', e);
+    }
   }
 
   // Boss Damage Chord - registers the visceral feeling of the boss getting hurt:
