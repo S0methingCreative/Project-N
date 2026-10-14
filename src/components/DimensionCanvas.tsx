@@ -1,9 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { GameState, DeathScreenState, GameMode } from '../types/game';
 import { soundEngine, MusicGenre, SpeedZone } from '../audio/soundEngine';
-import { Volume2, VolumeX, Shield, Play, RotateCcw, Zap, Sparkles, ArrowUp, ArrowDown, Activity, ShieldAlert, Lock, CheckCircle2, Cpu, SlidersHorizontal, Settings, X } from 'lucide-react';
+import { Volume2, VolumeX, Shield, Play, RotateCcw, Zap, Sparkles, ArrowUp, ArrowDown, Activity, ShieldAlert, Lock, CheckCircle2, Cpu, SlidersHorizontal, Settings, X, Trophy, Crown, Radio } from 'lucide-react';
 import { draw6BitBackground } from '../utils/backgroundArt';
 import { UserSettings, DEFAULT_USER_SETTINGS, saveUserSettings } from '../utils/settings';
+import { GlobalLeaderboardModal } from './GlobalLeaderboardModal';
+import {
+  checkQualifiesForTop10,
+  submitStoryScore,
+  submitSpeedrunScore,
+  submitSurvivalScore,
+  submitArcadeScore,
+  recordStoryFTCIfFirst,
+  recordArcadeFTCIfFirst,
+  getPlayerCode,
+} from '../services/leaderboardService';
+import { LeaderboardTab } from './GlobalLeaderboardModal';
 
 export const MAX_BOSS_1_HP = 180;
 export const MAX_BOSS_2_HP = 220;
@@ -25,17 +37,39 @@ export interface BitGraphicsUpgrade {
 }
 
 export const BIT_GRAPHICS_UPGRADES: BitGraphicsUpgrade[] = [
-  { bit: 1, name: 'Bit 1: 1-Bit Graphics (2 Colors)', pipelineName: '1_Bit_Binary_Raster', desc: 'Calibrates 1-bit binary monochrome oscilloscope ray (2 colors: 0 & 1).', costHz: 3, costV: 3 },
-  { bit: 2, name: 'Bit 2: 2-Bit Graphics (4 Colors)', pipelineName: '2_Bit_Vector_Axis', desc: 'Projects 2-bit dashed vector coordinate axis (4 shades of phosphor).', costHz: 6, costV: 6 },
-  { bit: 3, name: 'Bit 3: 3-Bit Graphics (8 Colors)', pipelineName: '3_Bit_Polarizer_Reticle', desc: 'Compiles visible directional polarizer reticle arrow (8 colors).', costHz: 10, costV: 10 },
-  { bit: 4, name: 'Bit 4: 4-Bit Graphics (16 Colors)', pipelineName: '4_Bit_Calibrated_Bus', desc: 'Solidifies continuous coordinate bus with calibrated distance hash marks (16 colors).', costHz: 16, costV: 16 },
-  { bit: 5, name: 'Bit 5: 5-Bit Graphics (32 Colors)', pipelineName: '5_Bit_Envelope_Rails', desc: 'Projects upper (+V) Crest and lower (-V) Trough amplitude guide rails (32 colors).', costHz: 24, costV: 24 },
-  { bit: 6, name: 'Bit 6: 6-Bit Graphics (64 Colors)', pipelineName: '6_Bit_Telemetry_HUD', desc: 'Compiles real-time integrity gauge and signal frequency telemetry readouts (64 colors).', costHz: 36, costV: 36 },
-  { bit: 7, name: 'Bit 7: 7-Bit Graphics (128 Colors)', pipelineName: '7_Bit_Phase_Grid', desc: 'Projects rhythmic vertical beat horizon ticks along oscilloscope to gauge timing (128 colors).', costHz: 50, costV: 50 },
-  { bit: 8, name: 'Bit 8: 8-Bit Graphics (256 Colors)', pipelineName: '8_Bit_Phosphor_Bloom', desc: 'Enables 8-bit VGA color depth and unlocks NEUTRALizer polarizer mode (■ Neutral) to absorb incoming Packets (+40 HP, Am chord) before boss encounter (256 colors).', costHz: 68, costV: 68 },
-  { bit: 9, name: 'Bit 9: 9-Bit Graphics (512 Colors)', pipelineName: '9_Bit_Trinary_Matrix', desc: '9-bit trinary pipeline. Reaches destination point in space, now besieged and blocked by the Corrupt Sovereign Boss (512 colors).', costHz: 90, costV: 90 },
-  { bit: 10, name: 'Bit 10: 10-Bit Graphics (1024 Colors)', pipelineName: '10_Bit_Master_Engine', desc: '10-bit Deep Color master engine. Purges corrupted point, fully transforming void into living multidimensional universe (1024 colors).', costHz: 120, costV: 120 },
+  { bit: 1, name: 'Bit 1: 1-Bit Graphics (2 Colors)', pipelineName: '1_Bit_Binary_Raster', desc: 'Calibrates 1-bit binary monochrome oscilloscope ray (2 colors: 0 & 1).', costHz: 1, costV: 1 },
+  { bit: 2, name: 'Bit 2: 2-Bit Graphics (4 Colors)', pipelineName: '2_Bit_Vector_Axis', desc: 'Projects 2-bit dashed vector coordinate axis (4 shades of phosphor).', costHz: 2, costV: 2 },
+  { bit: 3, name: 'Bit 3: 3-Bit Graphics (8 Colors)', pipelineName: '3_Bit_Polarizer_Reticle', desc: 'Compiles visible directional polarizer reticle arrow (8 colors).', costHz: 3, costV: 3 },
+  { bit: 4, name: 'Bit 4: 4-Bit Graphics (16 Colors)', pipelineName: '4_Bit_Calibrated_Bus', desc: 'Solidifies continuous coordinate bus with calibrated distance hash marks (16 colors).', costHz: 6, costV: 6 },
+  { bit: 5, name: 'Bit 5: 5-Bit Graphics (32 Colors)', pipelineName: '5_Bit_Envelope_Rails', desc: 'Projects upper (+V) Crest and lower (-V) Trough amplitude guide rails (32 colors).', costHz: 10, costV: 10 },
+  { bit: 6, name: 'Bit 6: 6-Bit Graphics (64 Colors)', pipelineName: '6_Bit_Telemetry_HUD', desc: 'Compiles real-time integrity gauge and signal frequency telemetry readouts (64 colors).', costHz: 16, costV: 16 },
+  { bit: 7, name: 'Bit 7: 7-Bit Graphics (128 Colors)', pipelineName: '7_Bit_Phase_Grid', desc: 'Projects rhythmic vertical beat horizon ticks along oscilloscope to gauge timing (128 colors).', costHz: 24, costV: 24 },
+  { bit: 8, name: 'Bit 8: 8-Bit Graphics (256 Colors)', pipelineName: '8_Bit_Phosphor_Bloom', desc: 'Enables 8-bit VGA color depth and unlocks NEUTRALizer polarizer mode (■ Neutral) to absorb incoming Packets (+40 HP, Am chord) before boss encounter (256 colors).', costHz: 36, costV: 36 },
+  { bit: 9, name: 'Bit 9: 9-Bit Graphics (512 Colors)', pipelineName: '9_Bit_Trinary_Matrix', desc: '9-bit trinary pipeline. Reaches destination point in space, now besieged and blocked by the Corrupt Sovereign Boss (512 colors).', costHz: 50, costV: 50 },
+  { bit: 10, name: 'Bit 10: 10-Bit Graphics (1024 Colors)', pipelineName: '10_Bit_Master_Engine', desc: '10-bit Deep Color master engine. Defeat Boss 1 (Corrupted Sovereign) to compile.', costHz: 0, costV: 0 },
 ];
+
+// Arcade Mode Specific Bit Unlock Requirements (matching official progression spreadsheet):
+// Bit 1: Starting Stage (starts at Bit 1)
+// Bit 2: 2 Hz, 2 V
+// Bit 3: 3 Hz, 3 V
+// Bit 4: 6 Hz, 6 V
+// Bit 5: 10 Hz, 10 V
+// Bit 6: 16 Hz, 16 V
+// Bit 7: 24 Hz, 24 V
+// Bit 8: 36 Hz, 36 V
+// Bit 9: 50 Hz, 50 V (launches boss fight)
+// Bit 10: Defeat boss (displays victory screen)
+export const ARCADE_BIT_UNLOCK_COSTS: Record<number, { costHz: number; costV: number }> = {
+  2: { costHz: 2, costV: 2 },
+  3: { costHz: 3, costV: 3 },
+  4: { costHz: 6, costV: 6 },
+  5: { costHz: 10, costV: 10 },
+  6: { costHz: 16, costV: 16 },
+  7: { costHz: 24, costV: 24 },
+  8: { costHz: 36, costV: 36 },
+  9: { costHz: 50, costV: 50 },
+};
 
 export interface ResolutionUpgrade {
   resolution: number;
@@ -57,7 +91,7 @@ export const RESOLUTION_UPGRADES: ResolutionUpgrade[] = [
   { resolution: 7, name: 'Res 7: Slow Zone', fps: '90 FPS', desc: 'Left slow zone', costBaud: 52, costHz: 104, costV: 104 },
   { resolution: 8, name: 'Res 8: Right 4x', fps: '120 FPS', desc: 'Right 4x yield', costBaud: 68, costHz: 136, costV: 136 },
   { resolution: 9, name: 'Res 9: Sovereign', fps: '144 FPS', desc: 'Boss fight', costBaud: 88, costHz: 176, costV: 176 },
-  { resolution: 10, name: 'Res 10: Transcend', fps: '240 FPS', desc: 'Mastery', costBaud: 110, costHz: 220, costV: 220 },
+  { resolution: 10, name: 'Res 10: Transcend', fps: '240 FPS', desc: 'Defeat Boss 2 (Fracture Sovereign)', costBaud: 0, costHz: 0, costV: 0 },
 ];
 
 export interface RedErrorZone {
@@ -1150,13 +1184,6 @@ export const DimensionCanvas: React.FC<Props> = ({
   const userSettingsRef = useRef<UserSettings>(userSettings);
   userSettingsRef.current = userSettings;
 
-  // Invisible Bottom-Left Quadrant Drag-to-Move Controller
-  const [joystickDeflection, setJoystickDeflection] = useState<number>(0);
-  const joystickDeflectionRef = useRef<number>(0);
-  joystickDeflectionRef.current = joystickDeflection;
-  const isJoystickDraggingRef = useRef<boolean>(false);
-  const dragOriginXRef = useRef<number | null>(null);
-  const dragLastClientXRef = useRef<number>(0);
   const lastTouchTimeRef = useRef<number>(0);
 
   // Orientation tracking for mobile portrait advisory banner
@@ -1177,84 +1204,6 @@ export const DimensionCanvas: React.FC<Props> = ({
     };
   }, []);
 
-  const handleDragPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    lastTouchTimeRef.current = Date.now();
-    if (isMainMenuOpenRef.current || deathScreenRef.current || deathBufferSecondsRef.current > 0) return;
-    if (subPartRef.current !== 2 || resolutionRef.current < 2) return;
-    if (!stateRef.current.carrierActive) {
-      handleStartAudio();
-    }
-    isJoystickDraggingRef.current = true;
-    dragOriginXRef.current = e.clientX;
-    dragLastClientXRef.current = e.clientX;
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {}
-  };
-
-  const handleDragPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (subPartRef.current !== 2 || resolutionRef.current < 2) return;
-    if (!isJoystickDraggingRef.current || dragOriginXRef.current === null) return;
-    if (isMainMenuOpenRef.current || deathBufferSecondsRef.current > 0) return;
-
-    const diffX = e.clientX - dragOriginXRef.current;
-    const maxRadius = 45; // 45px deflection radius for left/right thumb control
-    const normalized = Math.max(-1, Math.min(1, diffX / maxRadius));
-    joystickDeflectionRef.current = normalized;
-    setJoystickDeflection(normalized);
-
-    // Floating origin: drift when dragging past maxRadius for effortless continuous navigation
-    if (Math.abs(diffX) > maxRadius) {
-      dragOriginXRef.current = e.clientX - Math.sign(diffX) * maxRadius;
-    }
-
-    // Direct instantaneous displacement tracking per swipe.
-    // Progresses in the exact same way as the scroll wheel:
-    // Sluggish early on at Resolution 2 (0.08) requiring multiple swipes to move across the screen,
-    // scaling with Resolution upgrades:
-    const deltaClientX = e.clientX - dragLastClientXRef.current;
-    dragLastClientXRef.current = e.clientX;
-
-    if (subPartRef.current === 2 && resolutionRef.current >= 2) {
-      const res = resolutionRef.current;
-      const agility =
-        res <= 2
-          ? 0.08
-          : res === 3
-          ? 0.25
-          : res === 4
-          ? 0.55
-          : res === 5
-          ? 0.85
-          : 1.0;
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const rect = canvas.getBoundingClientRect();
-        const scale = canvas.width / rect.width;
-        const deltaCanvas = deltaClientX * scale * agility;
-        const TRACE_START = 80;
-        const TRACE_END = 920 - 80;
-        playerXRef.current = Math.max(
-          TRACE_START + 10,
-          Math.min(TRACE_END - 20, playerXRef.current + deltaCanvas)
-        );
-      }
-    }
-  };
-
-  const handleDragPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.stopPropagation();
-    lastTouchTimeRef.current = Date.now();
-    isJoystickDraggingRef.current = false;
-    dragOriginXRef.current = null;
-    joystickDeflectionRef.current = 0;
-    setJoystickDeflection(0);
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {}
-  };
-
   // Main menu tracking ref & soundtrack coordination
   const isMainMenuOpenRef = useRef<boolean>(isMainMenuOpen);
   useEffect(() => {
@@ -1264,6 +1213,24 @@ export const DimensionCanvas: React.FC<Props> = ({
       currentZoneRef.current = 'easy';
       soundEngine.setMusicPacing('slow_waltz', 'easy');
       soundEngine.startBackgroundMusic();
+    } else {
+      // Exiting main menu to begin or resume gameplay:
+      // Guarantee player starts with full 100 integrity and clear stale modals/flags
+      isRoundEndedRef.current = false;
+      deathScreenRef.current = null;
+      setDeathScreen(null);
+      speedrunCompleteModalRef.current = null;
+      setSpeedrunCompleteModal(null);
+      storyCompleteModalRef.current = null;
+      setStoryCompleteModal(null);
+      survivalDeathModalRef.current = null;
+      setSurvivalDeathModal(null);
+      arcadeKillModalRef.current = null;
+      setArcadeKillModal(null);
+      arcadeVictoryModalRef.current = null;
+      setArcadeVictoryModal(null);
+      setIntegrity(100);
+      integrityRef.current = 100;
     }
   }, [isMainMenuOpen]);
 
@@ -1320,9 +1287,9 @@ export const DimensionCanvas: React.FC<Props> = ({
   const speedrunTimeRef = useRef<number>(gameState.speedrunTime || 0);
   const speedrunRunsRef = useRef<number>(gameState.speedrunRuns || 1);
   const [speedrunCompleteModal, setSpeedrunCompleteModal] = useState<{ time: number; runs: number } | null>(null);
-  const speedrunCompleteModalRef = useRef(speedrunCompleteModal);
-  speedrunCompleteModalRef.current = speedrunCompleteModal;
+  const speedrunCompleteModalRef = useRef<{ time: number; runs: number } | null>(null);
   const [storyCompleteModal, setStoryCompleteModal] = useState<{ totalRuns: number } | null>(null);
+  const storyCompleteModalRef = useRef<{ totalRuns: number } | null>(null);
 
   const [survivalTime, setSurvivalTime] = useState<number>(0);
   const survivalTimeRef = useRef<number>(0);
@@ -1331,8 +1298,10 @@ export const DimensionCanvas: React.FC<Props> = ({
     time: number;
     resources: { hz: number; volts: number; baud: number };
   } | null>(null);
-  const survivalDeathModalRef = useRef(survivalDeathModal);
-  survivalDeathModalRef.current = survivalDeathModal;
+  const survivalDeathModalRef = useRef<{
+    time: number;
+    resources: { hz: number; volts: number; baud: number };
+  } | null>(null);
 
   const survivalBoss1SpawnedRef = useRef<boolean>(false);
   const survivalBoss2SpawnedRef = useRef<boolean>(false);
@@ -1345,28 +1314,107 @@ export const DimensionCanvas: React.FC<Props> = ({
   const arcadeTimeRef = useRef<number>(gameState.arcadeTime || 0);
   const [arcadeLives, setArcadeLives] = useState<number>(gameState.arcadeLives || 1);
   const arcadeLivesRef = useRef<number>(gameState.arcadeLives || 1);
+  const arcadeTotalHzRef = useRef<number>(0);
   const [arcadeKillModal, setArcadeKillModal] = useState<{
     stageName: string;
     stageNum: number;
     time: number;
     reason: string;
   } | null>(null);
-  const arcadeKillModalRef = useRef(arcadeKillModal);
-  arcadeKillModalRef.current = arcadeKillModal;
+  const arcadeKillModalRef = useRef<{
+    stageName: string;
+    stageNum: number;
+    time: number;
+    reason: string;
+  } | null>(null);
   const [arcadeVictoryModal, setArcadeVictoryModal] = useState<{
     time: number;
     livesRemaining: number;
   } | null>(null);
-  const arcadeVictoryModalRef = useRef(arcadeVictoryModal);
-  arcadeVictoryModalRef.current = arcadeVictoryModal;
+  const arcadeVictoryModalRef = useRef<{
+    time: number;
+    livesRemaining: number;
+  } | null>(null);
 
-  const bossImmunityCooldownRef = useRef<number>(0);
+  // Authoritative run completion / terminal death tracking ref to instantly freeze all timers
+  const isRoundEndedRef = useRef<boolean>(false);
+
+  // Track previous game mode to prevent redundant modal resets on state sync
+  const prevGameModeRef = useRef<GameMode | undefined>(gameState.gameMode);
 
   // In-Game Options Modal (Accessible from any death / kill screen)
   const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState<boolean>(false);
   const isOptionsMenuOpenRef = useRef<boolean>(false);
   isOptionsMenuOpenRef.current = isOptionsMenuOpen;
   const [optionsSubTab, setOptionsSubTab] = useState<'audio' | 'control'>('audio');
+
+  // Global High Scores Modal & Saved Player Code
+  const [isGlobalScoresOpen, setIsGlobalScoresOpen] = useState<boolean>(false);
+  const [globalScoresTab, setGlobalScoresTab] = useState<LeaderboardTab>('story');
+  const [highlightInitials, setHighlightInitials] = useState<string | undefined>(undefined);
+
+  // Automatically save run record under unique 3-letter pilot code
+  const saveRunRecord = async (
+    mode: 'story' | 'speedrun' | 'survival' | 'arcade',
+    data: {
+      stageName?: string;
+      stageNum?: number;
+      bit?: number;
+      resolution?: number;
+      completed?: boolean;
+      duration?: number;
+      timeSeconds?: number;
+      runs?: number;
+      survivalSeconds?: number;
+      totalHz?: number;
+      isVictory?: boolean;
+    }
+  ) => {
+    const code = getPlayerCode() || 'AAA';
+    setHighlightInitials(code);
+
+    if (mode === 'story') {
+      if (data.isVictory) {
+        await recordStoryFTCIfFirst(code);
+      }
+      await submitStoryScore({
+        initials: code,
+        stageName: data.stageName || '0D Void',
+        stageNum: data.stageNum || 0,
+        bit: data.bit || 0,
+        resolution: data.resolution || 0,
+        completed: Boolean(data.completed),
+      });
+    } else if (mode === 'arcade') {
+      if (data.isVictory) {
+        await recordArcadeFTCIfFirst(code, data.duration || 0, data.totalHz || 0);
+      }
+      await submitArcadeScore({
+        initials: code,
+        stageName: data.stageName || '0D Void',
+        stageNum: data.stageNum || 0,
+        bit: data.bit || 0,
+        duration: data.duration || 0,
+        totalHz: data.totalHz || 0,
+        completed: Boolean(data.completed),
+      });
+    } else if (mode === 'speedrun') {
+      if (data.completed) {
+        await submitSpeedrunScore({
+          initials: code,
+          timeSeconds: data.timeSeconds || 120,
+          runs: data.runs || 1,
+          completed: true,
+        });
+      }
+    } else if (mode === 'survival') {
+      await submitSurvivalScore({
+        initials: code,
+        survivalSeconds: data.survivalSeconds || 0,
+        totalHz: data.totalHz || 0,
+      });
+    }
+  };
 
   const updateSettingsFromCanvas = (updated: UserSettings) => {
     userSettingsRef.current = updated;
@@ -1464,6 +1512,18 @@ export const DimensionCanvas: React.FC<Props> = ({
     }
   };
 
+  const handleToggleDevUnlockAllModes = (unlock: boolean) => {
+    const current = userSettingsRef.current ?? DEFAULT_USER_SETTINGS;
+    const updated: UserSettings = {
+      ...current,
+      controls: {
+        ...current.controls,
+        unlockAllModesDev: unlock,
+      },
+    };
+    updateSettingsFromCanvas(updated);
+  };
+
   // Phase 0 / Run Stats (State for rendering, Refs for 100% accurate closure reads)
   const [runHz, setRunHz] = useState<number>(0);
   const [runVolts, setRunVolts] = useState<number>(0);
@@ -1476,38 +1536,10 @@ export const DimensionCanvas: React.FC<Props> = ({
   // Death / Level-Up Screen
   const [deathScreen, setDeathScreen] = useState<DeathScreenState | null>(gameState.deathScreen);
 
-  // 1-Second Accidental Click Buffer on Death (greys out buttons for 1s to prevent misclicks)
-  const [deathBufferSeconds, setDeathBufferSeconds] = useState<number>(0);
-  const deathBufferUntilRef = useRef<number>(0);
+  // Death buffer removed to eliminate artificial damage immunity and click blocking timers
+  const deathBufferSeconds = 0;
   const deathBufferSecondsRef = useRef<number>(0);
-  deathBufferSecondsRef.current = deathBufferSeconds;
-
-  // Start 1-second click protection timer whenever any death screen appears
-  useEffect(() => {
-    const isAnyDeathActive = Boolean(deathScreen || survivalDeathModal || arcadeKillModal);
-    if (!isAnyDeathActive) {
-      deathBufferUntilRef.current = 0;
-      setDeathBufferSeconds(0);
-      return;
-    }
-
-    // Set 1.0 second buffer deadline
-    deathBufferUntilRef.current = Date.now() + 1000;
-    setDeathBufferSeconds(1.0);
-
-    const intervalId = setInterval(() => {
-      const remainingMs = deathBufferUntilRef.current - Date.now();
-      if (remainingMs <= 0) {
-        setDeathBufferSeconds(0);
-        deathBufferUntilRef.current = 0;
-        clearInterval(intervalId);
-      } else {
-        setDeathBufferSeconds(Math.max(0, remainingMs / 1000));
-      }
-    }, 40);
-
-    return () => clearInterval(intervalId);
-  }, [deathScreen !== null, survivalDeathModal !== null, arcadeKillModal !== null]);
+  deathBufferSecondsRef.current = 0;
 
   // Ray animation progress
   const foldProgressRef = useRef<number>(0);
@@ -1529,6 +1561,7 @@ export const DimensionCanvas: React.FC<Props> = ({
   }>>([]);
   const topWavesSpawnedRef = useRef<number>(0);
   const bottomWavesSpawnedRef = useRef<number>(0);
+  const spawnCooldownRef = useRef<number>(0);
 
   // Sync internal state with external gameState updates (e.g. resets, dev cheat buttons)
   useEffect(() => {
@@ -1560,80 +1593,102 @@ export const DimensionCanvas: React.FC<Props> = ({
     setAct1Phase(nextPhase);
     phaseRef.current = nextPhase;
     if (gameState.gameMode) {
+      const modeChanged = prevGameModeRef.current !== gameState.gameMode;
+      prevGameModeRef.current = gameState.gameMode;
       setGameMode(gameState.gameMode);
       gameModeRef.current = gameState.gameMode;
-      if (gameState.gameMode === 'survival') {
+
+      if (modeChanged) {
+        isRoundEndedRef.current = false;
         pulsesRef.current = [];
-        survivalTimeRef.current = 0;
-        setSurvivalTime(0);
-        survivalBoss1SpawnedRef.current = false;
-        survivalBoss2SpawnedRef.current = false;
-        setActiveSurvivalBoss('none');
-        activeSurvivalBossRef.current = 'none';
-        setSurvivalDeathModal(null);
-        setDeathScreen(null);
-        deathScreenRef.current = null;
-        setStoryCompleteModal(null);
-        setSpeedrunCompleteModal(null);
-        soundEngine.setBossMusic(false);
-      } else if (gameState.gameMode === 'speedrun' && gameState.speedrunTime === 0) {
-        pulsesRef.current = [];
-        speedrunTimeRef.current = 0;
-        setSpeedrunTime(0);
-        speedrunRunsRef.current = 1;
-        setSpeedrunRuns(1);
-        setSpeedrunCompleteModal(null);
-        setDeathScreen(null);
-        deathScreenRef.current = null;
-        setStoryCompleteModal(null);
-        setSurvivalDeathModal(null);
-        soundEngine.setBossMusic(false);
-      } else if (gameState.gameMode === 'story') {
-        pulsesRef.current = [];
-        setStoryCompleteModal(null);
-        setDeathScreen(null);
-        deathScreenRef.current = null;
-        setSpeedrunCompleteModal(null);
-        setSurvivalDeathModal(null);
-        setArcadeKillModal(null);
-        setArcadeVictoryModal(null);
-        soundEngine.setBossMusic(false);
-        // If starting fresh story from 0D void with 0 materials, clear all active run harvests
-        if (
-          !gameState.act1PurchasedN &&
-          (gameState.act1Bits || 0) === 0 &&
-          gameState.resources.hertz === 0 &&
-          gameState.resources.volts === 0 &&
-          gameState.resources.baud === 0
-        ) {
-          runHzRef.current = 0;
-          runVoltsRef.current = 0;
-          runBaudRef.current = 0;
-          setRunHz(0);
-          setRunVolts(0);
-          setRunBaud(0);
+        if (gameState.gameMode === 'survival') {
+          survivalTimeRef.current = 0;
+          setSurvivalTime(0);
+          survivalBoss1SpawnedRef.current = false;
+          survivalBoss2SpawnedRef.current = false;
+          setActiveSurvivalBoss('none');
+          activeSurvivalBossRef.current = 'none';
+          setSurvivalDeathModal(null);
+          survivalDeathModalRef.current = null;
+          setDeathScreen(null);
+          deathScreenRef.current = null;
+          setStoryCompleteModal(null);
+          storyCompleteModalRef.current = null;
+          setSpeedrunCompleteModal(null);
+          speedrunCompleteModalRef.current = null;
+          setIntegrity(100);
+          integrityRef.current = 100;
+          setOvershields(5);
+          overshieldsRef.current = 5;
+          soundEngine.setBossMusic(false);
+        } else if (gameState.gameMode === 'speedrun') {
+          speedrunTimeRef.current = 0;
+          setSpeedrunTime(0);
+          speedrunRunsRef.current = 1;
+          setSpeedrunRuns(1);
+          setSpeedrunCompleteModal(null);
+          speedrunCompleteModalRef.current = null;
+          setDeathScreen(null);
+          deathScreenRef.current = null;
+          setStoryCompleteModal(null);
+          storyCompleteModalRef.current = null;
+          setSurvivalDeathModal(null);
+          survivalDeathModalRef.current = null;
+          setIntegrity(100);
+          integrityRef.current = 100;
+          setOvershields(0);
+          overshieldsRef.current = 0;
+          soundEngine.setBossMusic(false);
+        } else if (gameState.gameMode === 'story') {
+          setStoryCompleteModal(null);
+          storyCompleteModalRef.current = null;
+          setDeathScreen(null);
+          deathScreenRef.current = null;
+          setSpeedrunCompleteModal(null);
+          speedrunCompleteModalRef.current = null;
+          setSurvivalDeathModal(null);
+          survivalDeathModalRef.current = null;
+          setArcadeKillModal(null);
+          arcadeKillModalRef.current = null;
+          setArcadeVictoryModal(null);
+          arcadeVictoryModalRef.current = null;
+          setIntegrity(100);
+          integrityRef.current = 100;
+          setOvershields(0);
+          overshieldsRef.current = 0;
+          soundEngine.setBossMusic(false);
+        } else if (gameState.gameMode === 'arcade') {
+          arcadeTimeRef.current = 0;
+          setArcadeTime(0);
+          const initialLives = gameState.arcadeLives !== undefined ? gameState.arcadeLives : 1;
+          arcadeLivesRef.current = initialLives;
+          setArcadeLives(initialLives);
+          setStoryCompleteModal(null);
+          storyCompleteModalRef.current = null;
+          setDeathScreen(null);
+          deathScreenRef.current = null;
+          setSpeedrunCompleteModal(null);
+          speedrunCompleteModalRef.current = null;
+          setSurvivalDeathModal(null);
+          survivalDeathModalRef.current = null;
+          setArcadeKillModal(null);
+          arcadeKillModalRef.current = null;
+          setArcadeVictoryModal(null);
+          arcadeVictoryModalRef.current = null;
+          setIntegrity(100);
+          integrityRef.current = 100;
+          setOvershields(0);
+          overshieldsRef.current = 0;
+          soundEngine.setBossMusic(false);
         }
-      } else if (gameState.gameMode === 'arcade' && (gameState.arcadeTime === 0 || (!gameState.act1PurchasedN && (gameState.act1Bits || 0) === 0))) {
-        pulsesRef.current = [];
-        arcadeTimeRef.current = gameState.arcadeTime || 0;
-        setArcadeTime(arcadeTimeRef.current);
-        const initialLives = gameState.arcadeLives !== undefined
-          ? gameState.arcadeLives
-          : (gameState.act1PurchasedN && gameState.currentN >= 1) ? 2 : 1;
-        arcadeLivesRef.current = initialLives;
-        setArcadeLives(initialLives);
-        setStoryCompleteModal(null);
-        setDeathScreen(null);
-        deathScreenRef.current = null;
-        setSpeedrunCompleteModal(null);
-        setSurvivalDeathModal(null);
-        setArcadeKillModal(null);
-        setArcadeVictoryModal(null);
-        soundEngine.setBossMusic(false);
       }
     }
+    if (gameState.hp !== undefined && gameState.hp >= 100 && (integrityRef.current <= 0 || (!isRoundEndedRef.current && !deathScreenRef.current && integrityRef.current < 100))) {
+      setIntegrity(100);
+      integrityRef.current = 100;
+    }
     stateRef.current = gameState;
-  }, [gameState.act1Bits, gameState.act1PurchasedN, gameState.act1Phase, gameState.act1SubPart, gameState.act1Resolution, gameState.overshields, gameState.gameMode, gameState.currentN]);
+  }, [gameState.act1Bits, gameState.act1PurchasedN, gameState.act1Phase, gameState.act1SubPart, gameState.act1Resolution, gameState.overshields, gameState.gameMode, gameState.currentN, gameState.arcadeTime, gameState.totalRuns, gameState.hp]);
 
   // Refs for requestAnimationFrame loop
   const stateRef = useRef(gameState);
@@ -1648,18 +1703,19 @@ export const DimensionCanvas: React.FC<Props> = ({
   subPartRef.current = subPart;
   const resolutionRef = useRef(resolution);
   resolutionRef.current = resolution;
-  const overshieldsRef = useRef(overshields);
-  overshieldsRef.current = overshields;
-  const polarityRef = useRef(playerPolarity);
+  const overshieldsRef = useRef<number>(overshields);
+  const polarityRef = useRef<number>(playerPolarity);
   polarityRef.current = playerPolarity;
-  const integrityRef = useRef(integrity);
-  integrityRef.current = integrity;
-  const bossHpRef = useRef(bossHp);
-  bossHpRef.current = bossHp;
-  const boss2HpRef = useRef(boss2Hp);
-  boss2HpRef.current = boss2Hp;
-  const deathScreenRef = useRef(deathScreen);
+  const integrityRef = useRef<number>(100);
+  const bossHpRef = useRef<number>(bossHp);
+  const boss2HpRef = useRef<number>(boss2Hp);
+  const deathScreenRef = useRef<DeathScreenState | null>(deathScreen);
   deathScreenRef.current = deathScreen;
+  survivalDeathModalRef.current = survivalDeathModal;
+  arcadeKillModalRef.current = arcadeKillModal;
+  arcadeVictoryModalRef.current = arcadeVictoryModal;
+  speedrunCompleteModalRef.current = speedrunCompleteModal;
+  storyCompleteModalRef.current = storyCompleteModal;
 
   // Roguelite difficulty, scaling rhythm, and trough kill-wave tracking
   const runPulsesRef = useRef<number>(0);
@@ -1768,25 +1824,33 @@ export const DimensionCanvas: React.FC<Props> = ({
     const genresCycle: MusicGenre[] = ['slow_waltz', 'math_rock', 'arcade_techno'];
     const cycleIndex = Math.floor(pulseCount / 8) % 3;
 
-    if (bCount < 4) {
-      // Bits 0 (pre-N=1 void or N=1 initial), 1, 2, 3: EASY difficulty
-      const genre: MusicGenre = bCount === 3 ? 'math_rock' : 'slow_waltz';
-      return { genre, zone: 'easy' };
-    } else if (bCount < 8) {
-      // Bits 4, 5, 6, 7: MEDIUM difficulty
-      const genre: MusicGenre =
-        bCount === 4
-          ? 'arcade_techno'
-          : bCount === 5
-          ? 'slow_waltz'
-          : bCount === 6
-          ? 'math_rock'
-          : genresCycle[cycleIndex];
-      return { genre, zone: 'medium' };
+    if (bCount <= 2) {
+      // Bits 1 & 2: Waltz; easy difficulty; slow tempo
+      return { genre: 'slow_waltz', zone: 'easy' };
+    } else if (bCount === 3) {
+      // Bit 3: Math rock; easy difficulty; slow tempo
+      return { genre: 'math_rock', zone: 'easy' };
+    } else if (bCount === 4) {
+      // Bit 4: Arcade techno; easy difficulty; slow tempo
+      return { genre: 'arcade_techno', zone: 'easy' };
+    } else if (bCount === 5) {
+      // Bit 5: Cycle through (Waltz, math rock, arcade techno); easy difficulty; slow tempo
+      return { genre: genresCycle[cycleIndex], zone: 'easy' };
+    } else if (bCount === 6) {
+      // Bit 6: Waltz; Medium difficulty; Medium tempo
+      return { genre: 'slow_waltz', zone: 'medium' };
+    } else if (bCount === 7) {
+      // Bit 7: Math rock; Medium difficulty; Medium tempo
+      return { genre: 'math_rock', zone: 'medium' };
+    } else if (bCount === 8) {
+      // Bit 8: Arcade techno; Medium difficulty; Medium tempo
+      return { genre: 'arcade_techno', zone: 'medium' };
+    } else if (bCount === 9) {
+      // Bit 9: Cycle through (Waltz, math rock, arcade techno); Medium difficulty; Medium tempo (Boss 1)
+      return { genre: genresCycle[cycleIndex], zone: 'medium' };
     } else {
-      // Bit 8 unlocked and Bit 9 Boss 1: HARD difficulty
-      const genre: MusicGenre = bCount >= 9 ? genresCycle[cycleIndex] : 'arcade_techno';
-      return { genre, zone: 'hard' };
+      // Bit 10: Waltz; Fast difficulty; Fast tempo (Transcendence / Victory)
+      return { genre: 'slow_waltz', zone: 'hard' };
     }
   };
 
@@ -1798,13 +1862,11 @@ export const DimensionCanvas: React.FC<Props> = ({
     const totalV = stateRef.current.resources.volts + runVoltsRef.current;
     const totalBaud = stateRef.current.resources.baud + runBaudRef.current;
 
-    // 1. Auto-purchase N=1 if not yet owned and materials collected (2 Hz, 2 V)
+    // 1. Auto-purchase N=1 if not yet owned and materials collected (1 Hz, 0 V)
     if (!hasNRef.current) {
-      if (totalHz >= 2 && totalV >= 2) {
-        runHzRef.current = Math.max(0, runHzRef.current - 2);
-        runVoltsRef.current = Math.max(0, runVoltsRef.current - 2);
+      if (totalHz >= 1) {
+        runHzRef.current = Math.max(0, runHzRef.current - 1);
         setRunHz(runHzRef.current);
-        setRunVolts(runVoltsRef.current);
         setHasN(true);
         hasNRef.current = true;
         setAct1Phase('point');
@@ -1825,29 +1887,40 @@ export const DimensionCanvas: React.FC<Props> = ({
           arcadeLives: prev.gameMode === 'arcade' ? 2 : prev.arcadeLives,
           resources: {
             ...prev.resources,
-            hertz: Math.max(0, prev.resources.hertz - 2),
-            volts: Math.max(0, prev.resources.volts - 2),
+            hertz: Math.max(0, prev.resources.hertz - 1),
           },
         }));
         soundEngine.triggerNote('G4');
         soundEngine.playCadenceResolution();
         addCombatText('⚡ AUTO-COMPILED N = 1!', playerXRef.current, 190, '#33ff66');
-        onLogAction("AUTO-COMPILE: N=1 materialized!");
+        onLogAction("AUTO-COMPILE: N=1 materialized! (1 Hz)");
       }
       return;
     }
 
-    // 2. Auto-purchase Bit upgrades (Part 1: bits 0 to 9)
-    if (subPartRef.current === 1 && bitsRef.current < 10) {
-      const nextBitIdx = bitsRef.current;
-      const upgrade = BIT_GRAPHICS_UPGRADES[nextBitIdx];
-      if (upgrade && totalHz >= upgrade.costHz && totalV >= upgrade.costV) {
-        runHzRef.current = Math.max(0, runHzRef.current - upgrade.costHz);
-        runVoltsRef.current = Math.max(0, runVoltsRef.current - upgrade.costV);
+    // 2. Auto-purchase Bit upgrades (Part 1: bits 0 to 8 -> compiling bits 1 to 9)
+    // Bit 10 requires defeating Boss 1 (Corrupted Sovereign)
+    if (subPartRef.current === 1 && bitsRef.current < 9) {
+      const currentB = bitsRef.current;
+      const targetBit = currentB + 1;
+      const isArcade = gameModeRef.current === 'arcade';
+
+      const upgrade = BIT_GRAPHICS_UPGRADES[currentB];
+      let costHz = upgrade ? upgrade.costHz : 999;
+      let costV = upgrade ? upgrade.costV : 999;
+
+      if (isArcade && ARCADE_BIT_UNLOCK_COSTS[targetBit]) {
+        costHz = ARCADE_BIT_UNLOCK_COSTS[targetBit].costHz;
+        costV = ARCADE_BIT_UNLOCK_COSTS[targetBit].costV;
+      }
+
+      if (upgrade && totalHz >= costHz && totalV >= costV) {
+        runHzRef.current = Math.max(0, runHzRef.current - costHz);
+        runVoltsRef.current = Math.max(0, runVoltsRef.current - costV);
         setRunHz(runHzRef.current);
         setRunVolts(runVoltsRef.current);
 
-        const newBits = bitsRef.current + 1;
+        const newBits = currentB + 1;
         setBits(newBits);
         bitsRef.current = newBits;
 
@@ -1856,15 +1929,15 @@ export const DimensionCanvas: React.FC<Props> = ({
           act1Bits: newBits,
           resources: {
             ...prev.resources,
-            hertz: Math.max(0, prev.resources.hertz - upgrade.costHz),
-            volts: Math.max(0, prev.resources.volts - upgrade.costV),
+            hertz: Math.max(0, prev.resources.hertz - costHz),
+            volts: Math.max(0, prev.resources.volts - costV),
           },
         }));
 
         soundEngine.triggerNote('C5');
         soundEngine.playHitSound('quantum');
         addCombatText(`⚡ AUTO: ${upgrade.name}!`, playerXRef.current, 190, '#55ff99');
-        onLogAction(`AUTO-COMPILE: ${upgrade.name} compiled!`);
+        onLogAction(`AUTO-COMPILE: Bit ${newBits} compiled (${costHz} Hz, ${costV} V)!`);
 
         // In arcade mode, immediately apply new pacing from progression table
         if (gameModeRef.current === 'arcade') {
@@ -1879,14 +1952,15 @@ export const DimensionCanvas: React.FC<Props> = ({
           setAct1Phase('boss');
           phaseRef.current = 'boss';
           onUpdateState(prev => ({ ...prev, act1Phase: 'line_segment' }));
-          onLogAction("DESTINATION LOCKED BY CORRUPTED SOVEREIGN! Boss fight begins!");
+          onLogAction("DESTINATION LOCKED BY CORRUPTED SOVEREIGN! 48 Hz/V collected — Boss fight begins! Defeat Boss 1 to compile Bit 10!");
         }
       }
       return;
     }
 
     // 3. Auto-purchase Resolution upgrades (Part 2 ONLY: subPart === 2 && currentN === 2)
-    if (subPartRef.current === 2 && resolutionRef.current < 10) {
+    // Resolution 10 requires defeating Boss 2 (Fracture Sovereign)
+    if (subPartRef.current === 2 && resolutionRef.current < 9) {
       const nextResIdx = resolutionRef.current;
       const upgrade = RESOLUTION_UPGRADES[nextResIdx];
       if (
@@ -1936,12 +2010,21 @@ export const DimensionCanvas: React.FC<Props> = ({
 
   const handleStartStoryMode = () => {
     soundEngine.setBossMusic(false);
+    isRoundEndedRef.current = false;
     setGameMode('story');
     gameModeRef.current = 'story';
-    setSpeedrunCompleteModal(null);
-    setSurvivalDeathModal(null);
+    deathScreenRef.current = null;
     setDeathScreen(null);
+    speedrunCompleteModalRef.current = null;
+    setSpeedrunCompleteModal(null);
+    storyCompleteModalRef.current = null;
     setStoryCompleteModal(null);
+    survivalDeathModalRef.current = null;
+    setSurvivalDeathModal(null);
+    arcadeKillModalRef.current = null;
+    setArcadeKillModal(null);
+    arcadeVictoryModalRef.current = null;
+    setArcadeVictoryModal(null);
 
     // Reset player state to 0D Void from the start
     runHzRef.current = 0;
@@ -1962,6 +2045,7 @@ export const DimensionCanvas: React.FC<Props> = ({
     setAct1Phase('void');
     phaseRef.current = 'void';
     setIntegrity(100);
+    integrityRef.current = 100;
     setOvershields(0);
     overshieldsRef.current = 0;
 
@@ -1995,12 +2079,21 @@ export const DimensionCanvas: React.FC<Props> = ({
 
   const handleStartSpeedrunMode = () => {
     soundEngine.setBossMusic(false);
+    isRoundEndedRef.current = false;
     setGameMode('speedrun');
     gameModeRef.current = 'speedrun';
-    setSpeedrunCompleteModal(null);
-    setSurvivalDeathModal(null);
+    deathScreenRef.current = null;
     setDeathScreen(null);
+    speedrunCompleteModalRef.current = null;
+    setSpeedrunCompleteModal(null);
+    storyCompleteModalRef.current = null;
     setStoryCompleteModal(null);
+    survivalDeathModalRef.current = null;
+    setSurvivalDeathModal(null);
+    arcadeKillModalRef.current = null;
+    setArcadeKillModal(null);
+    arcadeVictoryModalRef.current = null;
+    setArcadeVictoryModal(null);
 
     // Clear player's reserves and place them back in the acoustic void
     runHzRef.current = 0;
@@ -2021,6 +2114,7 @@ export const DimensionCanvas: React.FC<Props> = ({
     setAct1Phase('void');
     phaseRef.current = 'void';
     setIntegrity(100);
+    integrityRef.current = 100;
     setOvershields(0);
     overshieldsRef.current = 0;
 
@@ -2059,12 +2153,22 @@ export const DimensionCanvas: React.FC<Props> = ({
 
   const handleStartSurvivalMode = () => {
     soundEngine.setBossMusic(false);
+    isRoundEndedRef.current = false;
     setGameMode('survival');
     gameModeRef.current = 'survival';
     setHasAttemptedSurvival(true);
-    setSurvivalDeathModal(null);
-    setSpeedrunCompleteModal(null);
+    deathScreenRef.current = null;
     setDeathScreen(null);
+    speedrunCompleteModalRef.current = null;
+    setSpeedrunCompleteModal(null);
+    storyCompleteModalRef.current = null;
+    setStoryCompleteModal(null);
+    survivalDeathModalRef.current = null;
+    setSurvivalDeathModal(null);
+    arcadeKillModalRef.current = null;
+    setArcadeKillModal(null);
+    arcadeVictoryModalRef.current = null;
+    setArcadeVictoryModal(null);
 
     // Survival mode starts the game with all unlocks:
     setHasN(true);
@@ -2078,6 +2182,7 @@ export const DimensionCanvas: React.FC<Props> = ({
     setOvershields(5);
     overshieldsRef.current = 5;
     setIntegrity(100);
+    integrityRef.current = 100;
 
     survivalTimeRef.current = 0;
     setSurvivalTime(0);
@@ -2111,16 +2216,23 @@ export const DimensionCanvas: React.FC<Props> = ({
 
   const handleStartArcadeMode = () => {
     soundEngine.setBossMusic(false);
+    isRoundEndedRef.current = false;
     setGameMode('arcade');
     gameModeRef.current = 'arcade';
-    setArcadeKillModal(null);
-    setArcadeVictoryModal(null);
-    setSpeedrunCompleteModal(null);
-    setSurvivalDeathModal(null);
+    deathScreenRef.current = null;
     setDeathScreen(null);
+    speedrunCompleteModalRef.current = null;
+    setSpeedrunCompleteModal(null);
+    storyCompleteModalRef.current = null;
     setStoryCompleteModal(null);
+    survivalDeathModalRef.current = null;
+    setSurvivalDeathModal(null);
+    arcadeKillModalRef.current = null;
+    setArcadeKillModal(null);
+    arcadeVictoryModalRef.current = null;
+    setArcadeVictoryModal(null);
 
-    // Arcade starts at start of story mode state (0D Void, 0 Bits) with 1 Life
+    // Arcade starts at Bit 1 with 1 Life and 0 harvested materials
     runHzRef.current = 0;
     runVoltsRef.current = 0;
     runBaudRef.current = 0;
@@ -2128,63 +2240,92 @@ export const DimensionCanvas: React.FC<Props> = ({
     setRunVolts(0);
     setRunBaud(0);
 
-    setHasN(false);
-    hasNRef.current = false;
-    setBits(0);
-    bitsRef.current = 0;
+    setHasN(true);
+    hasNRef.current = true;
+    setBits(1);
+    bitsRef.current = 1;
     setSubPart(1);
     subPartRef.current = 1;
     setResolution(0);
     resolutionRef.current = 0;
-    setAct1Phase('void');
-    phaseRef.current = 'void';
+    setAct1Phase('point');
+    phaseRef.current = 'point';
     setIntegrity(100);
+    integrityRef.current = 100;
     setOvershields(0);
     overshieldsRef.current = 0;
+    setPlayerPolarity(1);
+    polarityRef.current = 1;
 
     arcadeLivesRef.current = 1;
     setArcadeLives(1);
     arcadeTimeRef.current = 0;
     setArcadeTime(0);
+    arcadeTotalHzRef.current = 0;
 
     pulsesRef.current = [];
     playerXRef.current = 240;
     runPulsesRef.current = 0;
     runTimeRef.current = 0;
+    mathBurstStepRef.current = 0;
+    troughTrainActiveRef.current = false;
+    bossMissesRef.current = 0;
+    setBossHp(MAX_BOSS_1_HP);
+    bossHpRef.current = MAX_BOSS_1_HP;
+    setBoss2Hp(MAX_BOSS_2_HP);
+    boss2HpRef.current = MAX_BOSS_2_HP;
+    redErrorZonesRef.current = [];
+    combatTextsRef.current = [];
+    damageFlashRef.current = 0;
+    screenShakeRef.current = 0;
+    spawnCooldownRef.current = 0;
+
     currentGenreRef.current = 'slow_waltz';
     currentZoneRef.current = 'easy';
     soundEngine.setMusicPacing('slow_waltz', 'easy');
+    soundEngine.startBackgroundMusic();
 
     onUpdateState(prev => ({
       ...prev,
       gameMode: 'arcade',
-      act1PurchasedN: false,
-      currentN: 0,
-      act1Bits: 0,
+      totalRuns: (prev.totalRuns || 1) + 1,
+      act: 1,
+      currentN: 1,
+      act1PurchasedN: true,
+      act1Bits: 1,
       act1SubPart: 1,
       act1Resolution: 0,
-      act1Phase: 'void',
+      act1Phase: 'point',
       overshields: 0,
-      arcadeLives: 1,
+      polarity: 1,
+      hp: 100,
+      maxHp: 100,
+      deathScreen: null,
+      audioActive: true,
+      carrierActive: true,
       arcadeTime: 0,
-      resources: {
-        ...prev.resources,
-        hertz: 0,
-        volts: 0,
-        baud: 0,
-      },
+      arcadeLives: 1,
+      resources: { hertz: 0, volts: 0, baud: 0 },
     }));
 
-    onLogAction("🕹️ ARCADE MODE ENGAGED: Starting from 0D Void with 1 Life! Scales to Hard at 8 Bits. Second life unlocks at N=1!");
+    onLogAction("🕹️ ARCADE MODE ENGAGED: Starting from Bit 1 with 1 Life! Scales to Medium at Bit 6, Hard at Bit 10; defeat Corrupted Sovereign at Bit 9 for victory!");
   };
 
   // Death Screen Trigger (reads refs for 100% accurate resource banking)
   const triggerDeath = (reason: string) => {
-    if (deathScreenRef.current || survivalDeathModal || arcadeKillModal || arcadeVictoryModal) return;
+    if (
+      isRoundEndedRef.current ||
+      deathScreenRef.current ||
+      survivalDeathModalRef.current ||
+      arcadeKillModalRef.current ||
+      arcadeVictoryModalRef.current ||
+      speedrunCompleteModalRef.current ||
+      storyCompleteModalRef.current
+    ) return;
 
     soundEngine.setBossMusic(false);
-    bossImmunityCooldownRef.current = 0;
     pulsesRef.current = [];
+    redErrorZonesRef.current = [];
 
     const hzGained = runHzRef.current;
     const vGained = runVoltsRef.current;
@@ -2211,16 +2352,18 @@ export const DimensionCanvas: React.FC<Props> = ({
         arcadeLivesRef.current -= 1;
         setArcadeLives(1);
         setIntegrity(100);
+        integrityRef.current = 100;
         damageFlashRef.current = 1;
         screenShakeRef.current = 16;
         soundEngine.playHitSound('quantum');
         addCombatText('💔 LIFE EXPENDED! [1 LIFE REMAINING]', playerXRef.current, 190, '#ff4466');
         onLogAction(`⚠️ ARCADE DAMAGE: Blow absorbed! Life expended (1 LIFE REMAINING).`);
-        bossImmunityCooldownRef.current = 45;
+        redErrorZonesRef.current = [];
         return;
       }
 
       // Single life exhausted: Kill Screen!
+      isRoundEndedRef.current = true;
       const finalTime = arcadeTimeRef.current;
       const currentPart = subPartRef.current;
       const currentB = bitsRef.current;
@@ -2243,11 +2386,23 @@ export const DimensionCanvas: React.FC<Props> = ({
         }
       }
 
-      setArcadeKillModal({
+      const killModal = {
         stageName,
         stageNum,
         time: finalTime,
         reason,
+      };
+      arcadeKillModalRef.current = killModal;
+      setArcadeKillModal(killModal);
+
+      // Automatically save run record under unique 3-letter code
+      saveRunRecord('arcade', {
+        stageName,
+        stageNum,
+        bit: currentB,
+        duration: finalTime,
+        totalHz: arcadeTotalHzRef.current,
+        completed: false,
       });
 
       onUpdateState(prev => {
@@ -2277,6 +2432,7 @@ export const DimensionCanvas: React.FC<Props> = ({
 
     // Survival Mode Death: specialized summary screen
     if (gameModeRef.current === 'survival') {
+      isRoundEndedRef.current = true;
       const finalSurvTime = survivalTimeRef.current;
       const finalSurvRes = {
         hertz: survivalResourcesRef.current.hz + hzGained,
@@ -2284,13 +2440,21 @@ export const DimensionCanvas: React.FC<Props> = ({
         baud: survivalResourcesRef.current.baud + baudGained,
       };
       setHasAttemptedSurvival(true);
-      setSurvivalDeathModal({
+      const survModal = {
         time: finalSurvTime,
         resources: {
           hz: finalSurvRes.hertz,
           volts: finalSurvRes.volts,
           baud: finalSurvRes.baud,
         },
+      };
+      survivalDeathModalRef.current = survModal;
+      setSurvivalDeathModal(survModal);
+
+      // Automatically save survival record under unique 3-letter code
+      saveRunRecord('survival', {
+        survivalSeconds: finalSurvTime,
+        totalHz: finalSurvRes.hertz,
       });
       onUpdateState(prev => {
         const curBestTime = prev.highScores?.survivalBestTime || 0;
@@ -2310,6 +2474,9 @@ export const DimensionCanvas: React.FC<Props> = ({
       onLogAction(`SURVIVAL COLLAPSED after ${formatTime(finalSurvTime)}! Collected +${hzGained} Hz, +${vGained} V, +${baudGained} Flux.`);
       return;
     }
+
+    // Terminal death in Story or Speedrun
+    isRoundEndedRef.current = true;
 
     // Record cumulative runs attempted across player's campaign
     onUpdateState(prev => ({
@@ -2332,6 +2499,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       // Phase 2: Frame Rate / Resolution Progression (1 to 10)
       const nextResIdx = Math.min(RESOLUTION_UPGRADES.length - 1, resolutionRef.current);
       const upgrade = RESOLUTION_UPGRADES[nextResIdx];
+      const isBoss2Locked = resolutionRef.current >= 9;
       const screen: DeathScreenState = {
         active: true,
         collectedHz: hzGained,
@@ -2344,10 +2512,17 @@ export const DimensionCanvas: React.FC<Props> = ({
         currentResolution: resolutionRef.current,
         upgradeName: upgrade.name,
         upgradeDesc: `${upgrade.fps} · ${upgrade.desc}`,
-        message: `PERIMETER COLLAPSED.\nCOLLECTED: +${hzGained} HZ, +${vGained} V, +${baudGained} FLUX.\nBANKED: ${currentTotalHz} HZ, ${currentTotalV} V, ${currentTotalBaud} FLUX.\nCOMPILE ${upgrade.name}?`,
+        message: isBoss2Locked
+          ? `PERIMETER COLLAPSED.\nCOLLECTED: +${hzGained} HZ, +${vGained} V, +${baudGained} FLUX.\nBANKED: ${currentTotalHz} HZ, ${currentTotalV} V, ${currentTotalBaud} FLUX.\nFINAL OBJECTIVE: DEFEAT BOSS 2 (FRACTURE SOVEREIGN) TO COMPILE RESOLUTION 10 (240 FPS)!`
+          : `PERIMETER COLLAPSED.\nCOLLECTED: +${hzGained} HZ, +${vGained} V, +${baudGained} FLUX.\nBANKED: ${currentTotalHz} HZ, ${currentTotalV} V, ${currentTotalBaud} FLUX.\nCOMPILE ${upgrade.name}?`,
       };
+      deathScreenRef.current = screen;
       setDeathScreen(screen);
-      onLogAction(`Resolution perimeter collapsed. Collected +${hzGained} Hz, +${vGained} V, +${baudGained} Flux. Banked: ${currentTotalHz} Hz, ${currentTotalV} V, ${currentTotalBaud} Flux. Compile ${upgrade.name}?`);
+      onLogAction(
+        isBoss2Locked
+          ? `Resolution perimeter collapsed. Final objective: Defeat Boss 2 (Fracture Sovereign) to compile Resolution 10 (240 FPS)!`
+          : `Resolution perimeter collapsed. Collected +${hzGained} Hz, +${vGained} V, +${baudGained} Flux. Banked: ${currentTotalHz} Hz, ${currentTotalV} V, ${currentTotalBaud} Flux. Compile ${upgrade.name}?`
+      );
     } else if (!hasN) {
       // Phase 0: Asking to buy N (Equal cost: 2 Hz and 2 V)
       const screen: DeathScreenState = {
@@ -2362,12 +2537,14 @@ export const DimensionCanvas: React.FC<Props> = ({
         upgradeDesc: 'Compiles the single stationary white pixel in the void and displays N = 1 in the top left corner.',
         message: `OH NO YOU DIED.\nYOU COLLECTED ${hzGained} HZ AND ${vGained} V.\nYOU NOW HAVE ${currentTotalHz} HZ AND ${currentTotalV} V.\nSPEND 2 HZ AND 2 V FOR 1 N?`,
       };
+      deathScreenRef.current = screen;
       setDeathScreen(screen);
       onLogAction(`Entity dissolved in 0-bit void. Collected ${hzGained} HZ, ${vGained} V. Spend 2 HZ & 2 V for 1 N?`);
     } else {
       // Phase 1: Asking to buy next Bit (Equal cost: X Hz and X V)
       const nextBitIdx = Math.min(BIT_GRAPHICS_UPGRADES.length - 1, bitsRef.current);
       const upgrade = BIT_GRAPHICS_UPGRADES[nextBitIdx];
+      const isBoss1Locked = bitsRef.current >= 9;
       const screen: DeathScreenState = {
         active: true,
         collectedHz: hzGained,
@@ -2378,10 +2555,38 @@ export const DimensionCanvas: React.FC<Props> = ({
         target: 'bit',
         upgradeName: upgrade.name,
         upgradeDesc: upgrade.desc,
-        message: `OH NO YOU DIED.\nYOU COLLECTED ${hzGained} HZ AND ${vGained} V.\nYOU NOW HAVE ${currentTotalHz} HZ AND ${currentTotalV} V.\nSPEND ${upgrade.costHz} HZ AND ${upgrade.costV} V TO COMPILE ${upgrade.name}?\n"${upgrade.desc}"`,
+        message: isBoss1Locked
+          ? `DESTINATION BESIEGED.\nYOU NOW HAVE ${currentTotalHz} HZ AND ${currentTotalV} V.\nOBJECTIVE: DEFEAT BOSS 1 (CORRUPTED SOVEREIGN) TO COMPILE BIT 10!`
+          : `OH NO YOU DIED.\nYOU COLLECTED ${hzGained} HZ AND ${vGained} V.\nYOU NOW HAVE ${currentTotalHz} HZ AND ${currentTotalV} V.\nSPEND ${upgrade.costHz} HZ AND ${upgrade.costV} V TO COMPILE ${upgrade.name}?\n"${upgrade.desc}"`,
       };
+      deathScreenRef.current = screen;
       setDeathScreen(screen);
-      onLogAction(`Perimeter dissolved. Collected ${hzGained} HZ, ${vGained} V. Next upgrade: ${upgrade.name} (${upgrade.costHz} Hz, ${upgrade.costV} V).`);
+      onLogAction(
+        isBoss1Locked
+          ? `Destination besieged. Defeat Boss 1 (Corrupted Sovereign) to compile Bit 10 (Master Engine)!`
+          : `Perimeter dissolved. Collected ${hzGained} HZ, ${vGained} V. Next upgrade: ${upgrade.name} (${upgrade.costHz} Hz, ${upgrade.costV} V).`
+      );
+    }
+
+    if (gameModeRef.current === 'story' || !gameModeRef.current) {
+      let stageName = '0D Void';
+      let stageNum = 0;
+      if (subPartRef.current === 2) {
+        stageNum = 10 + resolutionRef.current;
+        const upgrade = RESOLUTION_UPGRADES[Math.min(RESOLUTION_UPGRADES.length - 1, Math.max(0, resolutionRef.current - 1))];
+        stageName = `Resolution ${resolutionRef.current} (${upgrade?.fps || '60 FPS'})`;
+      } else if (bitsRef.current > 0) {
+        stageNum = bitsRef.current;
+        const upgrade = BIT_GRAPHICS_UPGRADES[Math.min(BIT_GRAPHICS_UPGRADES.length - 1, Math.max(0, bitsRef.current - 1))];
+        stageName = `Bit ${bitsRef.current} (${upgrade?.name || 'Graphics'})`;
+      }
+      saveRunRecord('story', {
+        stageName,
+        stageNum,
+        bit: bitsRef.current,
+        resolution: resolutionRef.current,
+        completed: false,
+      });
     }
 
     pulsesRef.current = [];
@@ -2390,8 +2595,11 @@ export const DimensionCanvas: React.FC<Props> = ({
   // Handle Continue from Death Screen
   const handleContinueAfterDeath = () => {
     if (deathBufferSecondsRef.current > 0) return;
+    isRoundEndedRef.current = false;
     setDeathScreen(null);
+    deathScreenRef.current = null;
     setIntegrity(100);
+    integrityRef.current = 100;
     setOvershields(0);
     overshieldsRef.current = 0;
     runHzRef.current = 0;
@@ -2412,7 +2620,6 @@ export const DimensionCanvas: React.FC<Props> = ({
     soundEngine.setBossMusic(false);
     troughTrainActiveRef.current = false;
     bossMissesRef.current = 0;
-    bossImmunityCooldownRef.current = 0;
     setBossHp(MAX_BOSS_1_HP);
     setBoss2Hp(MAX_BOSS_2_HP);
     redErrorZonesRef.current = [];
@@ -2420,6 +2627,7 @@ export const DimensionCanvas: React.FC<Props> = ({
     bottomWavesSpawnedRef.current = 0;
     combatTextsRef.current = [];
     bossHitFlashRef.current = 0;
+    spawnCooldownRef.current = 0;
   };
 
   // Handle Purchasing N, Bit, or Resolution Upgrade
@@ -2455,6 +2663,11 @@ export const DimensionCanvas: React.FC<Props> = ({
         handleContinueAfterDeath();
       }
     } else if (deathScreen.target === 'bit') {
+      if (bits >= 9) {
+        // Bit 10 is earned strictly by defeating Boss 1 (Corrupted Sovereign)
+        handleContinueAfterDeath();
+        return;
+      }
       if (gameState.resources.hertz >= deathScreen.costHz && gameState.resources.volts >= deathScreen.costV) {
         const nextBits = Math.min(10, bits + 1);
         const upgrade = BIT_GRAPHICS_UPGRADES[nextBits - 1];
@@ -2499,6 +2712,11 @@ export const DimensionCanvas: React.FC<Props> = ({
         handleContinueAfterDeath();
       }
     } else if (deathScreen.target === 'resolution') {
+      if (resolution >= 9) {
+        // Resolution 10 is earned strictly by defeating Boss 2 (Fracture Sovereign)
+        handleContinueAfterDeath();
+        return;
+      }
       const costBaud = deathScreen.costBaud || 0;
       if (
         gameState.resources.baud >= costBaud &&
@@ -2572,7 +2790,6 @@ export const DimensionCanvas: React.FC<Props> = ({
     }
     setPlayerPolarity(next);
     polarityRef.current = next;
-    onUpdateState(s => ({ ...s, polarity: next }));
   };
 
   // Handle moving along the line in Part Two (for touch drag, keyboard keys, or mobile gestures)
@@ -2678,6 +2895,30 @@ export const DimensionCanvas: React.FC<Props> = ({
         return;
       }
 
+      // Arcade kill screen quick key: Enter / C to retry
+      if (arcadeKillModalRef.current) {
+        if (deathBufferSecondsRef.current > 0) {
+          e.preventDefault();
+          return;
+        }
+        if (e.key === 'Enter' || e.key === 'c' || e.key === 'C') {
+          handleStartArcadeMode();
+        }
+        return;
+      }
+
+      // Survival kill screen quick key: Enter / C to retry
+      if (survivalDeathModalRef.current) {
+        if (deathBufferSecondsRef.current > 0) {
+          e.preventDefault();
+          return;
+        }
+        if (e.key === 'Enter' || e.key === 'c' || e.key === 'C') {
+          handleStartSurvivalMode();
+        }
+        return;
+      }
+
       // Escape closes options modal first if open, or opens main menu on kill screen
       if (e.key === 'Escape') {
         if (isOptionsMenuOpenRef.current) {
@@ -2704,6 +2945,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       // SPACEBAR MECHANICS & POLARITY SHORTCUTS
       // Spacebar cycles the polarizer with kick drum sound effect (only if configured to spacebar, default)
       if (e.code === 'Space') {
+        if (e.repeat) return;
         const cycleInput = userSettingsRef.current?.controls?.cyclePolarizerInput ?? 'space';
         if (cycleInput === 'space') {
           e.preventDefault();
@@ -2779,12 +3021,13 @@ export const DimensionCanvas: React.FC<Props> = ({
     let animId: number;
     let lastTime = performance.now();
     let tickCount = 0;
-    let spawnCooldown = 0;
 
     const render = (time: number) => {
-      const dt = Math.min(0.1, (time - lastTime) / 1000);
+      const dt = lastTime === 0 ? 0.016 : Math.min(0.1, (time - lastTime) / 1000);
       lastTime = time;
       tickCount++;
+      const hasN = hasNRef.current;
+      const frameScale = Math.min(2.5, Math.max(0.1, dt * 60));
 
       const canvas = canvasRef.current;
       if (!canvas) {
@@ -2879,9 +3122,26 @@ export const DimensionCanvas: React.FC<Props> = ({
       const paddleHalf = 14;
 
         // ==========================================
-        // ENTITY SIMULATION (Active ONLY when alive and carrier is on)
+        // ENTITY SIMULATION (Active when alive)
         // ==========================================
-        if (!deathScreenRef.current && stateRef.current.carrierActive) {
+        const isRoundOver = Boolean(
+          isRoundEndedRef.current ||
+          deathScreenRef.current ||
+          deathScreen ||
+          survivalDeathModalRef.current ||
+          survivalDeathModal ||
+          arcadeKillModalRef.current ||
+          arcadeKillModal ||
+          arcadeVictoryModalRef.current ||
+          arcadeVictoryModal ||
+          speedrunCompleteModalRef.current ||
+          speedrunCompleteModal ||
+          storyCompleteModalRef.current ||
+          storyCompleteModal ||
+          integrityRef.current <= 0
+        );
+
+        if (!isRoundOver && !isMainMenuOpenRef.current && (hasN || stateRef.current.carrierActive)) {
           // In Part 1 Boss fight: boss pulls player toward right!
           if (phase === 'boss' && subPartRef.current === 1) {
             // If player incorrectly polarizes more than 1 projectile (bossMissesRef.current > 1),
@@ -2956,20 +3216,23 @@ export const DimensionCanvas: React.FC<Props> = ({
 
               if (!zone.isWarning) {
                 if (playerXRef.current >= zone.startX - 6 && playerXRef.current <= zone.startX + zone.width + 6) {
-                  screenShakeRef.current = 5;
-                  damageFlashRef.current = 0.4;
+                  screenShakeRef.current = 6;
+                  damageFlashRef.current = 0.5;
                   if (overshieldsRef.current > 0) {
-                    overshieldsRef.current = Math.max(0, overshieldsRef.current - dt * 2);
-                    setOvershields(Math.round(overshieldsRef.current));
-                  } else {
-                    const tickDmg = 15 * dt;
-                    const nextH = Math.max(0, integrityRef.current - tickDmg);
-                    integrityRef.current = nextH;
-                    setIntegrity(nextH);
-                    if (nextH <= 0) {
-                      triggerDeath("RED SPATIAL ERROR COLLAPSE: Stood in active hazard zone on the coordinate line!");
-                      break;
+                    overshieldsRef.current = Math.max(0, overshieldsRef.current - dt * 3);
+                    const intStacks = Math.floor(overshieldsRef.current);
+                    if (intStacks !== overshields) {
+                      setOvershields(intStacks);
                     }
+                  }
+                  // Spatial red error zones inflict direct, inescapable damage to integrity
+                  const tickDmg = 30 * dt;
+                  const nextH = Math.max(0, integrityRef.current - tickDmg);
+                  integrityRef.current = nextH;
+                  setIntegrity(nextH);
+                  if (nextH <= 0) {
+                    triggerDeath("RED SPATIAL ERROR COLLAPSE: Stood in active hazard zone on the coordinate line!");
+                    break;
                   }
                 }
               }
@@ -2985,33 +3248,31 @@ export const DimensionCanvas: React.FC<Props> = ({
           // Progression order: Slow Waltz -> Math Rock -> Arcade Techno
           // Speed Zones: Easy -> Medium -> Hard -> Crazy -> Difficult
           // ==========================================
-          runTimeRef.current += dt;
+          if (!isRoundOver) {
+            runTimeRef.current += dt;
 
-          if (gameModeRef.current === 'speedrun' && !speedrunCompleteModal) {
-            speedrunTimeRef.current += dt;
-            checkAutoPurchases();
-            if (tickCount % 6 === 0) {
-              setSpeedrunTime(speedrunTimeRef.current);
+            if (gameModeRef.current === 'speedrun' && !speedrunCompleteModalRef.current && !speedrunCompleteModal && !deathScreenRef.current && !deathScreen) {
+              speedrunTimeRef.current += dt;
+              checkAutoPurchases();
+              if (tickCount % 6 === 0) {
+                setSpeedrunTime(speedrunTimeRef.current);
+              }
             }
-          }
 
-          if (gameModeRef.current === 'survival' && !survivalDeathModal) {
-            survivalTimeRef.current += dt;
-            if (tickCount % 6 === 0) {
-              setSurvivalTime(survivalTimeRef.current);
+            if (gameModeRef.current === 'survival' && !survivalDeathModalRef.current && !survivalDeathModal) {
+              survivalTimeRef.current += dt;
+              if (tickCount % 6 === 0) {
+                setSurvivalTime(survivalTimeRef.current);
+              }
             }
-          }
 
-          if (gameModeRef.current === 'arcade' && !arcadeKillModal && !arcadeVictoryModal) {
-            arcadeTimeRef.current += dt;
-            checkAutoPurchases();
-            if (tickCount % 6 === 0) {
-              setArcadeTime(arcadeTimeRef.current);
+            if (gameModeRef.current === 'arcade' && !arcadeKillModalRef.current && !arcadeVictoryModalRef.current && !arcadeKillModal && !arcadeVictoryModal) {
+              arcadeTimeRef.current += dt;
+              checkAutoPurchases();
+              if (tickCount % 6 === 0) {
+                setArcadeTime(arcadeTimeRef.current);
+              }
             }
-          }
-
-          if (bossImmunityCooldownRef.current > 0) {
-            bossImmunityCooldownRef.current = Math.max(0, bossImmunityCooldownRef.current - dt);
           }
 
           const currentPulses = runPulsesRef.current;
@@ -3153,7 +3414,7 @@ export const DimensionCanvas: React.FC<Props> = ({
             }
           }
 
-          spawnCooldown++;
+          spawnCooldownRef.current += frameScale;
 
           // Dynamic spawn cooldown and pulse velocity tailored to Zone & Genre:
           let cooldownThreshold = 74;
@@ -3221,8 +3482,8 @@ export const DimensionCanvas: React.FC<Props> = ({
             pulseSpeed = -8.5;
           }
 
-          if (spawnCooldown >= cooldownThreshold) {
-            spawnCooldown = 0;
+          if (spawnCooldownRef.current >= cooldownThreshold) {
+            spawnCooldownRef.current = 0;
             runPulsesRef.current++;
             mathBurstStepRef.current++;
 
@@ -3739,6 +4000,29 @@ export const DimensionCanvas: React.FC<Props> = ({
           ctx.strokeRect(playerX - sqSize / 2, TRACE_Y - sqSize / 2, sqSize, sqSize);
           ctx.shadowBlur = 0;
 
+          // Floating Player Integrity Mini-Gauge (immediate visual hit confirmation on avatar)
+          const pCurHp = Math.max(0, integrityRef.current);
+          const pRndHp = Math.round(pCurHp);
+          if (currentBits >= 1 && (pRndHp < 100 || overshieldsRef.current > 0)) {
+            const pHpW = 28;
+            const pHpH = 3;
+            const pHpX = playerX - pHpW / 2;
+            const pHpY = TRACE_Y + 12;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+            ctx.fillRect(pHpX - 1, pHpY - 1, pHpW + 2, pHpH + 2);
+            ctx.strokeStyle = '#222222';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(pHpX - 1, pHpY - 1, pHpW + 2, pHpH + 2);
+            const pFillW = Math.max(0, Math.min(pHpW, (pRndHp / 100) * pHpW));
+            ctx.fillStyle = pRndHp < 35 ? '#ff3355' : pRndHp < 65 ? '#ffaa33' : '#33ff66';
+            ctx.fillRect(pHpX, pHpY, pFillW, pHpH);
+            if (overshieldsRef.current > 0) {
+              ctx.fillStyle = '#00f0ff';
+              const pOsW = Math.min(pHpW, (overshieldsRef.current / 10) * pHpW);
+              ctx.fillRect(pHpX, pHpY - 1, pOsW, 1.5);
+            }
+          }
+
           // BIT 3+: Active Polarizer Reticle (Directional Vector Arrow above head)
           if (currentBits >= 3) {
             if (polarityRef.current === 1) {
@@ -3813,18 +4097,39 @@ export const DimensionCanvas: React.FC<Props> = ({
 
           // Part Two Telemetry HUD
           // Lower Telemetry HUD (Clean left-aligned HUD clear of joystick)
-          const roundedIntegrity = Math.round(integrity);
+          const currentIntegrity = Math.max(0, integrityRef.current);
+          const roundedIntegrity = Math.round(currentIntegrity);
           const barFilled = Math.max(0, Math.min(10, Math.round(roundedIntegrity / 10)));
           const barStr = '[' + '█'.repeat(barFilled) + '░'.repeat(10 - barFilled) + ']';
           const hudX = 20;
           ctx.textAlign = 'left';
 
-          if (subPartRef.current === 2) {
-            ctx.fillStyle = roundedIntegrity < 35 ? '#ff3355' : roundedIntegrity < 65 ? '#ffaa33' : '#33ff66';
-            const shortPol = polarityRef.current === 1 ? '▲ UP' : polarityRef.current === -1 ? '▼ DOWN' : '■ NEUTRAL';
-            const sectorName = playerX < 240 ? 'ATTENUATION (1X)' : playerX < 430 ? 'HARMONIC SLIT (2X)' : 'EMITTER MAW (4X)';
-            const overshieldText = overshieldsRef.current > 0 ? ` | 🛡️ +${overshieldsRef.current * 20} HP` : '';
+          // Clean, responsive graphical player integrity gauge
+          const gaugeW = Math.min(130, w * 0.28);
+          const gaugeH = 6;
+          const gaugeY = h - 38;
+          ctx.fillStyle = 'rgba(5, 12, 10, 0.85)';
+          ctx.fillRect(hudX, gaugeY, gaugeW, gaugeH);
+          ctx.strokeStyle = roundedIntegrity < 35 ? '#ff3355' : roundedIntegrity < 65 ? '#ffaa33' : '#33ff66';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(hudX - 0.5, gaugeY - 0.5, gaugeW + 1, gaugeH + 1);
 
+          const hpFillW = Math.max(0, Math.min(gaugeW, (roundedIntegrity / 100) * gaugeW));
+          ctx.fillStyle = roundedIntegrity < 35 ? '#ff3355' : roundedIntegrity < 65 ? '#ffaa33' : '#33ff66';
+          ctx.fillRect(hudX, gaugeY, hpFillW, gaugeH);
+
+          if (overshieldsRef.current > 0) {
+            ctx.fillStyle = '#00f0ff';
+            const osFillW = Math.min(gaugeW, (overshieldsRef.current / 10) * gaugeW);
+            ctx.fillRect(hudX, gaugeY + gaugeH - 2, osFillW, 2);
+          }
+
+          const shortPol = polarityRef.current === 1 ? '▲ UP' : polarityRef.current === -1 ? '▼ DOWN' : '■ NEUTRAL';
+          const overshieldText = overshieldsRef.current > 0 ? ` | 🛡️ +${overshieldsRef.current * 20} HP` : '';
+          ctx.fillStyle = roundedIntegrity < 35 ? '#ff3355' : roundedIntegrity < 65 ? '#ffaa33' : '#33ff66';
+
+          if (subPartRef.current === 2) {
+            const sectorName = playerX < 240 ? 'ATTENUATION (1X)' : playerX < 430 ? 'HARMONIC SLIT (2X)' : 'EMITTER MAW (4X)';
             if (w < 640) {
               ctx.font = '10px monospace';
               ctx.fillText(`INTEGRITY: ${barStr} ${roundedIntegrity}%${overshieldText} | [${sectorName}] | ${shortPol}`, hudX, h - 26);
@@ -3838,19 +4143,20 @@ export const DimensionCanvas: React.FC<Props> = ({
               ctx.font = '10px monospace';
               ctx.fillText(`RUN HARVEST: +${runHzRef.current} Hz | +${runVoltsRef.current} V | +${runBaudRef.current} Flux  [Target: Res ${Math.min(10, resolutionRef.current + 1)}]`, hudX, h - 12);
             }
-          } else if (currentBits >= 6) {
-            ctx.fillStyle = roundedIntegrity < 35 ? '#ff3355' : roundedIntegrity < 65 ? '#ffaa33' : '#33ff66';
-            const shortPol = polarityRef.current === 1 ? '▲ UP' : polarityRef.current === -1 ? '▼ DOWN' : '■ NEUTRAL';
+          } else {
+            // Part 1 / Standard / Void: ALWAYS show barStr and roundedIntegrity%
+            const isArcade = gameModeRef.current === 'arcade';
             ctx.font = w < 640 ? '10px monospace' : '11px monospace';
-            ctx.fillText(`INTEGRITY: ${barStr} ${roundedIntegrity}% | ${stageDesc} | POL: [ ${shortPol} ]`, hudX, h - 26);
+            ctx.fillText(`INTEGRITY: ${barStr} ${roundedIntegrity}%${overshieldText} | ${stageDesc} | POL: [ ${shortPol} ]`, hudX, h - 26);
             ctx.fillStyle = '#88ffaa';
             ctx.font = w < 640 ? '9.5px monospace' : '10px monospace';
-            ctx.fillText(`RUN HARVEST: +${runHzRef.current} Hz | +${runVoltsRef.current} V  [Target: Bit ${Math.min(10, currentBits + 1)}]`, hudX, h - 12);
-          } else if (currentBits >= 1) {
-            ctx.fillStyle = roundedIntegrity < 35 ? '#ff3355' : '#33ff66';
-            ctx.font = '11px monospace';
-            const shortPol = polarityRef.current === 1 ? '▲ UP' : polarityRef.current === -1 ? '▼ DOWN' : '■ NEUTRAL';
-            ctx.fillText(`INTEGRITY: ${roundedIntegrity}% | ${stageDesc} | POL: [ ${shortPol} ]`, hudX, h - 14);
+            const targetB = Math.min(9, currentBits + 1);
+            const targetInfo = isArcade && phase === 'boss'
+              ? '[SOVEREIGN BOSS ENGAGED]'
+              : isArcade && ARCADE_BIT_UNLOCK_COSTS[targetB]
+              ? `[Target: Bit ${targetB} (${ARCADE_BIT_UNLOCK_COSTS[targetB].costHz} Hz / ${ARCADE_BIT_UNLOCK_COSTS[targetB].costV} V${targetB === 9 ? ' -> Boss' : ''})]`
+              : `[Target: Bit ${Math.min(10, currentBits + 1)}]`;
+            ctx.fillText(`RUN HARVEST: +${runHzRef.current} Hz | +${runVoltsRef.current} V  ${targetInfo}`, hudX, h - 12);
           }
         } else if (phase === 'ray') {
           // SUB-PHASE 3: BECOMING A RAY (90° FOLD)
@@ -3900,7 +4206,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         for (let i = pulsesRef.current.length - 1; i >= 0; i--) {
           const p = pulsesRef.current[i];
           if (!p) continue;
-          p.x += p.speed;
+          p.x += p.speed * frameScale;
 
           // Pulse hits Boss
           if (p.reflected && p.x >= TRACE_END) {
@@ -3931,13 +4237,27 @@ export const DimensionCanvas: React.FC<Props> = ({
                     addCombatText('✦ FRACTURE SOVEREIGN CONQUERED! ✦', TRACE_END, TRACE_Y - 30, '#ffe655');
                     survivalResourcesRef.current.baud += 100;
                   } else if (gameModeRef.current === 'speedrun') {
+                    isRoundEndedRef.current = true;
                     const finalTime = speedrunTimeRef.current;
                     const finalRuns = speedrunRunsRef.current;
                     setHasCompletedSpeedrun(true);
-                    setSpeedrunCompleteModal({
+                    const speedrunModal = {
                       time: finalTime,
                       runs: finalRuns,
+                    };
+                    speedrunCompleteModalRef.current = speedrunModal;
+                    setSpeedrunCompleteModal(speedrunModal);
+                    pulsesRef.current = [];
+                    redErrorZonesRef.current = [];
+
+                    // Automatically save Speedrun completion record under unique 3-letter code
+                    saveRunRecord('speedrun', {
+                      timeSeconds: finalTime,
+                      runs: finalRuns,
+                      completed: true,
+                      isVictory: true,
                     });
+
                     onUpdateState(prev => {
                       const curBest = prev.highScores?.speedrunBestTime;
                       const isNewBest = !curBest || finalTime < curBest;
@@ -3955,12 +4275,29 @@ export const DimensionCanvas: React.FC<Props> = ({
                     });
                     onLogAction(`✦ SPEEDRUN COMPLETED in ${formatTime(finalTime)} across ${finalRuns} runs! Select Speed Run or Survival Mode!`);
                   } else if (gameModeRef.current === 'arcade') {
+                    isRoundEndedRef.current = true;
                     const finalTime = arcadeTimeRef.current;
                     const lives = arcadeLivesRef.current;
-                    setArcadeVictoryModal({
+                    const arcModal = {
                       time: finalTime,
                       livesRemaining: lives,
+                    };
+                    arcadeVictoryModalRef.current = arcModal;
+                    setArcadeVictoryModal(arcModal);
+                    pulsesRef.current = [];
+                    redErrorZonesRef.current = [];
+
+                    // Automatically save Arcade victory record under unique 3-letter code
+                    saveRunRecord('arcade', {
+                      stageName: 'Res 10 Victory (240 FPS)',
+                      stageNum: 20,
+                      bit: 10,
+                      duration: finalTime,
+                      totalHz: arcadeTotalHzRef.current,
+                      completed: true,
+                      isVictory: true,
                     });
+
                     onUpdateState(prev => {
                       const curBestTime = prev.highScores?.arcadeBestTime || 0;
                       const isNewBest = !curBestTime || finalTime < curBestTime;
@@ -3980,10 +4317,27 @@ export const DimensionCanvas: React.FC<Props> = ({
                     onLogAction(`👑 ARCADE VICTORY! Conquered the escalation in ${formatTime(finalTime)} with ${lives} lives remaining! Recorded in Vault.`);
                   } else {
                     // Normal / Story Mode Final Boss Defeated!
+                    isRoundEndedRef.current = true;
                     const runsAttempted = (stateRef.current.totalRuns || 1);
-                    setStoryCompleteModal({
+
+                    const storyModal = {
                       totalRuns: runsAttempted,
+                    };
+                    storyCompleteModalRef.current = storyModal;
+                    setStoryCompleteModal(storyModal);
+                    pulsesRef.current = [];
+                    redErrorZonesRef.current = [];
+
+                    // Automatically save Story victory record under unique 3-letter code
+                    saveRunRecord('story', {
+                      stageName: 'Fracture Sovereign Defeated ★',
+                      stageNum: 20,
+                      bit: 10,
+                      resolution: 10,
+                      completed: true,
+                      isVictory: true,
                     });
+
                     onUpdateState(prev => ({
                       ...prev,
                       hasCompletedStory: true,
@@ -4004,13 +4358,6 @@ export const DimensionCanvas: React.FC<Props> = ({
 
             // Part One Boss (Phase === 'boss' or Survival Boss 1)
             if (phase === 'boss' || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
-              if (bossImmunityCooldownRef.current > 0) {
-                addSparks(TRACE_END, TRACE_Y, '#ff1144', 8);
-                addCombatText('DEFLECTED!', TRACE_END - 10, TRACE_Y - 32, '#ff4444');
-                pulsesRef.current.splice(i, 1);
-                continue;
-              }
-
               const dmg = 15;
               soundEngine.playBossDamageChord(1);
               bossHitFlashRef.current = 1;
@@ -4030,12 +4377,17 @@ export const DimensionCanvas: React.FC<Props> = ({
                   survivalResourcesRef.current.volts += 50;
                 } else if (gameModeRef.current === 'arcade') {
                   // Arcade mode ENDS at the first boss!
+                  isRoundEndedRef.current = true;
                   const finalTime = arcadeTimeRef.current;
                   const lives = arcadeLivesRef.current;
-                  setArcadeVictoryModal({
+                  const arcModal = {
                     time: finalTime,
                     livesRemaining: lives,
-                  });
+                  };
+                  arcadeVictoryModalRef.current = arcModal;
+                  setArcadeVictoryModal(arcModal);
+                  pulsesRef.current = [];
+                  redErrorZonesRef.current = [];
                   onUpdateState(prev => {
                     const curBestTime = prev.highScores?.arcadeBestTime || 0;
                     const isNewBest = !curBestTime || finalTime < curBestTime;
@@ -4051,6 +4403,16 @@ export const DimensionCanvas: React.FC<Props> = ({
                         arcadeBestTime: isNewBest ? finalTime : curBestTime,
                       },
                     };
+                  });
+                  arcadeTotalHzRef.current += 50;
+                  saveRunRecord('arcade', {
+                    stageName: 'Boss 1 Conquered ★',
+                    stageNum: 9.5,
+                    bit: 9,
+                    duration: finalTime,
+                    totalHz: arcadeTotalHzRef.current,
+                    completed: true,
+                    isVictory: true,
                   });
                   onLogAction(`👑 ARCADE VICTORY! Conquered Corrupted Sovereign in ${formatTime(finalTime)} with ${lives} lives remaining! Recorded in Vault.`);
                 } else {
@@ -4105,9 +4467,9 @@ export const DimensionCanvas: React.FC<Props> = ({
                 runHzRef.current += currentSectorYield;
                 setRunHz(runHzRef.current);
                 if (gameModeRef.current === 'survival') survivalResourcesRef.current.hz += currentSectorYield;
+                if (gameModeRef.current === 'arcade') arcadeTotalHzRef.current += currentSectorYield;
                 checkAutoPurchases();
                 bossMissesRef.current = 0;
-                bossImmunityCooldownRef.current = 0;
                 addSparks(playerX, TRACE_Y, '#55ff99', currentBits >= 8 ? 20 : 10);
                 p.reflected = true;
                 p.speed = Math.abs(p.speed) * 1.4;
@@ -4115,9 +4477,6 @@ export const DimensionCanvas: React.FC<Props> = ({
               } else {
                 if (phase === 'boss' || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
                   bossMissesRef.current++;
-                  if (bossMissesRef.current > 1) {
-                    bossImmunityCooldownRef.current = 1.2;
-                  }
                 }
                 soundEngine.playIncorrectHit('crest');
                 screenShakeRef.current = 10;
@@ -4155,7 +4514,6 @@ export const DimensionCanvas: React.FC<Props> = ({
                 if (gameModeRef.current === 'survival') survivalResourcesRef.current.volts += currentSectorYield;
                 checkAutoPurchases();
                 bossMissesRef.current = 0;
-                bossImmunityCooldownRef.current = 0;
                 addSparks(playerX, TRACE_Y, '#ff66aa', currentBits >= 8 ? 24 : 14);
                 p.reflected = true;
                 p.speed = Math.abs(p.speed) * 1.4;
@@ -4163,9 +4521,6 @@ export const DimensionCanvas: React.FC<Props> = ({
               } else {
                 if (phase === 'boss' || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
                   bossMissesRef.current++;
-                  if (bossMissesRef.current > 1) {
-                    bossImmunityCooldownRef.current = 1.2;
-                  }
                 }
                 soundEngine.playIncorrectHit('trough');
                 screenShakeRef.current = 10;
@@ -4204,12 +4559,13 @@ export const DimensionCanvas: React.FC<Props> = ({
                 if (gameModeRef.current === 'survival') survivalResourcesRef.current.baud += currentSectorYield;
                 checkAutoPurchases();
                 bossMissesRef.current = 0;
-                bossImmunityCooldownRef.current = 0;
                 setRunBaud(runBaudRef.current);
 
                 // Heal up to max 100 HP, or add Overshield if in Part Two (Res >= 1)
                 if (integrityRef.current < 100) {
-                  setIntegrity(h => Math.min(100, h + 40));
+                  const healed = Math.min(100, integrityRef.current + 40);
+                  integrityRef.current = healed;
+                  setIntegrity(healed);
                 } else if (subPartRef.current === 2 && resolutionRef.current >= 1) {
                   overshieldsRef.current = Math.min(10, overshieldsRef.current + 1);
                   setOvershields(overshieldsRef.current);
@@ -4263,7 +4619,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         for (let c = combatTextsRef.current.length - 1; c >= 0; c--) {
           const ct = combatTextsRef.current[c];
           if (!ct) continue;
-          ct.y += ct.vy;
+          ct.y += ct.vy * frameScale;
           ct.alpha -= dt * 0.9;
           if (ct.alpha <= 0) {
             combatTextsRef.current.splice(c, 1);
@@ -4303,32 +4659,34 @@ export const DimensionCanvas: React.FC<Props> = ({
           }
         }
 
-        // Active Game Mode HUD Indicators
-        if (gameModeRef.current === 'speedrun') {
-          ctx.save();
-          ctx.fillStyle = '#00f0ff';
-          ctx.font = 'bold 12px monospace';
-          const hudX = (subPartRef.current === 2 || (hasN && currentBits > 0)) ? 320 : 24;
-          const hudY = (hasN && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
-          ctx.fillText(`⚡ SPEED RUN: ${formatTime(speedrunTimeRef.current)}  [RUN #${speedrunRunsRef.current}]`, hudX, hudY);
-          ctx.restore();
-        } else if (gameModeRef.current === 'survival') {
-          ctx.save();
-          ctx.fillStyle = '#ff4466';
-          ctx.font = 'bold 12px monospace';
-          const hudX = (subPartRef.current === 2 || (hasN && currentBits > 0)) ? 320 : 24;
-          const hudY = (hasN && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
-          ctx.fillText(`⚔️ SURVIVAL: ${formatTime(survivalTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]`, hudX, hudY);
-          ctx.restore();
-        } else if (gameModeRef.current === 'arcade') {
-          ctx.save();
-          ctx.fillStyle = '#c084fc';
-          ctx.font = 'bold 12px monospace';
-          const hudX = (subPartRef.current === 2 || (hasN && currentBits > 0)) ? 320 : 24;
-          const hudY = (hasN && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
-          const livesStr = arcadeLivesRef.current === 2 ? '💖💖 2 LIVES' : '💖 1 LIFE';
-          ctx.fillText(`🕹️ ARCADE: ${formatTime(arcadeTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]  [${livesStr}]`, hudX, hudY);
-          ctx.restore();
+        // Active Game Mode HUD Indicators (only visible during active gameplay; hidden on kill screens / completion modals)
+        if (!isRoundOver && !deathScreen && !speedrunCompleteModal && !survivalDeathModal && !arcadeKillModal && !arcadeVictoryModal && !storyCompleteModal) {
+          if (gameModeRef.current === 'speedrun') {
+            ctx.save();
+            ctx.fillStyle = '#00f0ff';
+            ctx.font = 'bold 12px monospace';
+            const hudX = (subPartRef.current === 2 || (hasN && currentBits > 0)) ? 320 : 24;
+            const hudY = (hasN && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
+            ctx.fillText(`⚡ SPEED RUN: ${formatTime(speedrunTimeRef.current)}  [RUN #${speedrunRunsRef.current}]`, hudX, hudY);
+            ctx.restore();
+          } else if (gameModeRef.current === 'survival') {
+            ctx.save();
+            ctx.fillStyle = '#ff4466';
+            ctx.font = 'bold 12px monospace';
+            const hudX = (subPartRef.current === 2 || (hasN && currentBits > 0)) ? 320 : 24;
+            const hudY = (hasN && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
+            ctx.fillText(`⚔️ SURVIVAL: ${formatTime(survivalTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]`, hudX, hudY);
+            ctx.restore();
+          } else if (gameModeRef.current === 'arcade') {
+            ctx.save();
+            ctx.fillStyle = '#c084fc';
+            ctx.font = 'bold 12px monospace';
+            const hudX = (subPartRef.current === 2 || (hasN && currentBits > 0)) ? 320 : 24;
+            const hudY = (hasN && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
+            const livesStr = arcadeLivesRef.current === 2 ? '💖💖 2 LIVES' : '💖 1 LIFE';
+            ctx.fillText(`🕹️ ARCADE: ${formatTime(arcadeTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]  [${livesStr}]`, hudX, hudY);
+            ctx.restore();
+          }
         }
 
         if (phase === 'boss' || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
@@ -4341,9 +4699,9 @@ export const DimensionCanvas: React.FC<Props> = ({
       for (let i = particlesRef.current.length - 1; i >= 0; i--) {
         const pt = particlesRef.current[i];
         if (!pt) continue;
-        pt.x += pt.vx;
-        pt.y += pt.vy;
-        pt.alpha -= 0.035;
+        pt.x += pt.vx * frameScale;
+        pt.y += pt.vy * frameScale;
+        pt.alpha -= 0.035 * frameScale;
         if (pt.alpha <= 0) {
           particlesRef.current.splice(i, 1);
           continue;
@@ -4402,75 +4760,209 @@ export const DimensionCanvas: React.FC<Props> = ({
 
     animId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animId);
-  }, [hasN, bits, act1Phase, playerPolarity]);
+  }, []);
 
-  // Mobile Touch tracking for horizontal movement and quick taps
-  const touchStartXRef = useRef<number | null>(null);
-  const touchStartTimeRef = useRef<number>(0);
-  const playerStartXRef = useRef<number>(240);
+  // Mobile Dual-Thumb Multi-Touch System:
+  // - Left half of canvas/screen: smooth horizontal slide mobility (tracking active slide touch identifier)
+  // - Right half of canvas/screen: tap to cycle polarizer (Crest / Trough / Neutral)
+  // Both actions operate simultaneously without interfering with one another.
+  interface ActiveTouchState {
+    id: number;
+    startX: number;
+    startY: number;
+    startTime: number;
+    lastX: number;
+    lastY: number;
+    zone: 'left' | 'right';
+    moved: boolean;
+  }
+
+  const activeTouchesRef = useRef<Map<number, ActiveTouchState>>(new Map());
+  const slideTouchIdRef = useRef<number | null>(null);
+  const slideLastClientXRef = useRef<number>(0);
 
   const handleCanvasTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
-    if (isMainMenuOpenRef.current || deathScreenRef.current || deathBufferSecondsRef.current > 0) return;
+    if (
+      isMainMenuOpenRef.current ||
+      deathScreenRef.current ||
+      deathBufferSecondsRef.current > 0 ||
+      isGlobalScoresOpen ||
+      isOptionsMenuOpen
+    ) {
+      return;
+    }
+
     lastTouchTimeRef.current = Date.now();
     if (!stateRef.current.carrierActive) {
       handleStartAudio();
     }
-    if (e.touches.length > 0) {
-      touchStartXRef.current = e.touches[0].clientX;
-      touchStartTimeRef.current = Date.now();
-      playerStartXRef.current = playerXRef.current;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const midX = rect.left + rect.width / 2;
+
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const touch = e.changedTouches[i];
+      const zone: 'left' | 'right' = touch.clientX < midX ? 'left' : 'right';
+
+      activeTouchesRef.current.set(touch.identifier, {
+        id: touch.identifier,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        startTime: Date.now(),
+        lastX: touch.clientX,
+        lastY: touch.clientY,
+        zone,
+        moved: false,
+      });
+
+      // Left thumb: if no slide touch is actively moving the player, assign this touch
+      if (zone === 'left') {
+        if (slideTouchIdRef.current === null) {
+          slideTouchIdRef.current = touch.identifier;
+          slideLastClientXRef.current = touch.clientX;
+        }
+      }
     }
   };
 
   const handleCanvasTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
-    if (isMainMenuOpenRef.current || deathBufferSecondsRef.current > 0) return;
-    if (subPartRef.current !== 2 || resolutionRef.current < 2) return;
-    if (touchStartXRef.current === null || e.touches.length === 0) return;
-    const clientX = e.touches[0].clientX;
-    const diff = clientX - touchStartXRef.current;
+    if (
+      isMainMenuOpenRef.current ||
+      deathScreenRef.current ||
+      deathBufferSecondsRef.current > 0 ||
+      isGlobalScoresOpen ||
+      isOptionsMenuOpen
+    ) {
+      return;
+    }
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const scale = canvas.width / rect.width;
+
+    const res = resolutionRef.current;
     const agility =
-      resolutionRef.current <= 2
+      res <= 2
         ? 0.08
-        : resolutionRef.current === 3
+        : res === 3
         ? 0.25
-        : resolutionRef.current === 4
+        : res === 4
         ? 0.55
-        : resolutionRef.current === 5
+        : res === 5
         ? 0.85
         : 1.0;
-    const deltaCanvas = diff * scale * agility;
-    const TRACE_START = 80;
-    const TRACE_END = 920 - 80;
-    playerXRef.current = Math.max(
-      TRACE_START + 10,
-      Math.min(TRACE_END - 20, playerStartXRef.current + deltaCanvas)
-    );
+
+    const canMove =
+      (subPartRef.current === 2 && res >= 2) ||
+      (gameModeRef.current === 'survival' && res >= 2);
+
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const touch = e.changedTouches[i];
+      const tracked = activeTouchesRef.current.get(touch.identifier);
+      if (tracked) {
+        const dist = Math.hypot(touch.clientX - tracked.startX, touch.clientY - tracked.startY);
+        if (dist > 18) {
+          tracked.moved = true;
+        }
+        tracked.lastX = touch.clientX;
+        tracked.lastY = touch.clientY;
+      }
+
+      // If this is the active sliding touch and 1D mobility is unlocked, slide player trace
+      if (canMove && touch.identifier === slideTouchIdRef.current) {
+        const deltaClientX = touch.clientX - slideLastClientXRef.current;
+        slideLastClientXRef.current = touch.clientX;
+
+        const deltaCanvas = deltaClientX * scale * agility;
+        const TRACE_START = 80;
+        const TRACE_END = 920 - 80;
+        playerXRef.current = Math.max(
+          TRACE_START + 10,
+          Math.min(TRACE_END - 20, playerXRef.current + deltaCanvas)
+        );
+      }
+    }
   };
 
   const handleCanvasTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
     lastTouchTimeRef.current = Date.now();
-    if (isMainMenuOpenRef.current || deathBufferSecondsRef.current > 0) return;
-    if (touchStartXRef.current !== null && e.changedTouches.length > 0) {
-      const touch = e.changedTouches[0];
-      const diffX = Math.abs(touch.clientX - touchStartXRef.current);
-      const duration = Date.now() - touchStartTimeRef.current;
+    if (
+      isMainMenuOpenRef.current ||
+      deathScreenRef.current ||
+      deathBufferSecondsRef.current > 0 ||
+      isGlobalScoresOpen ||
+      isOptionsMenuOpen
+    ) {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        activeTouchesRef.current.delete(e.changedTouches[i].identifier);
+      }
+      if (activeTouchesRef.current.size === 0) {
+        slideTouchIdRef.current = null;
+      }
+      return;
+    }
 
-      const canvas = canvasRef.current;
-      const rect = canvas ? canvas.getBoundingClientRect() : null;
-      const midX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
-      const isRightHalf = touch.clientX >= midX;
+    const canvas = canvasRef.current;
+    const rect = canvas ? canvas.getBoundingClientRect() : null;
+    const midX = rect ? rect.left + rect.width / 2 : window.innerWidth / 2;
 
-      // Quick tap (< 250ms and moved < 15px) strictly on the RIGHT half cycles the polarizer.
-      // Tapping the LEFT half NEVER cycles the polarizer!
-      if (isRightHalf && duration < 250 && diffX < 15 && !deathScreenRef.current && deathBufferSecondsRef.current <= 0) {
-        cyclePolarizer();
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const touch = e.changedTouches[i];
+      const tracked = activeTouchesRef.current.get(touch.identifier);
+
+      if (tracked) {
+        const duration = Date.now() - tracked.startTime;
+        const dist = Math.hypot(touch.clientX - tracked.startX, touch.clientY - tracked.startY);
+        const isRightHalf = touch.clientX >= midX || tracked.zone === 'right';
+
+        // Right thumb tap: quick tap (< 350ms and moved < 25px) cycles the polarizer.
+        // Runs completely independent of left thumb sliding!
+        if (
+          isRightHalf &&
+          duration < 350 &&
+          dist < 25 &&
+          !tracked.moved &&
+          !deathScreenRef.current &&
+          deathBufferSecondsRef.current <= 0
+        ) {
+          cyclePolarizer();
+        }
+
+        activeTouchesRef.current.delete(touch.identifier);
+      }
+
+      // If the sliding touch released, clear it or transfer to another touch on the left half if present
+      if (touch.identifier === slideTouchIdRef.current) {
+        slideTouchIdRef.current = null;
+        for (const [id, t] of activeTouchesRef.current.entries()) {
+          if (t.zone === 'left') {
+            slideTouchIdRef.current = id;
+            slideLastClientXRef.current = t.lastX;
+            break;
+          }
+        }
       }
     }
-    touchStartXRef.current = null;
+  };
+
+  const handleCanvasTouchCancel = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const touch = e.changedTouches[i];
+      activeTouchesRef.current.delete(touch.identifier);
+      if (touch.identifier === slideTouchIdRef.current) {
+        slideTouchIdRef.current = null;
+        for (const [id, t] of activeTouchesRef.current.entries()) {
+          if (t.zone === 'left') {
+            slideTouchIdRef.current = id;
+            slideLastClientXRef.current = t.lastX;
+            break;
+          }
+        }
+      }
+    }
   };
 
   return (
@@ -4498,6 +4990,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           onTouchStart={handleCanvasTouchStart}
           onTouchMove={handleCanvasTouchMove}
           onTouchEnd={handleCanvasTouchEnd}
+          onTouchCancel={handleCanvasTouchCancel}
         />
 
         {/* DEV TOOLS: NEARLY TRANSPARENT BUTTONS ON TOP OF TOP RIGHT QUADRANT */}
@@ -4548,27 +5041,6 @@ export const DimensionCanvas: React.FC<Props> = ({
           </div>
         )}
 
-        {/* INVISIBLE DRAG MOBILITY ZONE: BOTTOM-LEFT QUADRANT (Only active when Res >= 2 in Part 2) */}
-        {!isMainMenuOpen && !deathScreen && !speedrunCompleteModal && !survivalDeathModal && !arcadeKillModal && !arcadeVictoryModal && subPart === 2 && resolution >= 2 && (
-          <div
-            onPointerDown={handleDragPointerDown}
-            onPointerMove={handleDragPointerMove}
-            onPointerUp={handleDragPointerUp}
-            onPointerCancel={handleDragPointerUp}
-            aria-label="Bottom-left quadrant drag to control horizontal movement"
-            role="slider"
-            aria-valuenow={Math.round(joystickDeflection * 100)}
-            aria-valuemin={-100}
-            aria-valuemax={100}
-            style={{
-              left: 0,
-              top: '50%',
-              width: '50%',
-              height: '50%',
-            }}
-            className="absolute z-20 touch-none select-none pointer-events-auto cursor-ew-resize opacity-0"
-          />
-        )}
       </div>
 
 
@@ -4586,6 +5058,12 @@ export const DimensionCanvas: React.FC<Props> = ({
                 <div>• Available reserves: <span className="text-cyan-300 font-bold">{gameState.resources.hertz} HZ</span> and <span className="text-rose-300 font-bold">{gameState.resources.volts} V</span>.</div>
                 {deathScreen.collectedBaud !== undefined && deathScreen.collectedBaud > 0 && (
                   <div>• Directional Flux (Bd): <span className="text-amber-400 font-bold">+{deathScreen.collectedBaud} BD</span> | Total: <span className="text-amber-300 font-bold">{gameState.resources.baud} BD</span></div>
+                )}
+                {gameState.gameMode === 'speedrun' && (
+                  <div className="flex items-center justify-between text-xs text-cyan-300 font-mono py-0.5 border-t border-neutral-800">
+                    <span className="text-neutral-400 font-bold">⚡ Speedrun Timer (Frozen):</span>
+                    <span className="text-cyan-400 font-black font-mono text-sm">{formatTime(speedrunTimeRef.current)} [RUN #{speedrunRunsRef.current}]</span>
+                  </div>
                 )}
                 {deathScreen.target === 'bit' && (
                   <div className="text-[11px] text-emerald-400 border-t border-neutral-800 pt-1.5">
@@ -4611,7 +5089,13 @@ export const DimensionCanvas: React.FC<Props> = ({
                 {deathScreen.target === 'N' ? (
                   <span>SPEND {deathScreen.costHz} HZ AND {deathScreen.costV} V TO COMPILE N=1?</span>
                 ) : deathScreen.target === 'resolution' ? (
-                  <span>SPEND {deathScreen.costBaud} BD, {deathScreen.costHz} HZ & {deathScreen.costV} V TO COMPILE RESOLUTION {resolution + 1}?</span>
+                  resolution >= 9 ? (
+                    <span className="text-amber-300 font-mono">BOSS 2 ENCOUNTER: DEFEAT FRACTURE SOVEREIGN TO UNLOCK RESOLUTION 10 (240 FPS)</span>
+                  ) : (
+                    <span>SPEND {deathScreen.costBaud} BD, {deathScreen.costHz} HZ & {deathScreen.costV} V TO COMPILE RESOLUTION {resolution + 1}?</span>
+                  )
+                ) : bits >= 9 ? (
+                  <span className="text-amber-300 font-mono">BOSS 1 ENCOUNTER: DEFEAT CORRUPTED SOVEREIGN TO UNLOCK BIT 10</span>
                 ) : (
                   <span>SPEND {deathScreen.costHz} HZ AND {deathScreen.costV} V TO COMPILE? ({bits}/10 BITS)</span>
                 )}
@@ -4626,33 +5110,48 @@ export const DimensionCanvas: React.FC<Props> = ({
               )}
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-1">
-                <button
-                  onClick={handlePurchaseUpgrade}
-                  disabled={
-                    deathBufferSeconds > 0 ||
-                    (deathScreen.target === 'resolution' && gameState.resources.baud < (deathScreen.costBaud || 0)) ||
-                    (gameState.resources.hertz < deathScreen.costHz) ||
-                    (gameState.resources.volts < deathScreen.costV)
-                  }
-                  className={`w-full sm:w-auto px-5 py-3 font-bold rounded-lg text-xs transition-all shadow-lg flex items-center justify-center gap-1.5 font-mono ${
-                    deathBufferSeconds > 0
-                      ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-50'
-                      : ((deathScreen.target === 'resolution' && gameState.resources.baud < (deathScreen.costBaud || 0)) ||
-                         (gameState.resources.hertz < deathScreen.costHz) ||
-                         (gameState.resources.volts < deathScreen.costV))
-                      ? 'bg-neutral-800/80 text-neutral-500 border border-neutral-700/60 cursor-not-allowed opacity-60'
-                      : 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white active:scale-95 cursor-pointer shadow-blue-950/60 border border-blue-400/30'
-                  }`}
-                >
-                  <Sparkles className="w-4 h-4 text-blue-200" />
-                  <span>
-                    {deathScreen.target === 'N'
-                      ? 'COMPILE 1 N'
-                      : deathScreen.target === 'resolution'
-                      ? `COMPILE RES ${resolution + 1}`
-                      : `COMPILE BIT ${bits + 1}`}
-                  </span>
-                </button>
+                {((deathScreen.target === 'resolution' && resolution >= 9) || (deathScreen.target === 'bit' && bits >= 9)) ? (
+                  <button
+                    onClick={handleContinueAfterDeath}
+                    disabled={deathBufferSeconds > 0}
+                    className={`w-full sm:w-auto px-5 py-3 font-bold rounded-lg text-xs transition-all shadow-lg flex items-center justify-center gap-1.5 font-mono ${
+                      deathBufferSeconds > 0
+                        ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-50'
+                        : 'bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white active:scale-95 cursor-pointer shadow-amber-950/60 border border-amber-400/30'
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-200" />
+                    <span>{deathScreen.target === 'resolution' ? 'CHALLENGE BOSS 2' : 'CHALLENGE BOSS 1'}</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={handlePurchaseUpgrade}
+                    disabled={
+                      deathBufferSeconds > 0 ||
+                      (deathScreen.target === 'resolution' && gameState.resources.baud < (deathScreen.costBaud || 0)) ||
+                      (gameState.resources.hertz < deathScreen.costHz) ||
+                      (gameState.resources.volts < deathScreen.costV)
+                    }
+                    className={`w-full sm:w-auto px-5 py-3 font-bold rounded-lg text-xs transition-all shadow-lg flex items-center justify-center gap-1.5 font-mono ${
+                      deathBufferSeconds > 0
+                        ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-50'
+                        : ((deathScreen.target === 'resolution' && gameState.resources.baud < (deathScreen.costBaud || 0)) ||
+                           (gameState.resources.hertz < deathScreen.costHz) ||
+                           (gameState.resources.volts < deathScreen.costV))
+                        ? 'bg-neutral-800/80 text-neutral-500 border border-neutral-700/60 cursor-not-allowed opacity-60'
+                        : 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white active:scale-95 cursor-pointer shadow-blue-950/60 border border-blue-400/30'
+                    }`}
+                  >
+                    <Sparkles className="w-4 h-4 text-blue-200" />
+                    <span>
+                      {deathScreen.target === 'N'
+                        ? 'COMPILE 1 N'
+                        : deathScreen.target === 'resolution'
+                        ? `COMPILE RES ${resolution + 1}`
+                        : `COMPILE BIT ${bits + 1}`}
+                    </span>
+                  </button>
+                )}
 
                 <button
                   onClick={handleContinueAfterDeath}
@@ -4746,6 +5245,10 @@ export const DimensionCanvas: React.FC<Props> = ({
                 <p>
                   You have defeated the <strong className="text-amber-300">Fracture Sovereign</strong> and completed the full dimensional sequence of Game N!
                 </p>
+                <div className="p-2.5 rounded-lg bg-emerald-950/80 border border-emerald-500/60 text-[11px] text-emerald-300 font-mono text-center flex items-center justify-center gap-2">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>✦ UNLOCKED: <strong>SPEED RUN</strong> &amp; <strong>SURVIVAL</strong> modes are now available in the Main Menu!</span>
+                </div>
                 <div className="pt-2 border-t border-neutral-800 flex items-center justify-between text-xs">
                   <span className="text-neutral-400">Total Runs to Completion:</span>
                   <span className="text-lg font-black text-amber-400">{storyCompleteModal.totalRuns} RUNS</span>
@@ -4761,6 +5264,10 @@ export const DimensionCanvas: React.FC<Props> = ({
                   type="button"
                   onClick={() => {
                     setStoryCompleteModal(null);
+                    storyCompleteModalRef.current = null;
+                    isRoundEndedRef.current = false;
+                    integrityRef.current = 100;
+                    setIntegrity(100);
                     if (onOpenMainMenu) onOpenMainMenu();
                   }}
                   className="flex-1 py-3 px-5 bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-black font-mono font-black text-xs sm:text-sm rounded-xl transition-all shadow-lg shadow-emerald-950/50 cursor-pointer flex items-center justify-center gap-2"
@@ -4777,6 +5284,17 @@ export const DimensionCanvas: React.FC<Props> = ({
                   className="py-3 px-4 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 font-mono text-xs rounded-xl border border-neutral-700 transition-all cursor-pointer"
                 >
                   REPLAY RUN
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGlobalScoresTab('story');
+                    setIsGlobalScoresOpen(true);
+                  }}
+                  className="py-3 px-4 bg-amber-950/70 hover:bg-amber-900/90 text-amber-300 font-mono text-xs rounded-xl border border-amber-500/60 transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5"
+                >
+                  <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                  <span>SCORES</span>
                 </button>
                 <button
                   type="button"
@@ -4842,6 +5360,10 @@ export const DimensionCanvas: React.FC<Props> = ({
                     type="button"
                     onClick={() => {
                       setSpeedrunCompleteModal(null);
+                      speedrunCompleteModalRef.current = null;
+                      isRoundEndedRef.current = false;
+                      integrityRef.current = 100;
+                      setIntegrity(100);
                       onOpenMainMenu();
                     }}
                     className="py-3 px-4 bg-neutral-900 hover:bg-neutral-800 text-amber-300 font-mono text-xs rounded-xl border border-amber-600/60 transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5"
@@ -4850,6 +5372,17 @@ export const DimensionCanvas: React.FC<Props> = ({
                     <span>MAIN MENU</span>
                   </button>
                 )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGlobalScoresTab('speedrun');
+                    setIsGlobalScoresOpen(true);
+                  }}
+                  className="py-3 px-4 bg-amber-950/70 hover:bg-amber-900/90 text-amber-300 font-mono text-xs rounded-xl border border-amber-500/60 transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5"
+                >
+                  <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                  <span>SCORES</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setIsOptionsMenuOpen(true)}
@@ -4918,6 +5451,10 @@ export const DimensionCanvas: React.FC<Props> = ({
                   onClick={() => {
                     if (deathBufferSeconds > 0) return;
                     setSurvivalDeathModal(null);
+                    survivalDeathModalRef.current = null;
+                    isRoundEndedRef.current = false;
+                    integrityRef.current = 100;
+                    setIntegrity(100);
                     if (onOpenMainMenu) onOpenMainMenu();
                   }}
                   disabled={deathBufferSeconds > 0}
@@ -5002,6 +5539,10 @@ export const DimensionCanvas: React.FC<Props> = ({
                   onClick={() => {
                     if (deathBufferSeconds > 0) return;
                     setArcadeKillModal(null);
+                    arcadeKillModalRef.current = null;
+                    isRoundEndedRef.current = false;
+                    integrityRef.current = 100;
+                    setIntegrity(100);
                     if (onOpenMainMenu) onOpenMainMenu();
                   }}
                   disabled={deathBufferSeconds > 0}
@@ -5069,12 +5610,27 @@ export const DimensionCanvas: React.FC<Props> = ({
                   type="button"
                   onClick={() => {
                     setArcadeVictoryModal(null);
+                    arcadeVictoryModalRef.current = null;
+                    isRoundEndedRef.current = false;
+                    integrityRef.current = 100;
+                    setIntegrity(100);
                     if (onOpenMainMenu) onOpenMainMenu();
                   }}
                   className="py-3 px-4 bg-neutral-900 hover:bg-neutral-800 text-amber-300 font-mono text-xs rounded-xl border border-amber-600/60 transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>MAIN MENU</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGlobalScoresTab('arcade');
+                    setIsGlobalScoresOpen(true);
+                  }}
+                  className="py-3 px-4 bg-amber-950/70 hover:bg-amber-900/90 text-amber-300 font-mono text-xs rounded-xl border border-amber-500/60 transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5 shadow-sm"
+                >
+                  <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                  <span>SCORES</span>
                 </button>
                 <button
                   type="button"
@@ -5306,6 +5862,26 @@ export const DimensionCanvas: React.FC<Props> = ({
                         )}
                       </div>
                     )}
+
+                    {userSettingsRef.current?.controls?.devToolsEnabled && (
+                      <div className="pt-2 border-t border-neutral-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-mono font-bold text-neutral-200 block">Dev: Unlock All Modes</span>
+                          <span className="text-[10px] text-neutral-400 font-mono block">Bypasses Story completion lock for Survival & Speed Run</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleDevUnlockAllModes(!userSettingsRef.current?.controls?.unlockAllModesDev)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold border transition-all cursor-pointer ${
+                            userSettingsRef.current?.controls?.unlockAllModesDev
+                              ? 'bg-amber-950/80 border-amber-500 text-amber-300'
+                              : 'bg-neutral-800 border-neutral-700 text-neutral-400'
+                          }`}
+                        >
+                          {userSettingsRef.current?.controls?.unlockAllModesDev ? 'UNLOCKED' : 'LOCKED'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -5320,6 +5896,17 @@ export const DimensionCanvas: React.FC<Props> = ({
             </div>
           </div>
         )}
+
+        {/* GLOBAL LEADERBOARDS MODAL */}
+        <GlobalLeaderboardModal
+          isOpen={isGlobalScoresOpen}
+          onClose={() => {
+            setIsGlobalScoresOpen(false);
+            setHighlightInitials(undefined);
+          }}
+          initialTab={globalScoresTab}
+          highlightInitials={highlightInitials}
+        />
       </div>
   );
 };

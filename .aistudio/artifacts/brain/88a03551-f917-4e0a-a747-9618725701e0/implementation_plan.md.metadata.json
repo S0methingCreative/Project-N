@@ -1,6 +1,6 @@
 {
-  "summary": "Comprehensive audit and removal candidate chart for redundant and desktop-centric tooltips throughout the game, paired with an architectural mobile optimization strategy focusing on touch-first landscape ergonomics, gesture refinement, haptics, and responsive modal scaling.",
-  "updatedAt": "2026-10-13T04:20:30.147169611Z",
+  "summary": "Comprehensive implementation plan to restructure Game N high scores and First To Complete (FTC) system:\n1. Startup 3-letter initials code prompt with Firestore uniqueness checks and gear icon in Global High Scores to edit the code.\n2. Order tabs: Story, Arcade, Speed run, Survival.\n3. Replace filler scores with beatable AAA-JJJ defaults (99:99.9 for lowest time, 00:00.1 for longest time), and remove all score/points fields.\n4. Update Story leaderboards to track stage completed without time/score, with compact '⚡FTC: ???' banner.\n5. Update Arcade leaderboards to track stage completed, duration, and Total HZ, ranking by stage then duration, with compact '⚡FTC: ???' banner.\n6. Update Speed run leaderboards to label (fastest) and remove stage/score.\n7. Update Survival leaderboards to add Total HZ and remove stage/score.",
+  "updatedAt": "2026-10-14T04:06:06.845345740Z",
   "requestFeedback": true,
   "userFacing": true
 }

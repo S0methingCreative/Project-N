@@ -1,120 +1,160 @@
-# Mobile Optimization & In-Game Tooltip Audit Plan
+# High Scores & First To Complete (FTC) Modernization Plan
 
-Comprehensive review of in-game tooltips, desktop-specific hints, and instructional text, accompanied by a priority breakdown chart of high-potential candidates for removal and actionable mobile optimization strategies.
-
----
+Modernize the Game N High Scores Vault, First To Complete (FTC) challenge tracking, and player identity system to align with the provided specification and spreadsheet rules.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> Based on your preferences from Turn 1:
-> - **Primary Focus**: Clean touch-first HUD with minimal desktop hints.
-> - **Display Profile**: Landscape-optimized with edge-to-edge touch zones.
-> - **Actionable Scope**: Review and categorize redundant tooltips, strip desktop-biased control hints on mobile, and establish ergonomics for touchscreens.
-
-- **Confirmed Decision 1**: Eliminate desktop-only controls references (e.g. `[LMB]`, `[SPACEBAR]`, `[A/D]`, `Scroll Wheel`) on mobile touch viewports in favor of clean touch-centric prompts (e.g. "TAP TO BEGIN", touch gestures).
-- **Confirmed Decision 2**: Remove non-functional and dead tooltip attributes (such as `title` attributes on `pointer-events-none` DOM elements and desktop hover titles that never trigger on mobile).
-- **Confirmed Decision 3**: Optimize mobile canvas viewport ergonomics for landscape mode, adding touch gesture hardening (prevent pull-to-refresh/double-tap zoom), safe area inset padding, and tactile haptic feedback.
+> The following user preferences were confirmed during the interactive clarification phase:
+> - **Startup Prompt**: When a player boots the game without a stored 3-letter code, an opt-in/mandatory initials prompt will appear on the title screen so they are registered to compete in FTC challenges.
+> - **Code Uniqueness**: Enforced via real-time Firestore check against registered player handles and existing leaderboard documents to avoid duplicates.
+> - **FTC Banner Display**: In both Story and Arcade modes, the banner displays `⚡FTC: ???` initially, automatically updating to `⚡FTC: [INITIALS]` (e.g., `⚡FTC: NEO`) as soon as the first player clears the mode.
+> - **Zero Scores Discipline**: The legacy numeric points/score system is completely removed across all modes in favor of authentic game metrics (Stage Completed, Duration, and Total HZ).
 
 ---
 
-## 1. Tooltip & Hint Audit: Removal Candidates Chart
+## 1. Overview & Core Concept
 
-The following chart breaks down all identified tooltips, DOM `title` attributes, and control instructional labels across the application, ranking their potential for removal or mobile refactoring:
-
-| Location | Text / Tooltip Content | Current Issue & Redundancy | Recommendation | Removal Priority |
-| :--- | :--- | :--- | :--- | :---: |
-| **DimensionCanvas.tsx** (Lines 4234–4236) | `title="Attenuation Zone marker"`, `title="Harmonic Slit center marker"`, `title="Emitter Maw marker"` | Attached to internal DOM lines styled with `pointer-events-none`. Browser mouse events are suppressed, meaning **these tooltips never trigger for any user** on desktop or mobile. | **Remove completely**. Pure dead code attributes. | **HIGH (Dead Code)** |
-| **DimensionCanvas.tsx** (Line 4228) | `title="Dimensional Vector Joystick (Drag square knob or use A/D, ◀/▶, or Scroll Wheel to steer along line)"` | Mentions A/D, arrow keys, and scroll wheel—controls that do not exist on phones/tablets. Mobile users cannot hover to read title attributes. | **Remove title attribute**; the visual joystick with Part 2 telemetry HUD (`1D MOBILITY`) already explains its function visually without tooltip clutter. | **HIGH (Desktop Biased)** |
-| **DimensionCanvas.tsx** (Line 3078) | Canvas intro text: `"CLICK [LMB], TAP OR PRESS [SPACEBAR] TO ENGAGE SOUNDTRACK"` | Cluttered desktop jargon (`[LMB]`, `[SPACEBAR]`) confusing to smartphone users. Tap anywhere to start is the only action relevant on phones. | **Adaptive wording**: Render `"TAP ANYWHERE TO ENGAGE SOUNDTRACK"` on touch/mobile devices, retaining keyboard hint only on desktop. | **HIGH (UX Friction)** |
-| **MainMenuModal.tsx** (Line 817) | Footer: `"Controls: [LMB] Left Click or [SPACE] to cycle polarizer"` | Redundant on mobile where physical mouse buttons and spacebars are absent. The player cycles polarity by tapping anywhere on screen. | **Conditionally adapt or remove** on mobile viewports; display `"Tap anywhere or stick to steer"`. | **HIGH (Mobile Inaccurate)** |
-| **DimensionCanvas.tsx** (Lines 4181, 4194, 4207) | Dev tool buttons: `title="Dev Tool: +1 Bit"`, `title="Dev Tool: +1 Resolution"`, `title="Dev Tool: Pipeline Drawer"` | Native `title` tooltips do not work on touchscreens. Button text (`+1 BIT`, `+1 RES`, `PIPELINE`) is already self-describing. | **Remove title attributes** or convert to accessible `aria-label` without desktop hover dependency. | **MEDIUM (Redundant)** |
-| **MainMenuModal.tsx** (Line 420) | `title="Clear all materials (Hz, V, Bd) and restart story from 0D void"` | Native title hover tooltip on "RESTART STORY FROM VOID" button. Ineffective on touch devices; the button triggers a confirmation dialog that already explains consequences. | **Remove title attribute**. Modal confirmation handles explanation safely. | **MEDIUM (Redundant)** |
-| **App.tsx** (Line 544) | `title="Close drawer"` | Close drawer button uses an "X" icon with title hover text. | **Replace with explicit `aria-label="Close drawer"`** to maintain screen reader accessibility without relying on hover tooltips. | **LOW (Standard A11y)** |
-| **MainMenuModal.tsx** (Line 275) | `title={isAudioMuted ? 'Unmute slow waltz' : 'Mute audio'}` | Mute toggle button already has a clear visual sound wave / muted icon. | **Convert to `aria-label`** for accessibility, eliminating unnecessary browser hover delay tooltip. | **LOW (A11y Refactor)** |
+- **What It Does**: Unifies player identity under a unique 3-letter arcade code (e.g. `NEO`, `ADA`) and revamps the High Scores Vault across the 4 game modes in strict order: **Story**, **Arcade**, **Speed run**, **Survival**.
+- **Player Code Identity**: Saves all personal run completions and deaths under this code without prompting every single round. Players can modify their code anytime via a gear icon located immediately to the left of the "Refresh Leaderboards" button.
+- **Beat-Ready Filler Records**: Replaces legacy filler scores with obviously beatable records using codes `AAA` through `JJJ`, with `99:99.9` for modes where faster times win, and `00:00.1` / `0 HZ` where higher duration or collection wins.
+- **Mode-Specific Progression**:
+  - **Story**: Tracks furthest stage completed (`stageName`, `bit`, `resolution`), removing time and score. Includes a compact `⚡FTC: ???` banner alongside the live Firestore status indicator.
+  - **Arcade**: Tracks furthest stage completed, duration, and **Total HZ**, ranked by furthest stage reached then duration. Includes a compact `⚡FTC: ???` banner.
+  - **Speed run**: Ranks only full completions by fastest time (labeled `(fastest)`), removing stage and score.
+  - **Survival**: Ranks by longest time survived and tracks **Total HZ**, removing stage and score.
 
 ---
 
-## 2. Additional Mobile Optimization Recommendations
+## 2. User Experience & Visual Design
 
-To transform the game into a premier touch-first experience, the following optimizations are recommended across architecture, ergonomics, and responsiveness:
+### Key User Flows
 
-### A. Touch Target & Thumb-Zone Ergonomics
+1. **First-Time Launch (Initials Modal)**:
+   - When entering the game without a stored code, an ambient modal welcomes the player: `"ENTER YOUR 3-LETTER FTC CODE"`.
+   - 3 interactive letter slots with keyboard arrow/character typing and on-screen cycle buttons.
+   - Real-time Firestore uniqueness validation: displays instant error state if the code is already taken, or an emerald checkmark if available.
+   - Stored in persistent browser storage (`game_n_player_code`) and synced to Firestore's `players` collection.
+
+2. **Global High Scores Vault**:
+   - Header top bar:
+     - Title: `HIGH SCORES VAULT`
+     - Live indicator badge: `● LIVE FIRESTORE`
+     - **Mode FTC Banner**: A compact badge immediately to the right of the live indicator:
+       - Story: `⚡FTC: ???` or `⚡FTC: NEO`
+       - Arcade: `⚡FTC: ???` or `⚡FTC: ADA`
+     - Action buttons:
+       - **Gear Icon button** (`Settings`) positioned directly to the left of the refresh button.
+       - **Refresh Leaderboard button** (`RotateCw`).
+       - **Close button** (`X`).
+   - Tabs (strictly ordered left-to-right):
+     1. `Story`
+     2. `Arcade`
+     3. `Speed run`
+     4. `Survival`
+   - Table Columns per Mode:
+     - **Story**: `RANK` · `INITIALS` · `STAGE COMPLETED` · `DATE`
+     - **Arcade**: `RANK` · `INITIALS` · `STAGE REACHED` · `DURATION` · `TOTAL HZ` · `DATE`
+     - **Speed run**: `RANK` · `INITIALS` · `COMPLETION TIME (fastest)` · `RUNS` · `DATE`
+     - **Survival**: `RANK` · `INITIALS` · `TIME SURVIVED` · `TOTAL HZ` · `DATE`
+
+3. **Changing Player Code**:
+   - Clicking the gear icon in the High Scores modal opens a compact `"UPDATE FTC CODE"` modal.
+   - Player inputs a new 3-letter code. If unique, saves immediately, updates local storage, and refreshes the user's active code without disrupting game state.
+
+---
+
+## 3. Key Product Decisions & Trade-Offs
+
+- **No Points / Score System**: As requested, all legacy `"score"` fields are removed from the UI and sorting algorithms. Progression is measured solely by game-authentic milestones (Bit/Resolution stages, Duration, and Hertz collected).
+- **Filler Record Overhaul**: Replace high numbers with obviously placeholder benchmarks:
+  - Initials: `AAA`, `BBB`, `CCC`, `DDD`, `EEE`, `FFF`, `GGG`, `HHH`, `III`, `JJJ`.
+  - For lowest-time modes (Speedrun): time defaults to `99:99.9` (5999.9s).
+  - For longest-time modes (Survival / Arcade): duration defaults to `00:00.1` (0.1s) and `0 HZ`.
+  - For stage progression (Story / Arcade): stage defaults to lowest starting point (`0D Void` or `Bit 1`).
+- **FTC Challenge Banners**: Placed directly in the header adjacent to the live status indicator as a sleek inline pill-badge matching the size and shape of the Firestore indicator, keeping the layout compact and clean.
+
+---
+
+## 4. Technical Architecture & Data Strategy
+
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
-│  [N=2 HUD] [FPS]                            [DEV: +1B +1R PIPELINE]    │
-│  (Top 15% - Info & dev tools outside natural thumb rest)              │
-│────────────────────────────────────────────────────────────────────────│
-│                                                                        │
-│                    INTERACTIVE CANVAS WAVEFIELD                        │
-│             (Middle 50% - Visual focus, wave propagation)              │
-│                                                                        │
-│────────────────────────────────────────────────────────────────────────│
-│  [  JOYSTICK TRACK  ]                           [ UNIVERSAL TAP ZONE ] │
-│  (Bottom Left: Steer)                           (Bottom Right: Flip)   │
-│  (Bottom 35% - Natural thumb zone with 48px+ touch hitboxes)           │
+│                        App / DimensionCanvas                           │
+│  - Startup check for `localStorage['game_n_player_code']`             │
+│  - Prompts InitialsRegistrationModal if unassigned                    │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                    Firestore & Leaderboard Service                     │
+│  Collections:                                                          │
+│  - `players/{code}`: { code: string, createdAt: timestamp }            │
+│  - `leaderboards_meta/story_ftc`: { initials, completedAt, stage }    │
+│  - `leaderboards_meta/arcade_ftc`: { initials, completedAt, stage }   │
+│  - `leaderboards_story`: { initials, stageName, bit, res, stageNum }   │
+│  - `leaderboards_arcade`: { initials, stageName, stageNum, dur, hz }   │
+│  - `leaderboards_speedrun`: { initials, timeSeconds, runs, date }      │
+│  - `leaderboards_survival`: { initials, survivalSeconds, hz, date }    │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                      GlobalLeaderboardModal                            │
+│  - Gear button [Settings] -> EditCodeModal                             │
+│  - Tabs: [Story] [Arcade] [Speed run] [Survival]                       │
+│  - Header FTC banner: `⚡FTC: ???` / `⚡FTC: [CODE]`                   │
+│  - Beatable filler fallback (AAA-JJJ, 99:99.9 / 00:00.1)               │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-1. **Enlarged Touch Hitboxes for Dev Tools & Buttons**:
-   - Dev HUD buttons (`+1 BIT`, `+1 RES`, `PIPELINE`) are currently `px-2 py-1 text-[10px]` (~24px tall). On touchscreens, these should have minimum hitboxes of **$44 \times 44\text{px}$** (via transparent touch-padding or `touch-manipulation`) to prevent missed taps.
-2. **Joystick Touch Region Padding**:
-   - Extend the pointer capture target above and below the joystick track (`min-h-[48px]`), ensuring sweaty or fast-moving thumbs don't lose knob engagement during intense boss fights.
-3. **Dedicated Screen Tap Zones for Polarizer**:
-   - Explicitly support dual-thumb landscape play: **Left thumb steers joystick**, **Right half of screen taps to cycle polarity** seamlessly without finger collision.
+### Data Schema Changes
 
-### B. Mobile Viewport & Orientation Hardening
-1. **Landscape Aspect Ratio Optimization**:
-   - Canvas aspect ratio is designed around 920:440 (~2.09:1), which aligns with modern smartphone widescreen ratios (19.5:9 to 20:9 on iPhone and Android).
-   - Use CSS `object-fit: contain` and `viewport-fit=cover` so letterboxing is centered with zero horizontal/vertical scrolling.
-2. **Safe Area Inset Compliance**:
-   - Add `padding-left: max(12px, env(safe-area-inset-left))` and `padding-right: max(12px, env(safe-area-inset-right))` so HUD badges and joysticks are not obstructed by camera hole-punches, dynamic islands, or home gesture bars.
-3. **Gentle Orientation Guidance**:
-   - When detected in portrait mode on mobile devices (`@media (max-width: 640px) and (orientation: portrait)`), display a sleek non-blocking indicator: *"Rotate device to landscape for full audio-visual immersion"*.
+1. **`players` collection**:
+   - `id`: 3-character uppercase string (e.g. `NEO`).
+   - `code`: 3-character uppercase string.
+   - `createdAt`: server timestamp or ISO string.
+   - *Duplicate Prevention*: querying `doc(db, 'players', code)` or checking across collections guarantees instant 1-read uniqueness check.
 
-### C. Touch Gesture Hygiene & Haptic Feedback
-1. **Prevent Browser Rubber-Banding & Pull-to-Refresh**:
-   - Apply `overscroll-behavior: none` and `touch-action: none` to the game canvas container to prevent unwanted browser reloads or page elastic bounce while dragging the joystick or tapping.
-2. **Disable Double-Tap Zoom**:
-   - Ensure `touch-action: manipulation` or `touch-action: none` prevents iOS Safari and Android Chrome from triggering 300ms double-tap zoom delays.
-3. **Tactile Haptic Feedback**:
-   - Utilize `navigator.vibrate([15])` on polarity flips and `navigator.vibrate([30, 20, 30])` on taking damage or deflecting boss pulses, providing physical feedback on mobile without audible distraction.
+2. **`leaderboards_meta/story_ftc` & `leaderboards_meta/arcade_ftc`**:
+   - Stored in Firestore to track the immortal First To Complete challenge winners.
+   - If document does not exist, modal renders `⚡FTC: ???`.
 
-### D. Modal & Menu Landscape Responsiveness
-1. **Compact Modal Scaling on Short Viewports**:
-   - Mobile landscape screens typically have small vertical heights ($360\text{px}$–$390\text{px}$).
-   - Constrain modals (`DeathScreen`, `MainMenuModal`, `SpeedrunCompleteModal`) with `max-h-[88vh] overflow-y-auto` and tighter vertical padding (`py-2` to `py-3` on landscape mobile) so action buttons remain immediately accessible above the fold without requiring tedious scrolling.
+3. **`leaderboardService.ts` Updates**:
+   - Redefine interfaces (`StoryScoreEntry`, `ArcadeScoreEntry`, `SpeedrunScoreEntry`, `SurvivalScoreEntry`) removing all `score` attributes.
+   - Add `totalHz` to `ArcadeScoreEntry` and `SurvivalScoreEntry`.
+   - Update sorting functions:
+     - Story: sorted by `stageNum` descending.
+     - Arcade: sorted by `stageNum` descending, then `survivalSeconds` descending.
+     - Speedrun: sorted by `timeSeconds` ascending (fastest).
+     - Survival: sorted by `survivalSeconds` descending (longest).
+   - Update default/fallback seed arrays to use `AAA` through `JJJ` with clearly beatable statistics.
 
----
+4. **`GlobalLeaderboardModal.tsx` Updates**:
+   - Reorder tabs: `['story', 'arcade', 'speedrun', 'survival']`.
+   - Add Gear icon button (`Settings`) immediately left of `handleRefresh`.
+   - Render compact `⚡FTC: ???` banner next to the live Firestore status pill.
+   - Remove Score column; add Total HZ to Arcade and Survival.
+   - Label Speedrun duration as `COMPLETION TIME (fastest)`.
 
-## 3. Phased Implementation Roadmap
-
-### Phase 1: Tooltip & Desktop Hint Cleanup
-- Strip all redundant and dead `title` attributes identified in the audit chart.
-- Replace desktop keyboard/mouse phrasing on mobile viewports with touch-appropriate terminology (`"TAP ANYWHERE"` instead of `"[LMB] / [SPACE]"`).
-- Replace hover tooltips with accessible `aria-label` tags for screen readers.
-
-### Phase 2: Touch Ergonomics & Viewport Hardening
-- Expand touch targets for top HUD controls to $\ge 44\text{px}$.
-- Prevent browser overscroll, pull-to-refresh, and zoom gestures across the canvas.
-- Add safe-area inset cushioning for edge-to-edge mobile devices.
-- Refine landscape modal density for short viewports.
-
-### Phase 3: Tactile Refinements & Testing
-- Integrate subtle haptic pulses on touch interactions.
-- Verify touch response across responsive emulation (iPhone, iPad, Android).
+5. **`InitialsRegistrationModal.tsx` & Player Code Hook**:
+   - On game mount, if no player code exists, trigger the registration modal.
+   - Provide an edit modal triggered via the gear icon in the High Scores modal.
+   - Automatically prefill high score submissions with the player's registered code without manual re-entry on each death/victory.
 
 ---
 
-## 4. Verification & Testing Plan
+## 5. Execution Plan & Verification
 
-1. **DOM Audit Verification**:
-   - Confirm zero occurrences of dead `title` attributes on `pointer-events-none` elements.
-   - Verify that mobile touch views display clean, touch-first prompt copy without keyboard shortcuts.
-2. **Mobile Viewport Emulation**:
-   - Test in Chrome DevTools Device Mode on **iPhone 14/15/16 Pro** (Landscape, 393×852), **Pixel 7** (Landscape, 412×915), and **iPad** (Landscape, 810×1080).
-   - Ensure joystick and HUD buttons remain completely visible inside safe-area insets.
-3. **Modal Height & Scroll Testing**:
-   - Trigger the Death Screen and Main Menu in short landscape viewports ($375\text{px}$ height) to confirm no critical retry/continue buttons are clipped.
-4. **Codebase Compilation**:
-   - Run `compile_applet` and `lint_applet` to ensure pristine TypeScript compliance.
+1. **Service Layer**:
+   - Update `src/services/leaderboardService.ts` with revised schemas, beatable filler records, FTC tracking for both Story and Arcade, and player code verification functions.
+   - Update `firebase-blueprint.json` and `firestore.rules` to reflect the updated schema and permissions.
+2. **Components Layer**:
+   - Create/update `src/components/InitialsRegistrationModal.tsx` for initial onboarding and gear-triggered code changes.
+   - Update `src/components/GlobalLeaderboardModal.tsx` with reordered tabs, gear button, compact FTC banners, and revised table columns.
+   - Update `src/components/DimensionCanvas.tsx` to integrate the automatic code association and pass saved player code to score submissions.
+3. **Verification**:
+   - Verify TypeScript compilation via `npx tsc --noEmit`.
+   - Verify applet compilation via `compile_applet`.
+   - Verify that default fallback scores display `AAA`–`JJJ`, `99:99.9` for Speedrun, and `00:00.1` for Survival/Arcade.
+   - Confirm unique code registration, gear button editing, and clean tab ordering.

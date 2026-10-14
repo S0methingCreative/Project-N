@@ -14,10 +14,14 @@ import {
   VolumeX,
   Sliders,
   SlidersHorizontal,
+  Lock,
+  Unlock,
+  Crown,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { draw6BitBackground } from '../utils/backgroundArt';
 import { UserSettings, DEFAULT_USER_SETTINGS, saveUserSettings } from '../utils/settings';
+import { GlobalLeaderboardModal } from './GlobalLeaderboardModal';
 
 export interface StoryProgressSummary {
   hasSave: boolean;
@@ -65,6 +69,14 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   const [isDevCodePromptOpen, setIsDevCodePromptOpen] = useState<boolean>(false);
   const [devCodeInput, setDevCodeInput] = useState<string>('');
   const [devCodeError, setDevCodeError] = useState<string>('');
+  const [lockedNotice, setLockedNotice] = useState<string | null>(null);
+  const [isGlobalLeaderboardOpen, setIsGlobalLeaderboardOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!lockedNotice) return;
+    const timer = setTimeout(() => setLockedNotice(null), 3500);
+    return () => clearTimeout(timer);
+  }, [lockedNotice]);
 
   // Render authentic 6-Bit background image on full screen behind main menu
   useEffect(() => {
@@ -130,10 +142,56 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
     return `${mins}:${secs.toString().padStart(2, '0')}.${ms}`;
   };
 
+  const getStoryStageName = (): string => {
+    if (!storyProgress || !storyProgress.hasSave || !storyProgress.act1PurchasedN) {
+      return '0D VOID';
+    }
+    if (storyProgress.act1SubPart === 2) {
+      const res = storyProgress.act1Resolution || 0;
+      if (res >= 9) {
+        return `BOSS 2: FRACTURE SOVEREIGN (RES ${res})`;
+      }
+      return `RESOLUTION ${res}`;
+    }
+    const bits = storyProgress.act1Bits || 0;
+    if (bits >= 9) {
+      return 'BOSS 1: CORRUPTED SOVEREIGN (BIT 9)';
+    }
+    if (bits === 0) {
+      return 'N = 1 (POINT)';
+    }
+    return `BIT ${bits}`;
+  };
+
+  const isModeUnlocked = (mode: GameMode): boolean => {
+    if (mode === 'story' || mode === 'arcade') return true;
+    return Boolean(hasCompletedStory || userSettings.controls.unlockAllModesDev);
+  };
+
   const handleModeClick = (mode: GameMode, forceNew: boolean = false) => {
+    if (!isModeUnlocked(mode)) {
+      soundEngine.playIncorrectHit('packet');
+      setLockedNotice(
+        mode === 'speedrun'
+          ? '🔒 SPEED RUN LOCKED: Complete Story Mode (defeat the final Fracture Sovereign at 10/10 Res) to unlock!'
+          : '🔒 SURVIVAL LOCKED: Complete Story Mode (defeat the final Fracture Sovereign at 10/10 Res) to unlock!'
+      );
+      return;
+    }
     soundEngine.playCadenceResolution();
     onSelectMode(mode, forceNew);
     onClose();
+  };
+
+  const handleToggleDevUnlockAllModes = (unlock: boolean) => {
+    const updated: UserSettings = {
+      ...userSettings,
+      controls: {
+        ...userSettings.controls,
+        unlockAllModesDev: unlock,
+      },
+    };
+    updateSettingsHelper(updated);
   };
 
   const updateSettingsHelper = (newSettings: UserSettings) => {
@@ -334,6 +392,17 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
           </button>
 
           <button
+            onClick={() => {
+              soundEngine.playCadenceResolution();
+              setIsGlobalLeaderboardOpen(true);
+            }}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer bg-amber-950/70 hover:bg-amber-900/90 text-amber-300 border border-amber-500/60 shadow-sm shadow-amber-950/40"
+          >
+            <Crown className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            <span>GLOBAL TOP 10</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('options')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'options'
@@ -357,8 +426,8 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <h2 className="text-sm sm:text-base font-black text-white">
-                      STORY CHRONICLE
+                    <h2 className="text-sm sm:text-base font-black text-white uppercase tracking-wide">
+                      {getStoryStageName()}
                     </h2>
                     {storyProgress?.hasSave && (
                       <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700">
@@ -422,65 +491,55 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                     className="flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-mono font-black bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-black flex items-center justify-center gap-2 shadow-md shadow-emerald-950/60 transition-all cursor-pointer active:scale-95 min-h-[42px]"
                   >
                     <BookOpen className="w-4 h-4 text-black stroke-[2.5]" />
-                    <span>{storyProgress?.hasSave ? 'CONTINUE' : 'START'}</span>
+                    <span>{storyProgress?.hasSave ? 'LAUNCH' : 'START'}</span>
                   </button>
                 </div>
               )}
             </div>
 
+            {/* LOCKED NOTICE BANNER */}
+            {lockedNotice && (
+              <div className="p-2.5 rounded-lg bg-amber-950/90 border border-amber-500/80 text-amber-300 text-xs font-mono font-bold flex items-center justify-between gap-2 shadow-lg shadow-amber-950/50 animate-in fade-in slide-in-from-top-1">
+                <div className="flex items-center gap-2">
+                  <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>{lockedNotice}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLockedNotice(null)}
+                  className="text-amber-400 hover:text-white px-1 text-sm cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* DEV TOOL MODE LOCK OVERRIDE PILL (Only visible when Dev Tools enabled via 1111) */}
+            {userSettings.controls.devToolsEnabled && (
+              <div className="flex items-center justify-between px-1 py-0.5 rounded bg-amber-950/30 border border-amber-500/30 text-[10px] font-mono text-amber-300">
+                <span className="font-bold flex items-center gap-1">
+                  <SlidersHorizontal className="w-3 h-3 text-amber-400" />
+                  DEV OVERRIDE:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleToggleDevUnlockAllModes(!userSettings.controls.unlockAllModesDev)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all cursor-pointer flex items-center gap-1 ${
+                    userSettings.controls.unlockAllModesDev
+                      ? 'bg-amber-900/80 border-amber-400 text-amber-200'
+                      : 'bg-neutral-900 border-neutral-700 text-neutral-400 hover:text-neutral-200'
+                  }`}
+                  title="Dev Toggle: Unlock All Modes without story completion"
+                >
+                  {userSettings.controls.unlockAllModesDev ? <Unlock className="w-2.5 h-2.5" /> : <Lock className="w-2.5 h-2.5" />}
+                  <span>{userSettings.controls.unlockAllModesDev ? 'ALL MODES UNLOCKED (DEV)' : 'STORY LOCK ENFORCED'}</span>
+                </button>
+              </div>
+            )}
+
             {/* MINIMALIST 3 GAME MODES */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {/* SPEED RUN */}
-              <div
-                onClick={() => handleModeClick('speedrun')}
-                className="group p-2.5 rounded-xl bg-neutral-900/80 border border-cyan-500/40 hover:border-cyan-400 transition-all cursor-pointer flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-1 text-cyan-400 font-bold text-xs">
-                      <Zap className="w-3.5 h-3.5 text-cyan-400" />
-                      <span>SPEED RUN</span>
-                    </div>
-                    <span className="text-[9px] text-cyan-300 px-1 py-0.5 rounded bg-cyan-950 border border-cyan-800/80 font-bold">
-                      TIME ATTACK
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-neutral-300">
-                    Auto-compiler rush. Defeat sovereigns at maximum speed.
-                  </p>
-                </div>
-                <div className="mt-2 pt-1.5 border-t border-neutral-800 flex items-center justify-between text-[10px] text-cyan-400 font-bold">
-                  <span>Best: {highScores.speedrunBestTime ? formatTime(highScores.speedrunBestTime) : '--'}</span>
-                  <ArrowRight className="w-3 h-3" />
-                </div>
-              </div>
-
-              {/* SURVIVAL */}
-              <div
-                onClick={() => handleModeClick('survival')}
-                className="group p-2.5 rounded-xl bg-neutral-900/80 border border-rose-500/40 hover:border-rose-400 transition-all cursor-pointer flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-1 text-rose-400 font-bold text-xs">
-                      <Flame className="w-3.5 h-3.5 text-rose-400" />
-                      <span>SURVIVAL</span>
-                    </div>
-                    <span className="text-[9px] text-rose-300 px-1 py-0.5 rounded bg-rose-950 border border-rose-800/80 font-bold">
-                      ENDLESS
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-neutral-300">
-                    240 FPS. Endless bosses, rhythm surges, and error spikes.
-                  </p>
-                </div>
-                <div className="mt-2 pt-1.5 border-t border-neutral-800 flex items-center justify-between text-[10px] text-rose-400 font-bold">
-                  <span>Best: {highScores.survivalBestTime ? formatTime(highScores.survivalBestTime) : '--'}</span>
-                  <ArrowRight className="w-3 h-3" />
-                </div>
-              </div>
-
-              {/* ARCADE */}
+              {/* 1. ARCADE (First from the left) */}
               <div
                 onClick={() => handleModeClick('arcade')}
                 className="group p-2.5 rounded-xl bg-neutral-900/80 border border-purple-500/40 hover:border-purple-400 transition-all cursor-pointer flex flex-col justify-between"
@@ -492,57 +551,177 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                       <span>ARCADE</span>
                     </div>
                     <span className="text-[9px] text-purple-300 px-1 py-0.5 rounded bg-purple-950 border border-purple-800/80 font-bold">
-                      1-2 LIVES
+                      1 LIFE
                     </span>
                   </div>
                   <p className="text-[10px] text-neutral-300">
-                    Starts at 0D Void with 1 Life (+1 at N=1). Scales to Hard at 8 Bits; ends at Boss 1.
+                    Starts at Bit 1 with 1 Life. Scales to Medium at Bit 6, Hard at Bit 10; Boss 1 at Bit 9.
                   </p>
                 </div>
                 <div className="mt-2 pt-1.5 border-t border-neutral-800 flex items-center justify-between text-[10px] text-purple-400 font-bold">
-                  <span className="truncate max-w-[110px]">Best: {highScores.arcadeBestStage ? `${highScores.arcadeBestStage}` : '0D Void'}</span>
+                  <span className="truncate max-w-[110px]">Best: {highScores.arcadeBestStage ? `${highScores.arcadeBestStage}` : 'Bit 1'}</span>
                   <ArrowRight className="w-3 h-3" />
                 </div>
               </div>
+
+              {/* 2. SPEED RUN (Middle) */}
+              {(() => {
+                const isUnlocked = isModeUnlocked('speedrun');
+                return (
+                  <div
+                    onClick={() => handleModeClick('speedrun')}
+                    className={`group p-2.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
+                      isUnlocked
+                        ? 'bg-neutral-900/80 border-cyan-500/40 hover:border-cyan-400 hover:bg-neutral-900'
+                        : 'bg-neutral-950/80 border-neutral-800/80 opacity-75 hover:opacity-100 hover:border-amber-500/50'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className={`flex items-center gap-1 font-bold text-xs ${isUnlocked ? 'text-cyan-400' : 'text-neutral-400'}`}>
+                          {isUnlocked ? <Zap className="w-3.5 h-3.5 text-cyan-400" /> : <Lock className="w-3.5 h-3.5 text-amber-400" />}
+                          <span>SPEED RUN</span>
+                        </div>
+                        {isUnlocked ? (
+                          <span className="text-[9px] text-cyan-300 px-1 py-0.5 rounded bg-cyan-950 border border-cyan-800/80 font-bold">
+                            TIME ATTACK
+                          </span>
+                        ) : (
+                          <span className="text-[9px] text-amber-400 px-1 py-0.5 rounded bg-amber-950/80 border border-amber-800/80 font-bold flex items-center gap-0.5">
+                            <Lock className="w-2.5 h-2.5" /> LOCKED
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-neutral-300">
+                        {isUnlocked
+                          ? 'Auto-compiler rush. Defeat sovereigns at maximum speed.'
+                          : 'Locked. Beat Story Mode (10/10 Res final boss) to unlock.'}
+                      </p>
+                    </div>
+                    <div className="mt-2 pt-1.5 border-t border-neutral-800 flex items-center justify-between text-[10px]">
+                      {isUnlocked ? (
+                        <>
+                          <span className="text-cyan-400 font-bold">Best: {highScores.speedrunBestTime ? formatTime(highScores.speedrunBestTime) : '--'}</span>
+                          <ArrowRight className="w-3 h-3 text-cyan-400" />
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-amber-400/90 font-mono text-[9px] font-bold">Requires Story Win</span>
+                          <Lock className="w-3 h-3 text-amber-400/80" />
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 3. SURVIVAL (Far Right) */}
+              {(() => {
+                const isUnlocked = isModeUnlocked('survival');
+                return (
+                  <div
+                    onClick={() => handleModeClick('survival')}
+                    className={`group p-2.5 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
+                      isUnlocked
+                        ? 'bg-neutral-900/80 border-rose-500/40 hover:border-rose-400 hover:bg-neutral-900'
+                        : 'bg-neutral-950/80 border-neutral-800/80 opacity-75 hover:opacity-100 hover:border-amber-500/50'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className={`flex items-center gap-1 font-bold text-xs ${isUnlocked ? 'text-rose-400' : 'text-neutral-400'}`}>
+                          {isUnlocked ? <Flame className="w-3.5 h-3.5 text-rose-400" /> : <Lock className="w-3.5 h-3.5 text-amber-400" />}
+                          <span>SURVIVAL</span>
+                        </div>
+                        {isUnlocked ? (
+                          <span className="text-[9px] text-rose-300 px-1 py-0.5 rounded bg-rose-950 border border-rose-800/80 font-bold">
+                            ENDLESS
+                          </span>
+                        ) : (
+                          <span className="text-[9px] text-amber-400 px-1 py-0.5 rounded bg-amber-950/80 border border-amber-800/80 font-bold flex items-center gap-0.5">
+                            <Lock className="w-2.5 h-2.5" /> LOCKED
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-neutral-300">
+                        {isUnlocked
+                          ? '240 FPS. Endless bosses, rhythm surges, and error spikes.'
+                          : 'Locked. Beat Story Mode (10/10 Res final boss) to unlock.'}
+                      </p>
+                    </div>
+                    <div className="mt-2 pt-1.5 border-t border-neutral-800 flex items-center justify-between text-[10px]">
+                      {isUnlocked ? (
+                        <>
+                          <span className="text-rose-400 font-bold">Best: {highScores.survivalBestTime ? formatTime(highScores.survivalBestTime) : '--'}</span>
+                          <ArrowRight className="w-3 h-3 text-rose-400" />
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-amber-400/90 font-mono text-[9px] font-bold">Requires Story Win</span>
+                          <Lock className="w-3 h-3 text-amber-400/80" />
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         )}
 
         {/* Tab 2: High Scores / Records */}
         {activeTab === 'highscores' && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <div className="bg-neutral-900/90 border border-cyan-500/50 rounded-xl p-3">
-              <div className="flex items-center justify-between text-xs font-bold text-cyan-400 mb-1">
-                <span>SPEED RUN</span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {/* GLOBAL CLOUD LEADERBOARD HERO CALLOUT */}
+            <div className="col-span-2 sm:col-span-4 p-3 rounded-xl bg-gradient-to-r from-amber-950/70 via-neutral-900 to-neutral-900 border border-amber-500/60 flex flex-col sm:flex-row items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-lg bg-amber-500/20 text-amber-400 border border-amber-500/40">
+                  <Crown className="w-4 h-4 animate-bounce" />
+                </div>
+                <div>
+                  <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <span>GLOBAL FIRESTORE LEADERBOARD</span>
+                    <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-400 text-black font-black">ALL MODES</span>
+                  </div>
+                  <p className="text-[10px] text-neutral-400 font-mono mt-0.5">
+                    Live Top 10 rankings, 3-initials arcade cabinet, and Story Pioneer Plaque
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playCadenceResolution();
+                  setIsGlobalLeaderboardOpen(true);
+                }}
+                className="w-full sm:w-auto px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-black font-mono font-black text-xs transition-all shadow-md shadow-amber-950/50 cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Trophy className="w-3.5 h-3.5" />
+                <span>OPEN GLOBAL TOP 10</span>
+              </button>
+            </div>
+
+            {/* 1. STORY (Far Left) */}
+            <div className="bg-neutral-900/90 border border-emerald-500/50 rounded-xl p-3">
+              <div className="flex items-center justify-between text-xs font-bold text-emerald-400 mb-1">
+                <span>STORY</span>
                 <Trophy className="w-3.5 h-3.5 text-amber-400" />
               </div>
-              <div className="text-lg font-black text-white">
-                {highScores.speedrunBestTime ? formatTime(highScores.speedrunBestTime) : '--'}
+              <div className="text-sm sm:text-base font-black text-white truncate">
+                {getStoryStageName()}
               </div>
-              <div className="text-[10px] text-neutral-400 mt-0.5">
-                {highScores.speedrunBestRuns ? `${highScores.speedrunBestRuns} attempts` : 'Dual Sovereign rush'}
+              <div className="text-[10px] text-neutral-400 mt-0.5 truncate">
+                {storyProgress?.hasSave ? `Part ${storyProgress.act1SubPart} · ${storyProgress.act1Bits}/10 Bits` : '0D Void'}
               </div>
             </div>
 
-            <div className="bg-neutral-900/90 border border-rose-500/50 rounded-xl p-3">
-              <div className="flex items-center justify-between text-xs font-bold text-rose-400 mb-1">
-                <span>SURVIVAL</span>
-                <Trophy className="w-3.5 h-3.5 text-amber-400" />
-              </div>
-              <div className="text-lg font-black text-white">
-                {highScores.survivalBestTime ? formatTime(highScores.survivalBestTime) : '--'}
-              </div>
-              <div className="text-[10px] text-neutral-400 mt-0.5">
-                {highScores.survivalBestResources ? `+${highScores.survivalBestResources.hertz} Hz` : 'Endless endurance'}
-              </div>
-            </div>
-
+            {/* 2. ARCADE (Second) */}
             <div className="bg-neutral-900/90 border border-purple-500/50 rounded-xl p-3">
               <div className="flex items-center justify-between text-xs font-bold text-purple-400 mb-1">
                 <span>ARCADE</span>
                 <Trophy className="w-3.5 h-3.5 text-amber-400" />
               </div>
-              <div className="text-lg font-black text-white truncate">
+              <div className="text-sm sm:text-base font-black text-white truncate">
                 {highScores.arcadeBestStage || '--'}
               </div>
               <div className="text-[10px] text-neutral-400 mt-0.5">
@@ -550,7 +729,35 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
               </div>
             </div>
 
-            <div className="col-span-1 sm:col-span-3 bg-neutral-950 border border-neutral-800 rounded-lg p-2 flex items-center justify-between text-[11px] text-neutral-400">
+            {/* 3. SPEED RUN (Third) */}
+            <div className="bg-neutral-900/90 border border-cyan-500/50 rounded-xl p-3">
+              <div className="flex items-center justify-between text-xs font-bold text-cyan-400 mb-1">
+                <span>SPEED RUN</span>
+                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+              </div>
+              <div className="text-sm sm:text-base font-black text-white">
+                {highScores.speedrunBestTime ? formatTime(highScores.speedrunBestTime) : '--'}
+              </div>
+              <div className="text-[10px] text-neutral-400 mt-0.5">
+                {highScores.speedrunBestRuns ? `${highScores.speedrunBestRuns} attempts (fastest)` : 'Dual Sovereign rush'}
+              </div>
+            </div>
+
+            {/* 4. SURVIVAL (Far Right) */}
+            <div className="bg-neutral-900/90 border border-rose-500/50 rounded-xl p-3">
+              <div className="flex items-center justify-between text-xs font-bold text-rose-400 mb-1">
+                <span>SURVIVAL</span>
+                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+              </div>
+              <div className="text-sm sm:text-base font-black text-white">
+                {highScores.survivalBestTime ? formatTime(highScores.survivalBestTime) : '--'}
+              </div>
+              <div className="text-[10px] text-neutral-400 mt-0.5">
+                {highScores.survivalBestResources ? `+${highScores.survivalBestResources.hertz} Hz` : 'Endless endurance'}
+              </div>
+            </div>
+
+            <div className="col-span-2 sm:col-span-4 bg-neutral-950 border border-neutral-800 rounded-lg p-2 flex items-center justify-between text-[11px] text-neutral-400">
               <span>Lifetime Runs Recorded: <strong className="text-emerald-300">{totalRuns}</strong></span>
               <span>Local Storage</span>
             </div>
@@ -759,12 +966,43 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                       )}
                     </div>
                   )}
+
+                  {userSettings.controls.devToolsEnabled && (
+                    <div className="pt-2 border-t border-neutral-800 flex items-center justify-between">
+                      <div>
+                        <span className="text-xs font-bold text-neutral-200 block">Dev: Unlock All Modes</span>
+                        <span className="text-[10px] text-neutral-400 font-mono block">Bypasses Story completion lock for Survival & Speed Run</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleDevUnlockAllModes(!userSettings.controls.unlockAllModesDev)}
+                        className={`px-2.5 py-1 rounded text-xs font-mono font-bold border transition-all cursor-pointer ${
+                          userSettings.controls.unlockAllModesDev
+                            ? 'bg-amber-950/80 border-amber-500 text-amber-300'
+                            : 'bg-neutral-800 border-neutral-700 text-neutral-400'
+                        }`}
+                      >
+                        {userSettings.controls.unlockAllModesDev ? 'UNLOCKED' : 'LOCKED'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
           </div>
         )}
+
+        {/* Thank You Appreciation on Menu Screen */}
+        <div className="mt-1 pt-2 border-t border-neutral-800/80 flex items-center justify-center text-[10px] text-emerald-400/90 font-mono tracking-widest uppercase">
+          <span>✦ BIT RESONANCE · THANK YOU FOR PLAYING ✦</span>
+        </div>
       </div>
+
+      {/* Global Leaderboard Modal Dialog */}
+      <GlobalLeaderboardModal
+        isOpen={isGlobalLeaderboardOpen}
+        onClose={() => setIsGlobalLeaderboardOpen(false)}
+      />
     </div>
   );
 };

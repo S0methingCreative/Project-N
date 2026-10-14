@@ -9,6 +9,7 @@ export interface ControlSettings {
   scrollWheelInversion: boolean; // default false
   cyclePolarizerInput: 'space' | 'rmb'; // default 'space'
   devToolsEnabled: boolean; // default false
+  unlockAllModesDev: boolean; // default false: dev bypass to unlock all modes
 }
 
 export interface UserSettings {
@@ -27,6 +28,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     scrollWheelInversion: false,
     cyclePolarizerInput: 'space',
     devToolsEnabled: false,
+    unlockAllModesDev: false,
   },
 };
 
@@ -48,6 +50,7 @@ export function loadUserSettings(): UserSettings {
         scrollWheelInversion: typeof parsed.controls?.scrollWheelInversion === 'boolean' ? parsed.controls.scrollWheelInversion : false,
         cyclePolarizerInput: parsed.controls?.cyclePolarizerInput === 'rmb' ? 'rmb' : 'space',
         devToolsEnabled: typeof parsed.controls?.devToolsEnabled === 'boolean' ? parsed.controls.devToolsEnabled : false,
+        unlockAllModesDev: typeof parsed.controls?.unlockAllModesDev === 'boolean' ? parsed.controls.unlockAllModesDev : false,
       },
     };
   } catch {

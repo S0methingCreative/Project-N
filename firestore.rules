@@ -1,0 +1,126 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to validate 3-character alphanumeric initials
+    function isValidInitials(str) {
+      return str is string && str.size() == 3 && str.matches('^[A-Z0-9]{3}$');
+    }
+
+    // Helper function to validate document ID format
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Story Mode Leaderboard entry (score and time removed, stage completed tracked)
+    function isValidStoryEntry(data) {
+      return data.keys().hasAll(['initials', 'stageName', 'stageNum', 'completed', 'createdAt'])
+        && isValidInitials(data.initials)
+        && data.stageName is string && data.stageName.size() <= 64
+        && data.stageNum is number
+        && data.completed is bool
+        && data.createdAt is string && data.createdAt.size() <= 50;
+    }
+
+    // Speedrun Mode Leaderboard entry (fastest completion time, score and stage removed)
+    function isValidSpeedrunEntry(data) {
+      return data.keys().hasAll(['initials', 'timeSeconds', 'completed', 'createdAt'])
+        && isValidInitials(data.initials)
+        && data.timeSeconds is number && data.timeSeconds >= 0 && data.timeSeconds <= 86400
+        && data.completed is bool
+        && data.createdAt is string && data.createdAt.size() <= 50;
+    }
+
+    // Survival Mode Leaderboard entry (survival time + totalHz, score and stage removed)
+    function isValidSurvivalEntry(data) {
+      return data.keys().hasAll(['initials', 'survivalSeconds', 'totalHz', 'createdAt'])
+        && isValidInitials(data.initials)
+        && data.survivalSeconds is number && data.survivalSeconds >= 0 && data.survivalSeconds <= 86400
+        && data.totalHz is number && data.totalHz >= 0 && data.totalHz <= 100000000
+        && data.createdAt is string && data.createdAt.size() <= 50;
+    }
+
+    // Arcade Mode Leaderboard entry (furthest stage reached, duration, totalHz, score removed)
+    function isValidArcadeEntry(data) {
+      return data.keys().hasAll(['initials', 'stageName', 'stageNum', 'duration', 'totalHz', 'createdAt'])
+        && isValidInitials(data.initials)
+        && data.stageName is string && data.stageName.size() <= 64
+        && data.stageNum is number
+        && data.duration is number && data.duration >= 0 && data.duration <= 86400
+        && data.totalHz is number && data.totalHz >= 0 && data.totalHz <= 100000000
+        && data.createdAt is string && data.createdAt.size() <= 50;
+    }
+
+    // Registered player document
+    function isValidPlayer(data, code) {
+      return data.keys().hasAll(['code', 'createdAt'])
+        && data.code == code
+        && isValidInitials(code)
+        && data.createdAt is string && data.createdAt.size() <= 50;
+    }
+
+    // Connection testing doc
+    match /test/connection {
+      allow read: if true;
+    }
+
+    // Registered player handles (unique 3-letter codes)
+    match /players/{code} {
+      allow read: if true;
+      allow create: if isValidInitials(code) && isValidPlayer(request.resource.data, code);
+      allow update, delete: if false;
+    }
+
+    // Story Mode Leaderboard
+    match /leaderboards_story/{id} {
+      allow read: if true;
+      allow create: if isValidId(id) && isValidStoryEntry(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    // Speedrun Mode Leaderboard
+    match /leaderboards_speedrun/{id} {
+      allow read: if true;
+      allow create: if isValidId(id) && isValidSpeedrunEntry(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    // Survival Mode Leaderboard
+    match /leaderboards_survival/{id} {
+      allow read: if true;
+      allow create: if isValidId(id) && isValidSurvivalEntry(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    // Arcade Mode Leaderboard
+    match /leaderboards_arcade/{id} {
+      allow read: if true;
+      allow create: if isValidId(id) && isValidArcadeEntry(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    // First To Complete Story Mode (⚡FTC)
+    match /leaderboards_meta/story_ftc {
+      allow read: if true;
+      allow create: if !exists(/databases/$(database)/documents/leaderboards_meta/story_ftc)
+                    && request.resource.data.initials is string && isValidInitials(request.resource.data.initials);
+      allow update, delete: if false;
+    }
+
+    // First To Complete Arcade Mode (⚡FTC)
+    match /leaderboards_meta/arcade_ftc {
+      allow read: if true;
+      allow create: if !exists(/databases/$(database)/documents/leaderboards_meta/arcade_ftc)
+                    && request.resource.data.initials is string && isValidInitials(request.resource.data.initials);
+      allow update, delete: if false;
+    }
+
+    // Legacy Pioneer Plaque fallback
+    match /leaderboards_meta/story_pioneer {
+      allow read: if true;
+      allow create: if !exists(/databases/$(database)/documents/leaderboards_meta/story_pioneer)
+                    && request.resource.data.initials is string && isValidInitials(request.resource.data.initials);
+      allow update, delete: if false;
+    }
+  }
+}

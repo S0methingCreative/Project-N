@@ -1,0 +1,220 @@
+{
+  "entities": {
+    "PlayerRegistration": {
+      "title": "Player Code Registration",
+      "description": "Unique 3-letter pilot handle",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3,
+          "pattern": "^[A-Z0-9]{3}$",
+          "description": "3-character arcade player initials"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of registration"
+        }
+      },
+      "required": ["code", "createdAt"]
+    },
+    "LeaderboardStoryEntry": {
+      "title": "Story Mode High Score Entry",
+      "description": "A top 10 global score entry for Story Mode tracking furthest stage completed",
+      "type": "object",
+      "properties": {
+        "initials": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3,
+          "pattern": "^[A-Z0-9]{3}$",
+          "description": "3-character arcade player initials"
+        },
+        "stageName": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Name of the furthest stage completed"
+        },
+        "stageNum": {
+          "type": "number",
+          "description": "Numeric stage ranking index"
+        },
+        "bit": {
+          "type": "number",
+          "description": "Highest bit level reached"
+        },
+        "resolution": {
+          "type": "number",
+          "description": "Highest resolution reached"
+        },
+        "completed": {
+          "type": "boolean",
+          "description": "Whether the player defeated the final Fracture Sovereign"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of the record submission"
+        }
+      },
+      "required": ["initials", "stageName", "stageNum", "completed", "createdAt"]
+    },
+    "LeaderboardSpeedrunEntry": {
+      "title": "Speedrun High Score Entry",
+      "description": "A top 10 global speedrun entry sorted by fastest completion time",
+      "type": "object",
+      "properties": {
+        "initials": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3,
+          "pattern": "^[A-Z0-9]{3}$",
+          "description": "3-character arcade player initials"
+        },
+        "timeSeconds": {
+          "type": "number",
+          "description": "Total completion time in seconds (fastest wins)"
+        },
+        "runs": {
+          "type": "number",
+          "description": "Number of runs taken to complete"
+        },
+        "completed": {
+          "type": "boolean",
+          "description": "Whether full speedrun victory was achieved"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of submission"
+        }
+      },
+      "required": ["initials", "timeSeconds", "completed", "createdAt"]
+    },
+    "LeaderboardSurvivalEntry": {
+      "title": "Survival High Score Entry",
+      "description": "A top 10 global survival entry sorted by longest survival duration",
+      "type": "object",
+      "properties": {
+        "initials": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3,
+          "pattern": "^[A-Z0-9]{3}$",
+          "description": "3-character arcade player initials"
+        },
+        "survivalSeconds": {
+          "type": "number",
+          "description": "Total survival time in seconds (higher is better)"
+        },
+        "totalHz": {
+          "type": "number",
+          "description": "Total Hertz energy harvested"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of submission"
+        }
+      },
+      "required": ["initials", "survivalSeconds", "totalHz", "createdAt"]
+    },
+    "LeaderboardArcadeEntry": {
+      "title": "Arcade Mode High Score Entry",
+      "description": "A top 10 global arcade high score entry ranked by furthest stage reached then duration",
+      "type": "object",
+      "properties": {
+        "initials": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3,
+          "pattern": "^[A-Z0-9]{3}$",
+          "description": "3-character arcade player initials"
+        },
+        "stageName": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Furthest stage reached before defeat"
+        },
+        "stageNum": {
+          "type": "number",
+          "description": "Numeric stage ranking index"
+        },
+        "bit": {
+          "type": "number",
+          "description": "Highest bit reached"
+        },
+        "duration": {
+          "type": "number",
+          "description": "Time elapsed in arcade mode in seconds"
+        },
+        "totalHz": {
+          "type": "number",
+          "description": "Total Hertz harvested in arcade mode"
+        },
+        "completed": {
+          "type": "boolean",
+          "description": "Whether arcade run completed final sovereign"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp of submission"
+        }
+      },
+      "required": ["initials", "stageName", "stageNum", "duration", "totalHz", "createdAt"]
+    },
+    "FTCMetaRecord": {
+      "title": "First To Complete Plaque",
+      "description": "Immortalized record of the very first player to complete the mode",
+      "type": "object",
+      "properties": {
+        "initials": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3,
+          "pattern": "^[A-Z0-9]{3}$",
+          "description": "3-character arcade player initials"
+        },
+        "completedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when the winner conquered the mode"
+        }
+      },
+      "required": ["initials", "completedAt"]
+    }
+  },
+  "firestore": {
+    "/players/{code}": {
+      "schema": "PlayerRegistration",
+      "description": "Registered unique player handles"
+    },
+    "/leaderboards_story/{entryId}": {
+      "schema": "LeaderboardStoryEntry",
+      "description": "Leaderboard records for Story Mode"
+    },
+    "/leaderboards_speedrun/{entryId}": {
+      "schema": "LeaderboardSpeedrunEntry",
+      "description": "Leaderboard times for Speedrun Mode"
+    },
+    "/leaderboards_survival/{entryId}": {
+      "schema": "LeaderboardSurvivalEntry",
+      "description": "Leaderboard durations for Survival Mode"
+    },
+    "/leaderboards_arcade/{entryId}": {
+      "schema": "LeaderboardArcadeEntry",
+      "description": "Leaderboard entries for Arcade Mode"
+    },
+    "/leaderboards_meta/story_ftc": {
+      "schema": "FTCMetaRecord",
+      "description": "First player to complete Story Mode"
+    },
+    "/leaderboards_meta/arcade_ftc": {
+      "schema": "FTCMetaRecord",
+      "description": "First player to complete Arcade Mode"
+    }
+  }
+}

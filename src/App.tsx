@@ -6,6 +6,8 @@ import { CompilerPipelineHUD } from './components/CompilerPipelineHUD';
 import { MainMenuModal } from './components/MainMenuModal';
 import { soundEngine } from './audio/soundEngine';
 import { loadUserSettings, saveUserSettings, UserSettings } from './utils/settings';
+import { InitialsRegistrationModal } from './components/InitialsRegistrationModal';
+import { getPlayerCode } from './services/leaderboardService';
 import {
   Cpu,
   RotateCcw,
@@ -92,6 +94,8 @@ function loadInitialGameState(): GameState {
       return {
         ...DEFAULT_GAME_STATE,
         ...savedStory,
+        hp: 100,
+        maxHp: 100,
         gameMode: 'story',
         totalRuns: savedStory.totalRuns || 1,
         hasCompletedStory: savedStory.hasCompletedStory || false,
@@ -99,9 +103,9 @@ function loadInitialGameState(): GameState {
           ...savedHighScores,
           ...(savedStory.highScores || {}),
         },
-        // Reset transient playback state so audio requires a user gesture on resume
+        // Keep carrier active on resume if player has already unlocked N
         audioActive: false,
-        carrierActive: false,
+        carrierActive: Boolean(savedStory.act1PurchasedN),
         compiledModules: savedStory.compiledModules || INITIAL_MODULES,
         deathScreen: null,
       };
@@ -123,6 +127,8 @@ export default function App() {
   const [gameState, setGameState] = useState<GameState>(loadInitialGameState);
   // Game starts directly on the main menu to simplify navigation and mode picking
   const [isMainMenuOpen, setIsMainMenuOpen] = useState<boolean>(true);
+  // Prompt 3-letter FTC registration on startup if not already stored
+  const [isFTCRegistrationOpen, setIsFTCRegistrationOpen] = useState<boolean>(() => !getPlayerCode());
 
   // Responsive device / screen detection for phone vs desktop
   const [isMobileDevice, setIsMobileDevice] = React.useState<boolean>(() => {
@@ -147,8 +153,8 @@ export default function App() {
         const storyToSave: Partial<GameState> = {
           act: gameState.act,
           currentN: gameState.currentN,
-          hp: gameState.hp,
-          maxHp: gameState.maxHp,
+          hp: 100,
+          maxHp: 100,
           score: gameState.score,
           engineCompilePercent: gameState.engineCompilePercent,
           resources: gameState.resources,
@@ -282,6 +288,11 @@ export default function App() {
 
   // Mode Selection from Main Menu
   const handleSelectMode = (mode: GameMode, forceNewStory: boolean = false) => {
+    const isUnlocked = mode === 'story' || mode === 'arcade' || Boolean(gameState.hasCompletedStory || userSettings.controls.unlockAllModesDev);
+    if (!isUnlocked) {
+      return;
+    }
+
     setIsMainMenuOpen(false);
     soundEngine.setBossMusic(false);
     soundEngine.ensureResumed();
@@ -554,6 +565,15 @@ export default function App() {
               <CompilerPipelineHUD gameState={gameState} />
             </div>
           </aside>
+        )}
+        {/* Startup 3-Letter FTC Pilot Registration Modal */}
+        {isFTCRegistrationOpen && (
+          <InitialsRegistrationModal
+            isOpen={isFTCRegistrationOpen}
+            onCodeRegistered={() => {
+              setIsFTCRegistrationOpen(false);
+            }}
+          />
         )}
       </main>
     </div>
