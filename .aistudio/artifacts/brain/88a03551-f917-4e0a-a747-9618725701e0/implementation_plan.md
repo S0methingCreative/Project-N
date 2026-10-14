@@ -1,160 +1,101 @@
-# High Scores & First To Complete (FTC) Modernization Plan
+# Story Mode High Score Milestone Submissions & Single-Entry Replacement
 
-Modernize the Game N High Scores Vault, First To Complete (FTC) challenge tracking, and player identity system to align with the provided specification and spreadsheet rules.
+## Title & Summary
+Implement real-time milestone high score updates for Story Mode that log immediately upon compiling a new Bit or Resolution, removing duplicate death-screen score submissions and replacing each player's previous Story record with their highest milestone achieved.
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following user preferences were confirmed during the interactive clarification phase:
-> - **Startup Prompt**: When a player boots the game without a stored 3-letter code, an opt-in/mandatory initials prompt will appear on the title screen so they are registered to compete in FTC challenges.
-> - **Code Uniqueness**: Enforced via real-time Firestore check against registered player handles and existing leaderboard documents to avoid duplicates.
-> - **FTC Banner Display**: In both Story and Arcade modes, the banner displays `⚡FTC: ???` initially, automatically updating to `⚡FTC: [INITIALS]` (e.g., `⚡FTC: NEO`) as soon as the first player clears the mode.
-> - **Zero Scores Discipline**: The legacy numeric points/score system is completely removed across all modes in favor of authentic game metrics (Stage Completed, Duration, and Total HZ).
+> The following design decisions were confirmed in Phase 1:
+
+- **Confirmed Decision 1 (Recording Trigger)**: Story Mode high scores will be submitted immediately upon compiling a new Bit or Resolution (and upon defeating Boss 2 for final victory), rather than logging on death or game over.
+- **Confirmed Decision 2 (Replacement Scope)**: Single-entry replacement (one persistent record per 3-letter pilot code) will apply specifically to Story Mode (`leaderboards_story`). Arcade, Speedrun, and Survival modes retain their individual run leaderboards.
+- **Confirmed Decision 3 (Dev Environment Guard)**: Development environments will continue to bypass all live Firestore submissions to protect the clean production leaderboard.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Unifies player identity under a unique 3-letter arcade code (e.g. `NEO`, `ADA`) and revamps the High Scores Vault across the 4 game modes in strict order: **Story**, **Arcade**, **Speed run**, **Survival**.
-- **Player Code Identity**: Saves all personal run completions and deaths under this code without prompting every single round. Players can modify their code anytime via a gear icon located immediately to the left of the "Refresh Leaderboards" button.
-- **Beat-Ready Filler Records**: Replaces legacy filler scores with obviously beatable records using codes `AAA` through `JJJ`, with `99:99.9` for modes where faster times win, and `00:00.1` / `0 HZ` where higher duration or collection wins.
-- **Mode-Specific Progression**:
-  - **Story**: Tracks furthest stage completed (`stageName`, `bit`, `resolution`), removing time and score. Includes a compact `⚡FTC: ???` banner alongside the live Firestore status indicator.
-  - **Arcade**: Tracks furthest stage completed, duration, and **Total HZ**, ranked by furthest stage reached then duration. Includes a compact `⚡FTC: ???` banner.
-  - **Speed run**: Ranks only full completions by fastest time (labeled `(fastest)`), removing stage and score.
-  - **Survival**: Ranks by longest time survived and tracks **Total HZ**, removing stage and score.
+- **What It Does**:
+  1. Removes the automatic story score submission currently executed in `handleDeath`. Dying in Story Mode without unlocking a new upgrade will no longer create redundant leaderboard entries.
+  2. Hooks directly into the compiler upgrade purchase handlers (`handlePurchaseUpgrade`, automatic Bit/Res compilation, and the Boss 2 victory sequence) to immediately persist new milestones.
+  3. Uses a deterministic document ID (`leaderboards_story/{initials}`) or in-place upsert logic so each player has at most one record in the Story Mode Hall of Fame. If a player reaches a higher stage, their existing document is updated with the new milestone.
+- **Target Audience**: Players advancing through the 10-Bit and 10-Resolution campaign who want an accurate, uncluttered global ranking reflecting their furthest engineering milestone.
+- **Key Value**: Eliminates duplicate entries per player, prevents deaths from polluting rankings with stagnant scores, and provides instant positive feedback the moment a new Bit or Resolution is compiled.
 
 ---
 
 ## 2. User Experience & Visual Design
 
-### Key User Flows
-
-1. **First-Time Launch (Initials Modal)**:
-   - When entering the game without a stored code, an ambient modal welcomes the player: `"ENTER YOUR 3-LETTER FTC CODE"`.
-   - 3 interactive letter slots with keyboard arrow/character typing and on-screen cycle buttons.
-   - Real-time Firestore uniqueness validation: displays instant error state if the code is already taken, or an emerald checkmark if available.
-   - Stored in persistent browser storage (`game_n_player_code`) and synced to Firestore's `players` collection.
-
-2. **Global High Scores Vault**:
-   - Header top bar:
-     - Title: `HIGH SCORES VAULT`
-     - Live indicator badge: `● LIVE FIRESTORE`
-     - **Mode FTC Banner**: A compact badge immediately to the right of the live indicator:
-       - Story: `⚡FTC: ???` or `⚡FTC: NEO`
-       - Arcade: `⚡FTC: ???` or `⚡FTC: ADA`
-     - Action buttons:
-       - **Gear Icon button** (`Settings`) positioned directly to the left of the refresh button.
-       - **Refresh Leaderboard button** (`RotateCw`).
-       - **Close button** (`X`).
-   - Tabs (strictly ordered left-to-right):
-     1. `Story`
-     2. `Arcade`
-     3. `Speed run`
-     4. `Survival`
-   - Table Columns per Mode:
-     - **Story**: `RANK` · `INITIALS` · `STAGE COMPLETED` · `DATE`
-     - **Arcade**: `RANK` · `INITIALS` · `STAGE REACHED` · `DURATION` · `TOTAL HZ` · `DATE`
-     - **Speed run**: `RANK` · `INITIALS` · `COMPLETION TIME (fastest)` · `RUNS` · `DATE`
-     - **Survival**: `RANK` · `INITIALS` · `TIME SURVIVED` · `TOTAL HZ` · `DATE`
-
-3. **Changing Player Code**:
-   - Clicking the gear icon in the High Scores modal opens a compact `"UPDATE FTC CODE"` modal.
-   - Player inputs a new 3-letter code. If unique, saves immediately, updates local storage, and refreshes the user's active code without disrupting game state.
+- **Milestone Unlock Trigger**:
+  - The instant a player spends Hertz/Volts to compile a new Bit (e.g. Bit 4: 16 Colors) or Resolution (e.g. Res 8: 120 FPS), or defeats Boss 2 (Fracture Sovereign), a high score payload is generated.
+  - An inline log notification or subtle audio cue confirms: `✦ MILESTONE REACHED: [Stage Name] REGISTERED TO GLOBAL STORY RANKINGS`.
+- **Global Leaderboard Representation**:
+  - In the Global Leaderboards modal (`GlobalLeaderboardModal.tsx`), each pilot initials code (e.g., `AAA`, `JCS`) appears exactly once in the Story Mode list.
+  - If a player advances from Bit 5 to Bit 7, their entry cleanly advances in-place on the leaderboard, pushing lower milestones down the ladder without duplicate ghost rows.
+- **Death Screen Experience**:
+  - Perishing on an already-unlocked Bit/Resolution simply prompts to retry or upgrade without logging redundant attempts.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **No Points / Score System**: As requested, all legacy `"score"` fields are removed from the UI and sorting algorithms. Progression is measured solely by game-authentic milestones (Bit/Resolution stages, Duration, and Hertz collected).
-- **Filler Record Overhaul**: Replace high numbers with obviously placeholder benchmarks:
-  - Initials: `AAA`, `BBB`, `CCC`, `DDD`, `EEE`, `FFF`, `GGG`, `HHH`, `III`, `JJJ`.
-  - For lowest-time modes (Speedrun): time defaults to `99:99.9` (5999.9s).
-  - For longest-time modes (Survival / Arcade): duration defaults to `00:00.1` (0.1s) and `0 HZ`.
-  - For stage progression (Story / Arcade): stage defaults to lowest starting point (`0D Void` or `Bit 1`).
-- **FTC Challenge Banners**: Placed directly in the header adjacent to the live status indicator as a sleek inline pill-badge matching the size and shape of the Firestore indicator, keeping the layout compact and clean.
+- **Decision 1: Document Keying by Player Initials in Story Mode (`leaderboards_story/{initials}`)**
+  - *Chosen Approach*: Key Story Mode leaderboard documents by the player's 3-letter code (e.g. `leaderboards_story/JCS`) with an `upsert` (`setDoc(..., { merge: true })` or conditional check).
+  - *Why*: Guarantees mathematical uniqueness per player at the database level. Prevents race conditions and multiple documents per pilot.
+  - *Alternatives Considered*: Storing random UUIDs and doing client-side deduplication. Rejected because old records would waste database read quota and fill the collection with obsolete duplicates.
+- **Decision 2: Remove Death-Screen Logging for Story Mode**
+  - *Chosen Approach*: Only compile events and Boss 2 victory trigger `saveRunRecord('story', ...)`.
+  - *Why*: In Story Mode, player progression is tied strictly to engine hardware tier (Bits 1–10 and Resolutions 1–10). Dying with the same hardware tier provides zero new progression information.
+  - *Alternatives Considered*: Logging on death if `currentStage > previousStage`. Compiling immediately is cleaner and guarantees credit even if a player closes the browser before dying.
 
 ---
 
 ## 4. Technical Architecture & Data Strategy
 
+### System Architecture Flow
+
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        App / DimensionCanvas                           │
-│  - Startup check for `localStorage['game_n_player_code']`             │
-│  - Prompts InitialsRegistrationModal if unassigned                    │
-└──────────────────────────────────┬─────────────────────────────────────┘
-                                   │
-                                   ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                    Firestore & Leaderboard Service                     │
-│  Collections:                                                          │
-│  - `players/{code}`: { code: string, createdAt: timestamp }            │
-│  - `leaderboards_meta/story_ftc`: { initials, completedAt, stage }    │
-│  - `leaderboards_meta/arcade_ftc`: { initials, completedAt, stage }   │
-│  - `leaderboards_story`: { initials, stageName, bit, res, stageNum }   │
-│  - `leaderboards_arcade`: { initials, stageName, stageNum, dur, hz }   │
-│  - `leaderboards_speedrun`: { initials, timeSeconds, runs, date }      │
-│  - `leaderboards_survival`: { initials, survivalSeconds, hz, date }    │
-└──────────────────────────────────┬─────────────────────────────────────┘
-                                   │
-                                   ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                      GlobalLeaderboardModal                            │
-│  - Gear button [Settings] -> EditCodeModal                             │
-│  - Tabs: [Story] [Arcade] [Speed run] [Survival]                       │
-│  - Header FTC banner: `⚡FTC: ???` / `⚡FTC: [CODE]`                   │
-│  - Beatable filler fallback (AAA-JJJ, 99:99.9 / 00:00.1)               │
-└────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│               Story Campaign Gameplay                   │
+└──────────────────────────┬──────────────────────────────┘
+                           │
+             Player Compiles Bit or Res
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────┐
+│              handlePurchaseUpgrade()                    │
+│   - Advances bitsRef / resolutionRef                    │
+│   - Immediately calls saveRunRecord('story', ...)       │
+└──────────────────────────┬──────────────────────────────┘
+                           │
+       isDevelopmentEnvironment() check
+            ┌──────────────┴──────────────┐
+     [Dev Mode]                     [Production]
+            │                             │
+    Bypass submission              submitStoryScore()
+    Log console notice             Keyed: /leaderboards_story/{initials}
+                                   Updates milestone in-place
 ```
 
-### Data Schema Changes
+### Component & File Modification Plan
 
-1. **`players` collection**:
-   - `id`: 3-character uppercase string (e.g. `NEO`).
-   - `code`: 3-character uppercase string.
-   - `createdAt`: server timestamp or ISO string.
-   - *Duplicate Prevention*: querying `doc(db, 'players', code)` or checking across collections guarantees instant 1-read uniqueness check.
+1. **`src/services/leaderboardService.ts`**:
+   - Update `submitStoryScore`:
+     - Key document by `cleanInitials`: `doc(db, 'leaderboards_story', cleanInitials)`.
+     - Fetch or inspect existing document; only update if `newStageNum >= existingStageNum`.
+     - Update local cache (`story_scores_v3`) by replacing any existing entry with the same initials.
+2. **`firestore.rules`**:
+   - Update `match /leaderboards_story/{id}`:
+     - Allow `create` and `update` when `id == request.resource.data.initials` and valid schema is provided.
+     - Deploy updated rules via `rpc_action DeployRules`.
+3. **`src/components/DimensionCanvas.tsx`**:
+   - In `handleDeath`: Remove the automatic `saveRunRecord('story', ...)` call.
+   - In `handlePurchaseUpgrade`: When compiling a Bit (`target === 'bit'`) or Resolution (`target === 'resolution'`), immediately invoke `saveRunRecord('story', ...)` with the new stage name and stage number.
+   - In Boss 2 defeat handler: Retain the victory milestone submission (`stageNum: 20`, `Fracture Sovereign Defeated ★`).
 
-2. **`leaderboards_meta/story_ftc` & `leaderboards_meta/arcade_ftc`**:
-   - Stored in Firestore to track the immortal First To Complete challenge winners.
-   - If document does not exist, modal renders `⚡FTC: ???`.
-
-3. **`leaderboardService.ts` Updates**:
-   - Redefine interfaces (`StoryScoreEntry`, `ArcadeScoreEntry`, `SpeedrunScoreEntry`, `SurvivalScoreEntry`) removing all `score` attributes.
-   - Add `totalHz` to `ArcadeScoreEntry` and `SurvivalScoreEntry`.
-   - Update sorting functions:
-     - Story: sorted by `stageNum` descending.
-     - Arcade: sorted by `stageNum` descending, then `survivalSeconds` descending.
-     - Speedrun: sorted by `timeSeconds` ascending (fastest).
-     - Survival: sorted by `survivalSeconds` descending (longest).
-   - Update default/fallback seed arrays to use `AAA` through `JJJ` with clearly beatable statistics.
-
-4. **`GlobalLeaderboardModal.tsx` Updates**:
-   - Reorder tabs: `['story', 'arcade', 'speedrun', 'survival']`.
-   - Add Gear icon button (`Settings`) immediately left of `handleRefresh`.
-   - Render compact `⚡FTC: ???` banner next to the live Firestore status pill.
-   - Remove Score column; add Total HZ to Arcade and Survival.
-   - Label Speedrun duration as `COMPLETION TIME (fastest)`.
-
-5. **`InitialsRegistrationModal.tsx` & Player Code Hook**:
-   - On game mount, if no player code exists, trigger the registration modal.
-   - Provide an edit modal triggered via the gear icon in the High Scores modal.
-   - Automatically prefill high score submissions with the player's registered code without manual re-entry on each death/victory.
-
----
-
-## 5. Execution Plan & Verification
-
-1. **Service Layer**:
-   - Update `src/services/leaderboardService.ts` with revised schemas, beatable filler records, FTC tracking for both Story and Arcade, and player code verification functions.
-   - Update `firebase-blueprint.json` and `firestore.rules` to reflect the updated schema and permissions.
-2. **Components Layer**:
-   - Create/update `src/components/InitialsRegistrationModal.tsx` for initial onboarding and gear-triggered code changes.
-   - Update `src/components/GlobalLeaderboardModal.tsx` with reordered tabs, gear button, compact FTC banners, and revised table columns.
-   - Update `src/components/DimensionCanvas.tsx` to integrate the automatic code association and pass saved player code to score submissions.
-3. **Verification**:
-   - Verify TypeScript compilation via `npx tsc --noEmit`.
-   - Verify applet compilation via `compile_applet`.
-   - Verify that default fallback scores display `AAA`–`JJJ`, `99:99.9` for Speedrun, and `00:00.1` for Survival/Arcade.
-   - Confirm unique code registration, gear button editing, and clean tab ordering.
+### Verification & Testing Plan
+- Compile and type-check with `npx tsc --noEmit`.
+- Verify compilation with `compile_applet`.
+- Verify that compiling a bit in Story Mode updates the player's single record without creating duplicate entries.
+- Verify that dying without compiling does not trigger a score write.

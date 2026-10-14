@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Trophy, ChevronUp, ChevronDown, Sparkles, Check, Crown } from 'lucide-react';
+import { Trophy, ChevronUp, ChevronDown, Check, Crown, AlertCircle } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
+import { isBannedInitials } from '../services/leaderboardService';
 
 interface InitialsEntryModalProps {
   isOpen: boolean;
@@ -74,7 +75,10 @@ export const InitialsEntryModal: React.FC<InitialsEntryModalProps> = ({
       soundEngine.playCadenceResolution();
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      handleRegister();
+      const currentInitials = letters.join('').toUpperCase();
+      if (!isBannedInitials(currentInitials)) {
+        handleRegister();
+      }
     } else if (e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key)) {
       e.preventDefault();
       const char = e.key.toUpperCase();
@@ -92,6 +96,9 @@ export const InitialsEntryModal: React.FC<InitialsEntryModalProps> = ({
 
   const handleRegister = () => {
     const finalInitials = letters.join('').toUpperCase();
+    if (isBannedInitials(finalInitials)) {
+      return;
+    }
     soundEngine.playCadenceResolution();
     onSubmit(finalInitials);
   };
@@ -209,11 +216,18 @@ export const InitialsEntryModal: React.FC<InitialsEntryModalProps> = ({
           })}
         </div>
 
-        {/* Instructions Hint */}
-        <div className="text-[11px] text-neutral-400 font-mono">
-          <span className="hidden sm:inline">Use Arrow keys or type on keyboard · [ENTER] to confirm</span>
-          <span className="sm:hidden">Tap arrows or slots to cycle initials</span>
-        </div>
+        {/* Instructions Hint or Banned Warning */}
+        {isBannedInitials(letters.join('')) ? (
+          <div className="w-full flex items-center justify-center gap-2 p-2 rounded-xl bg-rose-950/80 border border-rose-500/70 text-rose-300 text-xs font-mono font-bold animate-pulse">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>CODE "{letters.join('').toUpperCase()}" IS PROHIBITED</span>
+          </div>
+        ) : (
+          <div className="text-[11px] text-neutral-400 font-mono">
+            <span className="hidden sm:inline">Use Arrow keys or type on keyboard · [ENTER] to confirm</span>
+            <span className="sm:hidden">Tap arrows or slots to cycle initials</span>
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex items-center gap-3 w-full pt-2">
@@ -230,7 +244,12 @@ export const InitialsEntryModal: React.FC<InitialsEntryModalProps> = ({
           <button
             type="button"
             onClick={handleRegister}
-            className="flex-1 py-3 px-5 rounded-xl bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-black font-black text-sm tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-amber-950/80 transition-all cursor-pointer active:scale-95"
+            disabled={isBannedInitials(letters.join(''))}
+            className={`flex-1 py-3 px-5 rounded-xl font-black text-sm tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              isBannedInitials(letters.join(''))
+                ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-60'
+                : 'bg-amber-500 hover:bg-amber-400 active:bg-amber-600 text-black shadow-lg shadow-amber-950/80 active:scale-95'
+            }`}
           >
             <Check className="w-4 h-4 stroke-[3]" />
             <span>SUBMIT TO GLOBAL BOARD</span>

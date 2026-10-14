@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Shield, Check, AlertCircle, X, ChevronUp, ChevronDown, Sparkles, Loader2 } from 'lucide-react';
-import { checkCodeAvailability, registerPlayerCode } from '../services/leaderboardService';
+import { checkCodeAvailability, registerPlayerCode, isBannedInitials } from '../services/leaderboardService';
 import { soundEngine } from '../audio/soundEngine';
 
 const VALID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split('');
@@ -46,6 +46,15 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
     const fullCode = letters.join('').toUpperCase();
     if (fullCode.length !== 3) {
       setAvailability(null);
+      return;
+    }
+
+    if (isBannedInitials(fullCode)) {
+      if (debounceTimerRef.current) {
+        window.clearTimeout(debounceTimerRef.current);
+      }
+      setChecking(false);
+      setAvailability({ available: false, reason: `Pilot code "${fullCode}" is prohibited.` });
       return;
     }
 
@@ -161,7 +170,7 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
 
   const handleConfirm = async () => {
     const fullCode = letters.join('').toUpperCase();
-    if (fullCode.length !== 3) return;
+    if (fullCode.length !== 3 || isBannedInitials(fullCode)) return;
 
     setIsSubmitting(true);
     try {

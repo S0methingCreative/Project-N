@@ -2,9 +2,14 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    // Check for banned / prohibited initials
+    function isBannedInitials(str) {
+      return str == 'FAG';
+    }
+
     // Helper function to validate 3-character alphanumeric initials
     function isValidInitials(str) {
-      return str is string && str.size() == 3 && str.matches('^[A-Z0-9]{3}$');
+      return str is string && str.size() == 3 && str.matches('^[A-Z0-9]{3}$') && !isBannedInitials(str);
     }
 
     // Helper function to validate document ID format
@@ -78,7 +83,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isValidInitials(code) && isValidPlayer(request.resource.data, code);
       allow update: if false;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || code == 'FAG' || resource.data.get('code', '') == 'FAG';
     }
 
     // Story Mode Leaderboard
@@ -86,7 +91,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isValidId(id) && isValidStoryEntry(request.resource.data);
       allow update: if false;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || resource.data.get('initials', '') == 'FAG';
     }
 
     // Speedrun Mode Leaderboard
@@ -94,7 +99,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isValidId(id) && isValidSpeedrunEntry(request.resource.data);
       allow update: if false;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || resource.data.get('initials', '') == 'FAG';
     }
 
     // Survival Mode Leaderboard
@@ -102,7 +107,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isValidId(id) && isValidSurvivalEntry(request.resource.data);
       allow update: if false;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || resource.data.get('initials', '') == 'FAG';
     }
 
     // Arcade Mode Leaderboard
@@ -110,7 +115,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isValidId(id) && isValidArcadeEntry(request.resource.data);
       allow update: if false;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || resource.data.get('initials', '') == 'FAG';
     }
 
     // First To Complete Story Mode (⚡FTC)
@@ -119,7 +124,7 @@ service cloud.firestore {
       allow create: if !exists(/databases/$(database)/documents/leaderboards_meta/story_ftc)
                     && request.resource.data.initials is string && isValidInitials(request.resource.data.initials);
       allow update: if false;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || resource.data.get('initials', '') == 'FAG';
     }
 
     // First To Complete Arcade Mode (⚡FTC)
@@ -128,7 +133,7 @@ service cloud.firestore {
       allow create: if !exists(/databases/$(database)/documents/leaderboards_meta/arcade_ftc)
                     && request.resource.data.initials is string && isValidInitials(request.resource.data.initials);
       allow update: if false;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || resource.data.get('initials', '') == 'FAG';
     }
 
     // Legacy Pioneer Plaque fallback
@@ -137,7 +142,7 @@ service cloud.firestore {
       allow create: if !exists(/databases/$(database)/documents/leaderboards_meta/story_pioneer)
                     && request.resource.data.initials is string && isValidInitials(request.resource.data.initials);
       allow update: if false;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || resource.data.get('initials', '') == 'FAG';
     }
   }
 }

@@ -60,13 +60,63 @@ function loadSavedHighScores(): HighScores {
   return {};
 }
 
+function normalizeStoryState(saved: Partial<GameState>): Partial<GameState> {
+  const purchasedN = Boolean(saved.act1PurchasedN);
+  if (!purchasedN) {
+    return {
+      ...saved,
+      act: 1,
+      currentN: 0,
+      act1PurchasedN: false,
+      act1Bits: 0,
+      act1SubPart: 1,
+      act1Resolution: 0,
+      act1Phase: 'void',
+      overshields: 0,
+      polarity: 1,
+      deathScreen: null,
+    };
+  }
+
+  const rawBits = Math.min(10, Math.max(0, Number(saved.act1Bits) || 0));
+  const isPart2 = saved.act1SubPart === 2 || rawBits >= 10;
+
+  if (isPart2) {
+    const rawRes = Math.min(10, Math.max(0, Number(saved.act1Resolution) || 0));
+    return {
+      ...saved,
+      act: 1,
+      currentN: 2,
+      act1PurchasedN: true,
+      act1Bits: 10,
+      act1SubPart: 2,
+      act1Resolution: rawRes,
+      act1Phase: 'point',
+      deathScreen: null,
+    };
+  }
+
+  return {
+    ...saved,
+    act: 1,
+    currentN: 1,
+    act1PurchasedN: true,
+    act1Bits: rawBits,
+    act1SubPart: 1,
+    act1Resolution: 0,
+    act1Phase: rawBits >= 9 ? 'line_segment' : 'point',
+    overshields: 0,
+    deathScreen: null,
+  };
+}
+
 function loadSavedStoryData(): Partial<GameState> | null {
   if (typeof window === 'undefined') return null;
   try {
     const rawStory = localStorage.getItem(STORY_SAVE_KEY);
     if (rawStory) {
       const parsed = JSON.parse(rawStory);
-      if (parsed && typeof parsed === 'object') return parsed;
+      if (parsed && typeof parsed === 'object') return normalizeStoryState(parsed);
     }
     // Fallback: legacy storage
     const rawLegacy = localStorage.getItem(RUN_STORAGE_KEY);
@@ -74,7 +124,7 @@ function loadSavedStoryData(): Partial<GameState> | null {
       const parsed = JSON.parse(rawLegacy);
       if (parsed && typeof parsed === 'object') {
         if (parsed.gameMode === 'story' || !parsed.gameMode || parsed.act1Bits > 0 || parsed.act1PurchasedN) {
-          return parsed;
+          return normalizeStoryState(parsed);
         }
       }
     }
@@ -122,6 +172,8 @@ function loadInitialGameState(): GameState {
 export default function App() {
   // Master Game State for Game N (initialized from persistent story storage or fresh first launch)
   const [gameState, setGameState] = useState<GameState>(loadInitialGameState);
+  // Session key to ensure a clean engine mount whenever restarting or launching a mode
+  const [runSessionKey, setRunSessionKey] = useState<number>(0);
   // Game starts directly on the main menu to simplify navigation and mode picking
   const [isMainMenuOpen, setIsMainMenuOpen] = useState<boolean>(true);
   // Prompt 3-letter FTC registration on startup if not already stored
@@ -293,6 +345,7 @@ export default function App() {
     setIsMainMenuOpen(false);
     soundEngine.setBossMusic(false);
     soundEngine.ensureResumed();
+    setRunSessionKey(prev => prev + 1);
 
     if (mode === 'story') {
       if (forceNewStory) {
@@ -316,6 +369,8 @@ export default function App() {
           hp: 100,
           maxHp: 100,
           score: 0,
+          engineCompilePercent: 8,
+          compiledModules: INITIAL_MODULES,
           deathScreen: null,
           audioActive: true,
           carrierActive: true,
@@ -468,38 +523,28 @@ export default function App() {
 
   // Story Save Progress summary for Main Menu
   const storySave = loadSavedStoryData();
-  const activeStoryResources = gameState.gameMode === 'story'
-    ? gameState.resources
-    : (storySave?.resources || { hertz: 0, volts: 0, baud: 0 });
+  const storySource = (!gameState.gameMode || gameState.gameMode === 'story')
+    ? normalizeStoryState(gameState)
+    : (storySave || DEFAULT_GAME_STATE);
+  const activeStoryResources = storySource.resources || { hertz: 0, volts: 0, baud: 0 };
   const hasStoryProgress = Boolean(
-    (storySave && (
-      storySave.act1PurchasedN ||
-      (storySave.act1Bits || 0) > 0 ||
-      (storySave.act1Resolution || 0) > 0 ||
-      (storySave.currentN || 0) > 0 ||
-      (storySave.resources?.hertz || 0) > 0 ||
-      (storySave.resources?.volts || 0) > 0 ||
-      (storySave.resources?.baud || 0) > 0
-    )) ||
-    (gameState.gameMode === 'story' && (
-      gameState.act1PurchasedN ||
-      (gameState.act1Bits || 0) > 0 ||
-      (gameState.act1Resolution || 0) > 0 ||
-      (gameState.currentN || 0) > 0 ||
-      (gameState.resources?.hertz || 0) > 0 ||
-      (gameState.resources?.volts || 0) > 0 ||
-      (gameState.resources?.baud || 0) > 0
-    ))
+    storySource.act1PurchasedN ||
+    (storySource.act1Bits || 0) > 0 ||
+    (storySource.act1Resolution || 0) > 0 ||
+    (storySource.currentN || 0) > 0 ||
+    (activeStoryResources.hertz || 0) > 0 ||
+    (activeStoryResources.volts || 0) > 0 ||
+    (activeStoryResources.baud || 0) > 0
   );
   const storyProgressSummary = {
     hasSave: hasStoryProgress,
-    act: storySave?.act || gameState.act || 1,
-    currentN: storySave?.currentN || gameState.currentN || 0,
-    act1Bits: storySave?.act1Bits || gameState.act1Bits || 0,
-    act1Resolution: storySave?.act1Resolution || gameState.act1Resolution || 0,
+    act: storySource.act ?? 1,
+    currentN: storySource.currentN ?? 0,
+    act1Bits: storySource.act1Bits ?? 0,
+    act1Resolution: storySource.act1Resolution ?? 0,
     resources: activeStoryResources,
-    act1PurchasedN: !!(storySave?.act1PurchasedN || gameState.act1PurchasedN),
-    act1SubPart: storySave?.act1SubPart || gameState.act1SubPart || 1,
+    act1PurchasedN: Boolean(storySource.act1PurchasedN),
+    act1SubPart: storySource.act1SubPart ?? 1,
   };
 
   return (
@@ -507,6 +552,7 @@ export default function App() {
       {/* Standalone Fullscreen Game Window (Border-free & Edge-to-Edge) */}
       <main className="relative w-full h-full overflow-hidden flex flex-col bg-black">
         <DimensionCanvas
+          key={runSessionKey}
           gameState={gameState}
           onUpdateState={setGameState}
           onOpenMainMenu={() => {

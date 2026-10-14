@@ -37,7 +37,7 @@ export interface BitGraphicsUpgrade {
 }
 
 export const BIT_GRAPHICS_UPGRADES: BitGraphicsUpgrade[] = [
-  { bit: 1, name: 'Bit 1: 1-Bit Graphics (2 Colors)', pipelineName: '1_Bit_Binary_Raster', desc: 'Calibrates 1-bit binary monochrome oscilloscope ray (2 colors: 0 & 1).', costHz: 1, costV: 1 },
+  { bit: 1, name: 'Bit 1: 1-Bit Graphics (2 Colors)', pipelineName: '1_Bit_Binary_Raster', desc: 'Calibrates 1-bit binary monochrome oscilloscope ray and visualizes incoming waves (2 colors: 0 & 1).', costHz: 1, costV: 1 },
   { bit: 2, name: 'Bit 2: 2-Bit Graphics (4 Colors)', pipelineName: '2_Bit_Vector_Axis', desc: 'Projects 2-bit dashed vector coordinate axis (4 shades of phosphor).', costHz: 2, costV: 2 },
   { bit: 3, name: 'Bit 3: 3-Bit Graphics (8 Colors)', pipelineName: '3_Bit_Polarizer_Reticle', desc: 'Compiles visible directional polarizer reticle arrow (8 colors).', costHz: 3, costV: 3 },
   { bit: 4, name: 'Bit 4: 4-Bit Graphics (16 Colors)', pipelineName: '4_Bit_Calibrated_Bus', desc: 'Solidifies continuous coordinate bus with calibrated distance hash marks (16 colors).', costHz: 6, costV: 6 },
@@ -1231,14 +1231,35 @@ export const DimensionCanvas: React.FC<Props> = ({
       setArcadeVictoryModal(null);
       setIntegrity(100);
       integrityRef.current = 100;
+      runPulsesRef.current = 0;
+
+      // Ensure boss health resets to full at start of boss fights on bit 9 and res 9 even when resuming from menu
+      if ((subPartRef.current === 1 || (gameState.act1SubPart || 1) === 1) && (bitsRef.current >= 9 || (gameState.act1Bits || 0) >= 9)) {
+        setAct1Phase('boss');
+        phaseRef.current = 'boss';
+        setBossHp(MAX_BOSS_1_HP);
+        bossHpRef.current = MAX_BOSS_1_HP;
+        bossMissesRef.current = 0;
+        bossHitFlashRef.current = 0;
+      }
+      if ((subPartRef.current === 2 || gameState.act1SubPart === 2) && (resolutionRef.current >= 9 || (gameState.act1Resolution || 0) >= 9)) {
+        setBoss2Hp(MAX_BOSS_2_HP);
+        boss2HpRef.current = MAX_BOSS_2_HP;
+        bossTargetTimerRef.current = 0;
+        bossTargetZoneRef.current = 'harmonic';
+        bossHitFlashRef.current = 0;
+      }
     }
-  }, [isMainMenuOpen]);
+  }, [isMainMenuOpen, gameState.act1Bits, gameState.act1Resolution, gameState.act1SubPart]);
 
   // Act 1 Deep Progression States
   // Phases: 'void' (0D) -> 'point' (N=1, collecting 9 bits) -> 'boss' (line segment) -> 'ray' (rift to 2D)
-  const [act1Phase, setAct1Phase] = useState<'void' | 'point' | 'boss' | 'ray'>(
-    gameState.act1Phase === 'line_segment' ? 'boss' : gameState.act1Phase
-  );
+  const [act1Phase, setAct1Phase] = useState<'void' | 'point' | 'boss' | 'ray'>(() => {
+    if (!gameState.act1PurchasedN) return 'void';
+    if ((gameState.act1SubPart || 1) === 1 && (gameState.act1Bits || 0) >= 9) return 'boss';
+    if (gameState.act1Phase === 'line_segment') return 'boss';
+    return gameState.act1Phase || 'point';
+  });
   const [hasN, setHasN] = useState<boolean>(gameState.act1PurchasedN);
   const [bits, setBits] = useState<number>(gameState.act1Bits || 0);
 
@@ -1585,6 +1606,8 @@ export const DimensionCanvas: React.FC<Props> = ({
 
     const nextPhase: 'void' | 'point' | 'boss' | 'ray' = !gameState.act1PurchasedN
       ? 'void'
+      : (nextSubPart === 1 && nextBits >= 9)
+      ? 'boss'
       : (gameState.act1Bits >= 9 && gameState.act1Phase === 'line_segment')
       ? 'boss'
       : gameState.act1Phase === 'ray'
@@ -1592,6 +1615,23 @@ export const DimensionCanvas: React.FC<Props> = ({
       : 'point';
     setAct1Phase(nextPhase);
     phaseRef.current = nextPhase;
+
+    // Reset boss health when loading / updating to bit 9 or res 9
+    if (nextSubPart === 1 && nextBits >= 9) {
+      setAct1Phase('boss');
+      phaseRef.current = 'boss';
+      setBossHp(MAX_BOSS_1_HP);
+      bossHpRef.current = MAX_BOSS_1_HP;
+      bossMissesRef.current = 0;
+      bossHitFlashRef.current = 0;
+    }
+    if (nextSubPart === 2 && nextRes >= 9) {
+      setBoss2Hp(MAX_BOSS_2_HP);
+      boss2HpRef.current = MAX_BOSS_2_HP;
+      bossTargetTimerRef.current = 0;
+      bossTargetZoneRef.current = 'harmonic';
+      bossHitFlashRef.current = 0;
+    }
     if (gameState.gameMode) {
       const modeChanged = prevGameModeRef.current !== gameState.gameMode;
       prevGameModeRef.current = gameState.gameMode;
@@ -1687,6 +1727,26 @@ export const DimensionCanvas: React.FC<Props> = ({
       setIntegrity(100);
       integrityRef.current = 100;
     }
+    // If resetting back to 0D Void (fresh Story or Speedrun start), clear active run state & entities
+    if (!gameState.act1PurchasedN && nextBits === 0 && nextSubPart === 1) {
+      pulsesRef.current = [];
+      particlesRef.current = [];
+      combatTextsRef.current = [];
+      redErrorZonesRef.current = [];
+      runHzRef.current = 0;
+      runVoltsRef.current = 0;
+      runBaudRef.current = 0;
+      setRunHz(0);
+      setRunVolts(0);
+      setRunBaud(0);
+      runPulsesRef.current = 0;
+      runTimeRef.current = 0;
+      spawnCooldownRef.current = 0;
+      damageFlashRef.current = 0;
+      screenShakeRef.current = 0;
+      playerXRef.current = 240;
+    }
+
     stateRef.current = gameState;
   }, [gameState.act1Bits, gameState.act1PurchasedN, gameState.act1Phase, gameState.act1SubPart, gameState.act1Resolution, gameState.overshields, gameState.gameMode, gameState.currentN, gameState.arcadeTime, gameState.totalRuns, gameState.hp]);
 
@@ -1716,6 +1776,8 @@ export const DimensionCanvas: React.FC<Props> = ({
   arcadeVictoryModalRef.current = arcadeVictoryModal;
   speedrunCompleteModalRef.current = speedrunCompleteModal;
   storyCompleteModalRef.current = storyCompleteModal;
+
+  const triggerDeathRef = useRef<(reason: string) => void>(() => {});
 
   // Roguelite difficulty, scaling rhythm, and trough kill-wave tracking
   const runPulsesRef = useRef<number>(0);
@@ -1854,7 +1916,7 @@ export const DimensionCanvas: React.FC<Props> = ({
     }
   };
 
-  // Auto-Purchase System for Speed Run & Arcade Modes
+  // Auto-Purchase System for Speed Run & Arcade Modes ONLY (Story mode requires death screen to compile)
   const checkAutoPurchases = () => {
     if (gameModeRef.current !== 'speedrun' && gameModeRef.current !== 'arcade') return;
 
@@ -1862,9 +1924,10 @@ export const DimensionCanvas: React.FC<Props> = ({
     const totalV = stateRef.current.resources.volts + runVoltsRef.current;
     const totalBaud = stateRef.current.resources.baud + runBaudRef.current;
 
-    // 1. Auto-purchase N=1 if not yet owned and materials collected (1 Hz, 0 V)
-    if (!hasNRef.current) {
-      if (totalHz >= 1) {
+    // 1. Auto-purchase N=1 in speedrun & arcade
+    if (!hasNRef.current && !stateRef.current.act1PurchasedN) {
+      if (gameModeRef.current === 'speedrun' || gameModeRef.current === 'arcade') {
+        if (totalHz >= 1) {
         runHzRef.current = Math.max(0, runHzRef.current - 1);
         setRunHz(runHzRef.current);
         setHasN(true);
@@ -1895,6 +1958,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         addCombatText('⚡ AUTO-COMPILED N = 1!', playerXRef.current, 190, '#33ff66');
         onLogAction("AUTO-COMPILE: N=1 materialized! (1 Hz)");
       }
+      }
       return;
     }
 
@@ -1915,9 +1979,14 @@ export const DimensionCanvas: React.FC<Props> = ({
       }
 
       if (upgrade && totalHz >= costHz && totalV >= costV) {
-        runHzRef.current = Math.max(0, runHzRef.current - costHz);
-        runVoltsRef.current = Math.max(0, runVoltsRef.current - costV);
+        const runHzDeduct = Math.min(runHzRef.current, costHz);
+        const bankedHzDeduct = costHz - runHzDeduct;
+        runHzRef.current -= runHzDeduct;
         setRunHz(runHzRef.current);
+
+        const runVDeduct = Math.min(runVoltsRef.current, costV);
+        const bankedVDeduct = costV - runVDeduct;
+        runVoltsRef.current -= runVDeduct;
         setRunVolts(runVoltsRef.current);
 
         const newBits = currentB + 1;
@@ -1929,8 +1998,8 @@ export const DimensionCanvas: React.FC<Props> = ({
           act1Bits: newBits,
           resources: {
             ...prev.resources,
-            hertz: Math.max(0, prev.resources.hertz - costHz),
-            volts: Math.max(0, prev.resources.volts - costV),
+            hertz: Math.max(0, prev.resources.hertz - bankedHzDeduct),
+            volts: Math.max(0, prev.resources.volts - bankedVDeduct),
           },
         }));
 
@@ -1948,9 +2017,13 @@ export const DimensionCanvas: React.FC<Props> = ({
           onLogAction(`🕹️ ARCADE PROGRESSION: Bit ${newBits} [${pacing.zone.toUpperCase()}] -> ${pacing.genre.replace('_', ' ').toUpperCase()} (${soundEngine.getBpm()} BPM)!`);
         }
 
-        if (newBits === 9 && phaseRef.current !== 'boss' && phaseRef.current !== 'ray') {
+        if (newBits === 9) {
           setAct1Phase('boss');
           phaseRef.current = 'boss';
+          setBossHp(MAX_BOSS_1_HP);
+          bossHpRef.current = MAX_BOSS_1_HP;
+          bossMissesRef.current = 0;
+          bossHitFlashRef.current = 0;
           onUpdateState(prev => ({ ...prev, act1Phase: 'line_segment' }));
           onLogAction("DESTINATION LOCKED BY CORRUPTED SOVEREIGN! 48 Hz/V collected — Boss fight begins! Defeat Boss 1 to compile Bit 10!");
         }
@@ -1969,25 +2042,41 @@ export const DimensionCanvas: React.FC<Props> = ({
         totalV >= upgrade.costV &&
         totalBaud >= upgrade.costBaud
       ) {
-        runHzRef.current = Math.max(0, runHzRef.current - upgrade.costHz);
-        runVoltsRef.current = Math.max(0, runVoltsRef.current - upgrade.costV);
-        runBaudRef.current = Math.max(0, runBaudRef.current - upgrade.costBaud);
-        setRunHz(runHzRef.current);
-        setRunVolts(runVoltsRef.current);
+        const runBaudDeduct = Math.min(runBaudRef.current, upgrade.costBaud);
+        const bankedBaudDeduct = upgrade.costBaud - runBaudDeduct;
+        runBaudRef.current -= runBaudDeduct;
         setRunBaud(runBaudRef.current);
+
+        const runHzDeduct = Math.min(runHzRef.current, upgrade.costHz);
+        const bankedHzDeduct = upgrade.costHz - runHzDeduct;
+        runHzRef.current -= runHzDeduct;
+        setRunHz(runHzRef.current);
+
+        const runVDeduct = Math.min(runVoltsRef.current, upgrade.costV);
+        const bankedVDeduct = upgrade.costV - runVDeduct;
+        runVoltsRef.current -= runVDeduct;
+        setRunVolts(runVoltsRef.current);
 
         const newRes = resolutionRef.current + 1;
         setResolution(newRes);
         resolutionRef.current = newRes;
+
+        if (newRes === 9) {
+          setBoss2Hp(MAX_BOSS_2_HP);
+          boss2HpRef.current = MAX_BOSS_2_HP;
+          bossTargetTimerRef.current = 0;
+          bossTargetZoneRef.current = 'harmonic';
+          bossHitFlashRef.current = 0;
+        }
 
         onUpdateState(prev => ({
           ...prev,
           act1Resolution: newRes,
           resources: {
             ...prev.resources,
-            baud: Math.max(0, prev.resources.baud - upgrade.costBaud),
-            hertz: Math.max(0, prev.resources.hertz - upgrade.costHz),
-            volts: Math.max(0, prev.resources.volts - upgrade.costV),
+            baud: Math.max(0, prev.resources.baud - bankedBaudDeduct),
+            hertz: Math.max(0, prev.resources.hertz - bankedHzDeduct),
+            volts: Math.max(0, prev.resources.volts - bankedVDeduct),
           },
         }));
 
@@ -2050,9 +2139,25 @@ export const DimensionCanvas: React.FC<Props> = ({
     overshieldsRef.current = 0;
 
     pulsesRef.current = [];
+    particlesRef.current = [];
+    combatTextsRef.current = [];
+    redErrorZonesRef.current = [];
+    damageFlashRef.current = 0;
+    screenShakeRef.current = 0;
+    spawnCooldownRef.current = 0;
+    topWavesSpawnedRef.current = 0;
+    bottomWavesSpawnedRef.current = 0;
     playerXRef.current = 240;
     runPulsesRef.current = 0;
     runTimeRef.current = 0;
+    setBossHp(MAX_BOSS_1_HP);
+    bossHpRef.current = MAX_BOSS_1_HP;
+    bossMissesRef.current = 0;
+    bossHitFlashRef.current = 0;
+    setBoss2Hp(MAX_BOSS_2_HP);
+    boss2HpRef.current = MAX_BOSS_2_HP;
+    bossTargetTimerRef.current = 0;
+    bossTargetZoneRef.current = 'harmonic';
     currentGenreRef.current = 'slow_waltz';
     currentZoneRef.current = 'easy';
     soundEngine.setMusicPacing('slow_waltz', 'easy');
@@ -2127,6 +2232,14 @@ export const DimensionCanvas: React.FC<Props> = ({
     playerXRef.current = 240;
     runPulsesRef.current = 0;
     runTimeRef.current = 0;
+    setBossHp(MAX_BOSS_1_HP);
+    bossHpRef.current = MAX_BOSS_1_HP;
+    bossMissesRef.current = 0;
+    bossHitFlashRef.current = 0;
+    setBoss2Hp(MAX_BOSS_2_HP);
+    boss2HpRef.current = MAX_BOSS_2_HP;
+    bossTargetTimerRef.current = 0;
+    bossTargetZoneRef.current = 'harmonic';
     currentGenreRef.current = 'slow_waltz';
     currentZoneRef.current = 'easy';
     soundEngine.setMusicPacing('slow_waltz', 'easy');
@@ -2196,6 +2309,14 @@ export const DimensionCanvas: React.FC<Props> = ({
     playerXRef.current = 240;
     runPulsesRef.current = 0;
     runTimeRef.current = 0;
+    setBossHp(MAX_BOSS_1_HP);
+    bossHpRef.current = MAX_BOSS_1_HP;
+    bossMissesRef.current = 0;
+    bossHitFlashRef.current = 0;
+    setBoss2Hp(MAX_BOSS_2_HP);
+    boss2HpRef.current = MAX_BOSS_2_HP;
+    bossTargetTimerRef.current = 0;
+    bossTargetZoneRef.current = 'harmonic';
     currentGenreRef.current = 'arcade_techno';
     currentZoneRef.current = 'easy';
     soundEngine.setMusicPacing('arcade_techno', 'easy');
@@ -2495,11 +2616,14 @@ export const DimensionCanvas: React.FC<Props> = ({
       } catch {}
     }
 
+    const isAct1PurchasedN = Boolean(hasNRef.current || stateRef.current.act1PurchasedN || gameState.act1PurchasedN);
+
     if (subPartRef.current === 2) {
       // Phase 2: Frame Rate / Resolution Progression (1 to 10)
-      const nextResIdx = Math.min(RESOLUTION_UPGRADES.length - 1, resolutionRef.current);
+      const curRes = Math.max(0, resolutionRef.current || 0);
+      const nextResIdx = Math.min(RESOLUTION_UPGRADES.length - 1, curRes);
       const upgrade = RESOLUTION_UPGRADES[nextResIdx];
-      const isBoss2Locked = resolutionRef.current >= 9;
+      const isBoss2Locked = curRes >= 9;
       const screen: DeathScreenState = {
         active: true,
         collectedHz: hzGained,
@@ -2509,7 +2633,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         costV: upgrade.costV,
         costBaud: upgrade.costBaud,
         target: 'resolution',
-        currentResolution: resolutionRef.current,
+        currentResolution: curRes,
         upgradeName: upgrade.name,
         upgradeDesc: `${upgrade.fps} · ${upgrade.desc}`,
         message: isBoss2Locked
@@ -2523,28 +2647,29 @@ export const DimensionCanvas: React.FC<Props> = ({
           ? `Resolution perimeter collapsed. Final objective: Defeat Boss 2 (Fracture Sovereign) to compile Resolution 10 (240 FPS)!`
           : `Resolution perimeter collapsed. Collected +${hzGained} Hz, +${vGained} V, +${baudGained} Flux. Banked: ${currentTotalHz} Hz, ${currentTotalV} V, ${currentTotalBaud} Flux. Compile ${upgrade.name}?`
       );
-    } else if (!hasN) {
-      // Phase 0: Asking to buy N (Equal cost: 2 Hz and 2 V)
+    } else if (!isAct1PurchasedN) {
+      // Phase 0: Asking to buy N (Equal cost: 1 Hz and 1 V)
       const screen: DeathScreenState = {
         active: true,
         collectedHz: hzGained,
         collectedV: vGained,
         collectedBaud: baudGained,
-        costHz: 2,
-        costV: 2,
+        costHz: 1,
+        costV: 1,
         target: 'N',
         upgradeName: 'N = 1: The Stationary Pixel',
         upgradeDesc: 'Compiles the single stationary white pixel in the void and displays N = 1 in the top left corner.',
-        message: `OH NO YOU DIED.\nYOU COLLECTED ${hzGained} HZ AND ${vGained} V.\nYOU NOW HAVE ${currentTotalHz} HZ AND ${currentTotalV} V.\nSPEND 2 HZ AND 2 V FOR 1 N?`,
+        message: `OH NO YOU DIED.\nYOU COLLECTED ${hzGained} HZ AND ${vGained} V.\nYOU NOW HAVE ${currentTotalHz} HZ AND ${currentTotalV} V.\nSPEND 1 HZ AND 1 V FOR 1 N?`,
       };
       deathScreenRef.current = screen;
       setDeathScreen(screen);
-      onLogAction(`Entity dissolved in 0-bit void. Collected ${hzGained} HZ, ${vGained} V. Spend 2 HZ & 2 V for 1 N?`);
+      onLogAction(`Entity dissolved in 0-bit void. Collected ${hzGained} HZ, ${vGained} V. Spend 1 HZ & 1 V for 1 N?`);
     } else {
       // Phase 1: Asking to buy next Bit (Equal cost: X Hz and X V)
-      const nextBitIdx = Math.min(BIT_GRAPHICS_UPGRADES.length - 1, bitsRef.current);
+      const curBits = Math.max(0, bitsRef.current || 0);
+      const nextBitIdx = Math.min(BIT_GRAPHICS_UPGRADES.length - 1, curBits);
       const upgrade = BIT_GRAPHICS_UPGRADES[nextBitIdx];
-      const isBoss1Locked = bitsRef.current >= 9;
+      const isBoss1Locked = curBits >= 9;
       const screen: DeathScreenState = {
         active: true,
         collectedHz: hzGained,
@@ -2568,29 +2693,9 @@ export const DimensionCanvas: React.FC<Props> = ({
       );
     }
 
-    if (gameModeRef.current === 'story' || !gameModeRef.current) {
-      let stageName = '0D Void';
-      let stageNum = 0;
-      if (subPartRef.current === 2) {
-        stageNum = 10 + resolutionRef.current;
-        const upgrade = RESOLUTION_UPGRADES[Math.min(RESOLUTION_UPGRADES.length - 1, Math.max(0, resolutionRef.current - 1))];
-        stageName = `Resolution ${resolutionRef.current} (${upgrade?.fps || '60 FPS'})`;
-      } else if (bitsRef.current > 0) {
-        stageNum = bitsRef.current;
-        const upgrade = BIT_GRAPHICS_UPGRADES[Math.min(BIT_GRAPHICS_UPGRADES.length - 1, Math.max(0, bitsRef.current - 1))];
-        stageName = `Bit ${bitsRef.current} (${upgrade?.name || 'Graphics'})`;
-      }
-      saveRunRecord('story', {
-        stageName,
-        stageNum,
-        bit: bitsRef.current,
-        resolution: resolutionRef.current,
-        completed: false,
-      });
-    }
-
     pulsesRef.current = [];
   };
+  triggerDeathRef.current = triggerDeath;
 
   // Handle Continue from Death Screen
   const handleContinueAfterDeath = () => {
@@ -2621,21 +2726,46 @@ export const DimensionCanvas: React.FC<Props> = ({
     troughTrainActiveRef.current = false;
     bossMissesRef.current = 0;
     setBossHp(MAX_BOSS_1_HP);
+    bossHpRef.current = MAX_BOSS_1_HP;
     setBoss2Hp(MAX_BOSS_2_HP);
+    boss2HpRef.current = MAX_BOSS_2_HP;
+    bossTargetTimerRef.current = 0;
+    bossTargetZoneRef.current = 'harmonic';
     redErrorZonesRef.current = [];
     topWavesSpawnedRef.current = 0;
     bottomWavesSpawnedRef.current = 0;
     combatTextsRef.current = [];
     bossHitFlashRef.current = 0;
     spawnCooldownRef.current = 0;
+
+    // Ensure boss health resets to full and phase is boss when restarting run on bit 9 and res 9
+    if ((subPartRef.current === 1 || stateRef.current.act1SubPart === 1) && (bitsRef.current >= 9 || stateRef.current.act1Bits >= 9)) {
+      setAct1Phase('boss');
+      phaseRef.current = 'boss';
+      setBossHp(MAX_BOSS_1_HP);
+      bossHpRef.current = MAX_BOSS_1_HP;
+      bossMissesRef.current = 0;
+      bossHitFlashRef.current = 0;
+    }
+    if ((subPartRef.current === 2 || stateRef.current.act1SubPart === 2) && (resolutionRef.current >= 9 || stateRef.current.act1Resolution >= 9)) {
+      setBoss2Hp(MAX_BOSS_2_HP);
+      boss2HpRef.current = MAX_BOSS_2_HP;
+      bossTargetTimerRef.current = 0;
+      bossTargetZoneRef.current = 'harmonic';
+      bossHitFlashRef.current = 0;
+    }
   };
 
   // Handle Purchasing N, Bit, or Resolution Upgrade
   const handlePurchaseUpgrade = () => {
     if (!deathScreen || deathBufferSecondsRef.current > 0) return;
 
+    const availHz = Math.max(gameState.resources.hertz, stateRef.current.resources.hertz);
+    const availV = Math.max(gameState.resources.volts, stateRef.current.resources.volts);
+    const availBaud = Math.max(gameState.resources.baud, stateRef.current.resources.baud);
+
     if (deathScreen.target === 'N') {
-      if (gameState.resources.hertz >= deathScreen.costHz && gameState.resources.volts >= deathScreen.costV) {
+      if (availHz >= deathScreen.costHz && availV >= deathScreen.costV) {
         onUpdateState(prev => ({
           ...prev,
           currentN: 1,
@@ -2663,15 +2793,17 @@ export const DimensionCanvas: React.FC<Props> = ({
         handleContinueAfterDeath();
       }
     } else if (deathScreen.target === 'bit') {
-      if (bits >= 9) {
+      const curBits = Math.max(0, bitsRef.current || 0);
+      if (curBits >= 9) {
         // Bit 10 is earned strictly by defeating Boss 1 (Corrupted Sovereign)
         handleContinueAfterDeath();
         return;
       }
-      if (gameState.resources.hertz >= deathScreen.costHz && gameState.resources.volts >= deathScreen.costV) {
-        const nextBits = Math.min(10, bits + 1);
+      if (availHz >= deathScreen.costHz && availV >= deathScreen.costV) {
+        const nextBits = Math.min(10, curBits + 1);
         const upgrade = BIT_GRAPHICS_UPGRADES[nextBits - 1];
         setBits(nextBits);
+        bitsRef.current = nextBits;
         onUpdateState(prev => ({
           ...prev,
           act1Bits: nextBits,
@@ -2687,10 +2819,27 @@ export const DimensionCanvas: React.FC<Props> = ({
         soundEngine.playCadenceResolution();
         onLogAction(`COMPILED ${upgrade.name}! Graphical engine updated to ${nextBits}-bit (${Math.pow(2, nextBits)} colors): ${upgrade.desc}`);
 
+        // Register new Story milestone immediately upon compiling a new Bit
+        if (!gameModeRef.current || gameModeRef.current === 'story') {
+          saveRunRecord('story', {
+            stageName: upgrade.name,
+            stageNum: nextBits,
+            bit: nextBits,
+            resolution: 0,
+            completed: false,
+          });
+          onLogAction(`✦ MILESTONE REACHED: ${upgrade.name.toUpperCase()} REGISTERED TO GLOBAL STORY RANKINGS`);
+        }
+
         if (nextBits === 8) {
           onLogAction("8TH BIT COMPILED! NEUTRALizer polarizer mode (■ Neutral -> +40 HP, Am chord) unlocked before boss fight!");
-        } else if (nextBits === 9 && act1Phase !== 'boss' && act1Phase !== 'ray') {
+        } else if (nextBits === 9) {
           setAct1Phase('boss');
+          phaseRef.current = 'boss';
+          setBossHp(MAX_BOSS_1_HP);
+          bossHpRef.current = MAX_BOSS_1_HP;
+          bossMissesRef.current = 0;
+          bossHitFlashRef.current = 0;
           onUpdateState(prev => ({ ...prev, act1Phase: 'line_segment' }));
           onLogAction("9TH BIT COMPILED! Destination point locked by Corrupted Sovereign. Boss encounter initiated!");
         } else if (nextBits === 10) {
@@ -2712,18 +2861,19 @@ export const DimensionCanvas: React.FC<Props> = ({
         handleContinueAfterDeath();
       }
     } else if (deathScreen.target === 'resolution') {
-      if (resolution >= 9) {
+      const curRes = Math.max(0, resolutionRef.current || 0);
+      if (curRes >= 9) {
         // Resolution 10 is earned strictly by defeating Boss 2 (Fracture Sovereign)
         handleContinueAfterDeath();
         return;
       }
       const costBaud = deathScreen.costBaud || 0;
       if (
-        gameState.resources.baud >= costBaud &&
-        gameState.resources.hertz >= deathScreen.costHz &&
-        gameState.resources.volts >= deathScreen.costV
+        availBaud >= costBaud &&
+        availHz >= deathScreen.costHz &&
+        availV >= deathScreen.costV
       ) {
-        const nextRes = Math.min(10, resolution + 1);
+        const nextRes = Math.min(10, curRes + 1);
         const upgrade = RESOLUTION_UPGRADES[nextRes - 1];
         setResolution(nextRes);
         resolutionRef.current = nextRes;
@@ -2742,6 +2892,19 @@ export const DimensionCanvas: React.FC<Props> = ({
         soundEngine.playCadenceResolution();
         onLogAction(`COMPILED ${upgrade.name} (${upgrade.fps})! ${upgrade.desc}`);
 
+        // Register new Story milestone immediately upon compiling a new Resolution
+        if (!gameModeRef.current || gameModeRef.current === 'story') {
+          const resStageName = `Resolution ${nextRes} (${upgrade.fps})`;
+          saveRunRecord('story', {
+            stageName: resStageName,
+            stageNum: 10 + nextRes,
+            bit: 10,
+            resolution: nextRes,
+            completed: false,
+          });
+          onLogAction(`✦ MILESTONE REACHED: RESOLUTION ${nextRes} (${upgrade.fps}) REGISTERED TO GLOBAL STORY RANKINGS`);
+        }
+
         if (nextRes === 1) {
           onLogAction("RESOLUTION 1 COMPILED: Overshields unlocked! Squares at 100 HP grant +20 Overshield (up to 10 stacks / 300 effective HP).");
         } else if (nextRes === 2) {
@@ -2753,6 +2916,11 @@ export const DimensionCanvas: React.FC<Props> = ({
         } else if (nextRes === 8) {
           onLogAction("RESOLUTION 8 COMPILED: Emitter Maw recognized! Right sector yields 4x resources at high projectile velocity!");
         } else if (nextRes === 9) {
+          setBoss2Hp(MAX_BOSS_2_HP);
+          boss2HpRef.current = MAX_BOSS_2_HP;
+          bossTargetTimerRef.current = 0;
+          bossTargetZoneRef.current = 'harmonic';
+          bossHitFlashRef.current = 0;
           onLogAction("RESOLUTION 9 COMPILED: FRACTURE SOVEREIGN ENGAGED! Boss can only be damaged when player occupies the targeted line sector!");
         } else if (nextRes === 10) {
           onLogAction("✦ RESOLUTION 10 COMPILED! MASTER TRANSCENDENCE ACHIEVED! You have fully mastered Game N!");
@@ -3084,10 +3252,12 @@ export const DimensionCanvas: React.FC<Props> = ({
         bossTargetZoneRef.current
       );
 
-      // Red damage flash overlay
+      // Red damage flash overlay (only when 1-bit+ graphics are unlocked)
       if (damageFlashRef.current > 0) {
-        ctx.fillStyle = `rgba(255, 30, 60, ${damageFlashRef.current * 0.24})`;
-        ctx.fillRect(-10, -10, w + 20, h + 20);
+        if (hasN && (bitsRef.current >= 1 || subPartRef.current === 2)) {
+          ctx.fillStyle = `rgba(255, 30, 60, ${damageFlashRef.current * 0.24})`;
+          ctx.fillRect(-10, -10, w + 20, h + 20);
+        }
         damageFlashRef.current = Math.max(0, damageFlashRef.current - dt * 3.5);
       }
 
@@ -3142,6 +3312,30 @@ export const DimensionCanvas: React.FC<Props> = ({
         );
 
         if (!isRoundOver && !isMainMenuOpenRef.current && (hasN || stateRef.current.carrierActive)) {
+          // At start of run on bit 9 or res 9, guarantee boss health is reset to full
+          if (runPulsesRef.current === 0) {
+            if ((subPartRef.current === 1 || stateRef.current.act1SubPart === 1) && (bitsRef.current >= 9 || stateRef.current.act1Bits >= 9)) {
+              if (phaseRef.current !== 'boss') {
+                setAct1Phase('boss');
+                phaseRef.current = 'boss';
+              }
+              if (bossHpRef.current < MAX_BOSS_1_HP) {
+                bossHpRef.current = MAX_BOSS_1_HP;
+                setBossHp(MAX_BOSS_1_HP);
+              }
+              bossMissesRef.current = 0;
+              bossHitFlashRef.current = 0;
+            }
+            if ((subPartRef.current === 2 || stateRef.current.act1SubPart === 2) && (resolutionRef.current >= 9 || stateRef.current.act1Resolution >= 9)) {
+              if (boss2HpRef.current < MAX_BOSS_2_HP) {
+                boss2HpRef.current = MAX_BOSS_2_HP;
+                setBoss2Hp(MAX_BOSS_2_HP);
+              }
+              bossTargetTimerRef.current = 0;
+              bossHitFlashRef.current = 0;
+            }
+          }
+
           // In Part 1 Boss fight: boss pulls player toward right!
           if (phase === 'boss' && subPartRef.current === 1) {
             // If player incorrectly polarizes more than 1 projectile (bossMissesRef.current > 1),
@@ -3150,7 +3344,7 @@ export const DimensionCanvas: React.FC<Props> = ({
             playerXRef.current = Math.min(TRACE_END - 20, playerXRef.current + dt * pullRate);
 
             if (playerXRef.current >= TRACE_END - 24) {
-              triggerDeath("SUCKED INTO CORRUPTED SINGULARITY: More than 1 failed polarization caused irreversible gravitational collapse!");
+              triggerDeathRef.current("SUCKED INTO CORRUPTED SINGULARITY: More than 1 failed polarization caused irreversible gravitational collapse!");
             }
           }
 
@@ -3231,7 +3425,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                   integrityRef.current = nextH;
                   setIntegrity(nextH);
                   if (nextH <= 0) {
-                    triggerDeath("RED SPATIAL ERROR COLLAPSE: Stood in active hazard zone on the coordinate line!");
+                    triggerDeathRef.current("RED SPATIAL ERROR COLLAPSE: Stood in active hazard zone on the coordinate line!");
                     break;
                   }
                 }
@@ -3616,11 +3810,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           // "They purchase N and the white pixel appears...
           // N = 1 appears in the top left corner. Player hits continue but this time,
           // N remains in the top left corner. A single white pixel [appears in the center]."
-          ctx.fillStyle = '#ffffff';
-          ctx.font = '13px monospace';
-          ctx.fillText('N = 1', 24, 26);
-
-          // A single white stationary pixel right at the center coordinates
+          // The line and incoming waves remain hidden at N = 1 (0 bits).
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(playerX - 2, TRACE_Y - 2, 4, 4);
         } else if (phase === 'point' || phase === 'boss') {
@@ -4416,6 +4606,13 @@ export const DimensionCanvas: React.FC<Props> = ({
                   });
                   onLogAction(`👑 ARCADE VICTORY! Conquered Corrupted Sovereign in ${formatTime(finalTime)} with ${lives} lives remaining! Recorded in Vault.`);
                 } else {
+                  // Story mode Boss 1 victory! Clear boss hazards & award transcendence to N=2
+                  pulsesRef.current = [];
+                  redErrorZonesRef.current = [];
+                  integrityRef.current = 100;
+                  setIntegrity(100);
+                  addCombatText('✦ SOVEREIGN CONQUERED! ASCENDING TO N = 2! ✦', TRACE_END - 60, TRACE_Y - 30, '#55ff99');
+
                   setBits(10);
                   bitsRef.current = 10;
                   setSubPart(2);
@@ -4425,6 +4622,18 @@ export const DimensionCanvas: React.FC<Props> = ({
                   setAct1Phase('point');
                   phaseRef.current = 'point';
 
+                  // Register Bit 10 milestone immediately upon Sovereign defeat in Story mode
+                  if (!gameModeRef.current || gameModeRef.current === 'story') {
+                    saveRunRecord('story', {
+                      stageName: 'Bit 10: Sovereign Harmonized (1024 Colors)',
+                      stageNum: 10,
+                      bit: 10,
+                      resolution: 0,
+                      completed: false,
+                    });
+                    onLogAction("✦ MILESTONE REACHED: BIT 10 (SOVEREIGN HARMONIZED) REGISTERED TO GLOBAL STORY RANKINGS");
+                  }
+
                   onUpdateState(prev => ({
                     ...prev,
                     act1Bits: 10,
@@ -4432,6 +4641,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                     act1Resolution: 0,
                     act1Phase: 'point',
                     currentN: 2,
+                    hp: 100,
                     resources: {
                       ...prev.resources,
                       baud: prev.resources.baud + 25,
@@ -4496,7 +4706,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                   integrityRef.current = nextH;
                   setIntegrity(nextH);
                   if (nextH <= 0) {
-                    triggerDeath("Crest chord clash collapsed integrity.");
+                    triggerDeathRef.current("Crest chord clash collapsed integrity.");
                     break;
                   }
                 }
@@ -4540,7 +4750,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                   integrityRef.current = nextH;
                   setIntegrity(nextH);
                   if (nextH <= 0) {
-                    triggerDeath("Trough chord clash collapsed integrity.");
+                    triggerDeathRef.current("Trough chord clash collapsed integrity.");
                     break;
                   }
                 }
@@ -4590,10 +4800,11 @@ export const DimensionCanvas: React.FC<Props> = ({
             continue;
           }
 
-          // Render Pulse (visible only once graphics are compiled: hasN && currentBits >= 1)
-          if (hasN && currentBits >= 1 && (phase === 'point' || phase === 'boss')) {
-            ctx.strokeStyle = p.color;
-            ctx.shadowColor = p.color;
+          // Render Pulse (hidden at N=1 / 0-bit where currentBits === 0; visible from Bit 1 onwards)
+          if (hasN && (phase === 'point' || phase === 'boss') && (subPartRef.current === 2 || currentBits >= 1)) {
+            const drawColor = p.color;
+            ctx.strokeStyle = drawColor;
+            ctx.shadowColor = drawColor;
             ctx.shadowBlur = currentBits >= 8 ? 12 : 0;
             ctx.lineWidth = 3;
             ctx.beginPath();
@@ -4615,7 +4826,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           bossHitFlashRef.current = Math.max(0, bossHitFlashRef.current - dt * 3.5);
         }
 
-        // Render Floating Combat Texts (Damage & Deflection feedback)
+        // Render Floating Combat Texts (Damage & Deflection feedback, hidden in 0-bit void / N=1 0-bit state)
         for (let c = combatTextsRef.current.length - 1; c >= 0; c--) {
           const ct = combatTextsRef.current[c];
           if (!ct) continue;
@@ -4625,34 +4836,38 @@ export const DimensionCanvas: React.FC<Props> = ({
             combatTextsRef.current.splice(c, 1);
             continue;
           }
-          ctx.save();
-          ctx.fillStyle = ct.color;
-          ctx.globalAlpha = Math.max(0, ct.alpha);
-          ctx.font = 'bold 12px monospace';
-          ctx.shadowColor = ct.color;
-          ctx.shadowBlur = 8;
-          ctx.textAlign = 'center';
-          ctx.fillText(ct.text, ct.x, ct.y);
-          ctx.restore();
+          if (hasN && (currentBits >= 1 || subPartRef.current === 2)) {
+            ctx.save();
+            ctx.fillStyle = ct.color;
+            ctx.globalAlpha = Math.max(0, ct.alpha);
+            ctx.font = 'bold 12px monospace';
+            ctx.shadowColor = ct.color;
+            ctx.shadowBlur = 8;
+            ctx.textAlign = 'center';
+            ctx.fillText(ct.text, ct.x, ct.y);
+            ctx.restore();
+          }
         }
 
         // Top HUD Header
         if (hasN) {
-          ctx.fillStyle = '#33ff66';
           ctx.font = '13px monospace';
           if (subPartRef.current === 2) {
             // "Move N = 2 to the left hand corner. It popped up on the right. Have it replace or cover N = 1"
             const resUpgrade = RESOLUTION_UPGRADES[Math.min(RESOLUTION_UPGRADES.length - 1, Math.max(0, resolutionRef.current - 1))];
             const fpsLabel = resUpgrade?.fps || '12 FPS';
             ctx.save();
+            ctx.fillStyle = '#33ff66';
             ctx.font = 'bold 13px monospace';
             ctx.shadowColor = '#33ff66';
             ctx.shadowBlur = 8;
             ctx.fillText(`N = 2  [${fpsLabel}] [RES: ${resolutionRef.current}/10]`, 24, 26);
             ctx.restore();
           } else if (currentBits === 0) {
+            ctx.fillStyle = '#ffffff';
             ctx.fillText('N = 1', 24, 26);
           } else {
+            ctx.fillStyle = '#33ff66';
             const bitColors = Math.pow(2, currentBits);
             const bitDots = Array.from({ length: 10 }).map((_, i) => i < bitsRef.current ? '•' : '◦').join(' ');
             ctx.fillText(`N = 1  [${currentBits}-BIT GRAPHICS // ${bitColors} COLORS] [ ${bitDots} ]`, 24, 26);
@@ -4695,7 +4910,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           ctx.fillText(`SOVEREIGN: ${Math.round((bossHpRef.current / MAX_BOSS_1_HP) * 100)}%`, w - 180, 26);
         }
 
-      // Update Particles
+      // Update Particles (rendered only when 1-bit+ graphics are unlocked)
       for (let i = particlesRef.current.length - 1; i >= 0; i--) {
         const pt = particlesRef.current[i];
         if (!pt) continue;
@@ -4706,10 +4921,12 @@ export const DimensionCanvas: React.FC<Props> = ({
           particlesRef.current.splice(i, 1);
           continue;
         }
-        ctx.fillStyle = pt.color;
-        ctx.globalAlpha = Math.max(0, pt.alpha);
-        ctx.fillRect(pt.x, pt.y, 2.5, 2.5);
-        ctx.globalAlpha = 1;
+        if (hasN && (currentBits >= 1 || subPartRef.current === 2)) {
+          ctx.fillStyle = pt.color;
+          ctx.globalAlpha = Math.max(0, pt.alpha);
+          ctx.fillRect(pt.x, pt.y, 2.5, 2.5);
+          ctx.globalAlpha = 1;
+        }
       }
 
       // Apply Progressive Bit-Depth Graphical Quantization (when in Game N with 1 to 7 bits)
@@ -5128,16 +5345,16 @@ export const DimensionCanvas: React.FC<Props> = ({
                     onClick={handlePurchaseUpgrade}
                     disabled={
                       deathBufferSeconds > 0 ||
-                      (deathScreen.target === 'resolution' && gameState.resources.baud < (deathScreen.costBaud || 0)) ||
-                      (gameState.resources.hertz < deathScreen.costHz) ||
-                      (gameState.resources.volts < deathScreen.costV)
+                      (deathScreen.target === 'resolution' && Math.max(gameState.resources.baud, stateRef.current.resources.baud) < (deathScreen.costBaud || 0)) ||
+                      (Math.max(gameState.resources.hertz, stateRef.current.resources.hertz) < deathScreen.costHz) ||
+                      (Math.max(gameState.resources.volts, stateRef.current.resources.volts) < deathScreen.costV)
                     }
                     className={`w-full sm:w-auto px-5 py-3 font-bold rounded-lg text-xs transition-all shadow-lg flex items-center justify-center gap-1.5 font-mono ${
                       deathBufferSeconds > 0
                         ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-50'
-                        : ((deathScreen.target === 'resolution' && gameState.resources.baud < (deathScreen.costBaud || 0)) ||
-                           (gameState.resources.hertz < deathScreen.costHz) ||
-                           (gameState.resources.volts < deathScreen.costV))
+                        : ((deathScreen.target === 'resolution' && Math.max(gameState.resources.baud, stateRef.current.resources.baud) < (deathScreen.costBaud || 0)) ||
+                           (Math.max(gameState.resources.hertz, stateRef.current.resources.hertz) < deathScreen.costHz) ||
+                           (Math.max(gameState.resources.volts, stateRef.current.resources.volts) < deathScreen.costV))
                         ? 'bg-neutral-800/80 text-neutral-500 border border-neutral-700/60 cursor-not-allowed opacity-60'
                         : 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white active:scale-95 cursor-pointer shadow-blue-950/60 border border-blue-400/30'
                     }`}

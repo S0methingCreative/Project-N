@@ -10,7 +10,7 @@
           "minLength": 3,
           "maxLength": 3,
           "pattern": "^[A-Z0-9]{3}$",
-          "description": "3-character arcade player initials"
+          "description": "3-character arcade player initials (offensive initials including FAG strictly prohibited)"
         },
         "createdAt": {
           "type": "string",
@@ -30,7 +30,7 @@
           "minLength": 3,
           "maxLength": 3,
           "pattern": "^[A-Z0-9]{3}$",
-          "description": "3-character arcade player initials"
+          "description": "3-character arcade player initials (offensive initials including FAG strictly prohibited)"
         },
         "stageName": {
           "type": "string",

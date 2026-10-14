@@ -80,6 +80,14 @@ export function isDevelopmentEnvironment(): boolean {
   return isLocal || isAisDev || isViteDev;
 }
 
+export const BANNED_INITIALS: readonly string[] = ['FAG'];
+
+export function isBannedInitials(initials: string | null | undefined): boolean {
+  if (!initials) return false;
+  const clean = initials.trim().toUpperCase();
+  return BANNED_INITIALS.includes(clean);
+}
+
 // Local storage fallback cache keys (v3 clean slate)
 const LOCAL_LEADERBOARDS_CACHE_KEY = 'bit_resonance_leaderboards_cache_v3';
 const LOCAL_STORY_FTC_CACHE_KEY = 'game_n_story_ftc_cache_v3';
@@ -116,6 +124,11 @@ export function wipeAllSavedScores(): void {
       localStorage.removeItem(key);
     }
 
+    const currentCode = localStorage.getItem(PLAYER_CODE_STORAGE_KEY);
+    if (isBannedInitials(currentCode)) {
+      localStorage.removeItem(PLAYER_CODE_STORAGE_KEY);
+    }
+
     // Strip highScores from persistent story save so players keep progression without contaminated scores
     const rawStory = localStorage.getItem('game_n_story_save_v2');
     if (rawStory) {
@@ -143,9 +156,13 @@ export function wipeAllSavedScores(): void {
   }
 }
 
-// Auto-run once to purge legacy dev scores from browser
+// Auto-run once to purge legacy dev scores & banned handles from browser
 if (typeof window !== 'undefined') {
   try {
+    const curCode = localStorage.getItem(PLAYER_CODE_STORAGE_KEY);
+    if (isBannedInitials(curCode)) {
+      localStorage.removeItem(PLAYER_CODE_STORAGE_KEY);
+    }
     if (!localStorage.getItem(SCORES_PURGE_FLAG)) {
       wipeAllSavedScores();
       localStorage.setItem(SCORES_PURGE_FLAG, 'true');
@@ -158,7 +175,12 @@ export function getPlayerCode(): string | null {
   try {
     const raw = localStorage.getItem(PLAYER_CODE_STORAGE_KEY);
     if (raw && /^[A-Z0-9]{3}$/i.test(raw.trim())) {
-      return raw.trim().toUpperCase();
+      const clean = raw.trim().toUpperCase();
+      if (isBannedInitials(clean)) {
+        localStorage.removeItem(PLAYER_CODE_STORAGE_KEY);
+        return null;
+      }
+      return clean;
     }
   } catch {}
   return null;
@@ -168,6 +190,10 @@ export function setPlayerCode(code: string): void {
   if (typeof window === 'undefined') return;
   try {
     const clean = code.trim().toUpperCase().slice(0, 3);
+    if (isBannedInitials(clean)) {
+      localStorage.removeItem(PLAYER_CODE_STORAGE_KEY);
+      return;
+    }
     localStorage.setItem(PLAYER_CODE_STORAGE_KEY, clean);
   } catch {}
 }
@@ -213,7 +239,11 @@ export const DEFAULT_SURVIVAL_SCORES: SurvivalScoreEntry[] = FILLER_CODES.map((c
 
 export function sanitizeInitials(raw: string): string {
   const clean = raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
-  return clean.padEnd(3, 'A');
+  const padded = clean.padEnd(3, 'A');
+  if (isBannedInitials(padded)) {
+    return 'AAA';
+  }
+  return padded;
 }
 
 function generateDocId(): string {
@@ -222,6 +252,9 @@ function generateDocId(): string {
 
 function saveToLocalCache(key: string, data: any) {
   try {
+    if (Array.isArray(data)) {
+      data = data.filter((item: any) => !isBannedInitials(item?.initials));
+    }
     localStorage.setItem(key, JSON.stringify(data));
   } catch {}
 }
@@ -229,7 +262,16 @@ function saveToLocalCache(key: string, data: any) {
 function loadFromLocalCache(key: string, fallback: any) {
   try {
     const raw = localStorage.getItem(key);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((item: any) => !isBannedInitials(item?.initials));
+      }
+      if (parsed && typeof parsed === 'object' && isBannedInitials(parsed?.initials)) {
+        return fallback;
+      }
+      return parsed;
+    }
   } catch {}
   return fallback;
 }
@@ -244,6 +286,10 @@ export async function checkCodeAvailability(
   const clean = code.trim().toUpperCase();
   if (clean.length !== 3 || !/^[A-Z0-9]{3}$/.test(clean)) {
     return { available: false, reason: 'Must be exactly 3 alphanumeric characters (A-Z, 0-9).' };
+  }
+
+  if (isBannedInitials(clean)) {
+    return { available: false, reason: `Pilot code "${clean}" is prohibited.` };
   }
 
   if (currentCode && clean === currentCode.trim().toUpperCase()) {
@@ -285,7 +331,7 @@ export async function checkCodeAvailability(
 
 export async function registerPlayerCode(code: string): Promise<boolean> {
   const clean = code.trim().toUpperCase().slice(0, 3);
-  if (clean.length !== 3) return false;
+  if (clean.length !== 3 || isBannedInitials(clean)) return false;
 
   setPlayerCode(clean);
 
@@ -313,10 +359,13 @@ export async function registerPlayerCode(code: string): Promise<boolean> {
 export async function fetchStoryLeaderboard(): Promise<StoryScoreEntry[]> {
   try {
     const colRef = collection(db, 'leaderboards_story');
-    const q = query(colRef, orderBy('stageNum', 'desc'), limit(10));
+    const q = query(colRef, orderBy('stageNum', 'desc'), limit(15));
     const snap = await getDocs(q);
     if (!snap.empty) {
-      const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as StoryScoreEntry));
+      const items = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as StoryScoreEntry))
+        .filter(item => !isBannedInitials(item.initials))
+        .slice(0, 10);
       saveToLocalCache('story_scores_v3', items);
       return items;
     }
@@ -329,12 +378,15 @@ export async function fetchStoryLeaderboard(): Promise<StoryScoreEntry[]> {
 export function subscribeStoryLeaderboard(callback: (scores: StoryScoreEntry[]) => void): Unsubscribe {
   try {
     const colRef = collection(db, 'leaderboards_story');
-    const q = query(colRef, orderBy('stageNum', 'desc'), limit(10));
+    const q = query(colRef, orderBy('stageNum', 'desc'), limit(15));
     return onSnapshot(
       q,
       (snap) => {
         if (!snap.empty) {
-          const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as StoryScoreEntry));
+          const items = snap.docs
+            .map(d => ({ id: d.id, ...d.data() } as StoryScoreEntry))
+            .filter(item => !isBannedInitials(item.initials))
+            .slice(0, 10);
           saveToLocalCache('story_scores_v3', items);
           callback(items);
         } else {
@@ -353,12 +405,17 @@ export function subscribeStoryLeaderboard(callback: (scores: StoryScoreEntry[]) 
 }
 
 export async function submitStoryScore(entry: Omit<StoryScoreEntry, 'id' | 'createdAt'>): Promise<boolean> {
+  const cleanInitials = sanitizeInitials(entry.initials);
+  if (isBannedInitials(cleanInitials)) {
+    console.warn(`[Leaderboard] Blocked story score with banned initials: ${cleanInitials}`);
+    return false;
+  }
+
   if (isDevelopmentEnvironment()) {
     console.info('[Leaderboard] Story score submission bypassed in development environment.');
     return false;
   }
 
-  const cleanInitials = sanitizeInitials(entry.initials);
   const docId = generateDocId();
   const payload: StoryScoreEntry = {
     ...entry,
@@ -391,10 +448,13 @@ export async function submitStoryScore(entry: Omit<StoryScoreEntry, 'id' | 'crea
 export async function fetchArcadeLeaderboard(): Promise<ArcadeScoreEntry[]> {
   try {
     const colRef = collection(db, 'leaderboards_arcade');
-    const q = query(colRef, orderBy('stageNum', 'desc'), orderBy('duration', 'desc'), limit(10));
+    const q = query(colRef, orderBy('stageNum', 'desc'), orderBy('duration', 'desc'), limit(15));
     const snap = await getDocs(q);
     if (!snap.empty) {
-      const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ArcadeScoreEntry));
+      const items = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as ArcadeScoreEntry))
+        .filter(item => !isBannedInitials(item.initials))
+        .slice(0, 10);
       saveToLocalCache('arcade_scores_v3', items);
       return items;
     }
@@ -407,12 +467,15 @@ export async function fetchArcadeLeaderboard(): Promise<ArcadeScoreEntry[]> {
 export function subscribeArcadeLeaderboard(callback: (scores: ArcadeScoreEntry[]) => void): Unsubscribe {
   try {
     const colRef = collection(db, 'leaderboards_arcade');
-    const q = query(colRef, orderBy('stageNum', 'desc'), orderBy('duration', 'desc'), limit(10));
+    const q = query(colRef, orderBy('stageNum', 'desc'), orderBy('duration', 'desc'), limit(15));
     return onSnapshot(
       q,
       (snap) => {
         if (!snap.empty) {
-          const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ArcadeScoreEntry));
+          const items = snap.docs
+            .map(d => ({ id: d.id, ...d.data() } as ArcadeScoreEntry))
+            .filter(item => !isBannedInitials(item.initials))
+            .slice(0, 10);
           saveToLocalCache('arcade_scores_v3', items);
           callback(items);
         } else {
@@ -431,12 +494,17 @@ export function subscribeArcadeLeaderboard(callback: (scores: ArcadeScoreEntry[]
 }
 
 export async function submitArcadeScore(entry: Omit<ArcadeScoreEntry, 'id' | 'createdAt'>): Promise<boolean> {
+  const cleanInitials = sanitizeInitials(entry.initials);
+  if (isBannedInitials(cleanInitials)) {
+    console.warn(`[Leaderboard] Blocked arcade score with banned initials: ${cleanInitials}`);
+    return false;
+  }
+
   if (isDevelopmentEnvironment()) {
     console.info('[Leaderboard] Arcade score submission bypassed in development environment.');
     return false;
   }
 
-  const cleanInitials = sanitizeInitials(entry.initials);
   const docId = generateDocId();
   const payload: ArcadeScoreEntry = {
     ...entry,
@@ -470,10 +538,13 @@ export async function submitArcadeScore(entry: Omit<ArcadeScoreEntry, 'id' | 'cr
 export async function fetchSpeedrunLeaderboard(): Promise<SpeedrunScoreEntry[]> {
   try {
     const colRef = collection(db, 'leaderboards_speedrun');
-    const q = query(colRef, orderBy('timeSeconds', 'asc'), limit(10));
+    const q = query(colRef, orderBy('timeSeconds', 'asc'), limit(15));
     const snap = await getDocs(q);
     if (!snap.empty) {
-      const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as SpeedrunScoreEntry));
+      const items = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as SpeedrunScoreEntry))
+        .filter(item => !isBannedInitials(item.initials))
+        .slice(0, 10);
       saveToLocalCache('speedrun_scores_v3', items);
       return items;
     }
@@ -486,12 +557,15 @@ export async function fetchSpeedrunLeaderboard(): Promise<SpeedrunScoreEntry[]> 
 export function subscribeSpeedrunLeaderboard(callback: (scores: SpeedrunScoreEntry[]) => void): Unsubscribe {
   try {
     const colRef = collection(db, 'leaderboards_speedrun');
-    const q = query(colRef, orderBy('timeSeconds', 'asc'), limit(10));
+    const q = query(colRef, orderBy('timeSeconds', 'asc'), limit(15));
     return onSnapshot(
       q,
       (snap) => {
         if (!snap.empty) {
-          const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as SpeedrunScoreEntry));
+          const items = snap.docs
+            .map(d => ({ id: d.id, ...d.data() } as SpeedrunScoreEntry))
+            .filter(item => !isBannedInitials(item.initials))
+            .slice(0, 10);
           saveToLocalCache('speedrun_scores_v3', items);
           callback(items);
         } else {
@@ -510,12 +584,17 @@ export function subscribeSpeedrunLeaderboard(callback: (scores: SpeedrunScoreEnt
 }
 
 export async function submitSpeedrunScore(entry: Omit<SpeedrunScoreEntry, 'id' | 'createdAt'>): Promise<boolean> {
+  const cleanInitials = sanitizeInitials(entry.initials);
+  if (isBannedInitials(cleanInitials)) {
+    console.warn(`[Leaderboard] Blocked speedrun score with banned initials: ${cleanInitials}`);
+    return false;
+  }
+
   if (isDevelopmentEnvironment()) {
     console.info('[Leaderboard] Speedrun score submission bypassed in development environment.');
     return false;
   }
 
-  const cleanInitials = sanitizeInitials(entry.initials);
   const docId = generateDocId();
   const payload: SpeedrunScoreEntry = {
     ...entry,
@@ -546,10 +625,13 @@ export async function submitSpeedrunScore(entry: Omit<SpeedrunScoreEntry, 'id' |
 export async function fetchSurvivalLeaderboard(): Promise<SurvivalScoreEntry[]> {
   try {
     const colRef = collection(db, 'leaderboards_survival');
-    const q = query(colRef, orderBy('survivalSeconds', 'desc'), limit(10));
+    const q = query(colRef, orderBy('survivalSeconds', 'desc'), limit(15));
     const snap = await getDocs(q);
     if (!snap.empty) {
-      const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as SurvivalScoreEntry));
+      const items = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as SurvivalScoreEntry))
+        .filter(item => !isBannedInitials(item.initials))
+        .slice(0, 10);
       saveToLocalCache('survival_scores_v3', items);
       return items;
     }
@@ -562,12 +644,15 @@ export async function fetchSurvivalLeaderboard(): Promise<SurvivalScoreEntry[]> 
 export function subscribeSurvivalLeaderboard(callback: (scores: SurvivalScoreEntry[]) => void): Unsubscribe {
   try {
     const colRef = collection(db, 'leaderboards_survival');
-    const q = query(colRef, orderBy('survivalSeconds', 'desc'), limit(10));
+    const q = query(colRef, orderBy('survivalSeconds', 'desc'), limit(15));
     return onSnapshot(
       q,
       (snap) => {
         if (!snap.empty) {
-          const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as SurvivalScoreEntry));
+          const items = snap.docs
+            .map(d => ({ id: d.id, ...d.data() } as SurvivalScoreEntry))
+            .filter(item => !isBannedInitials(item.initials))
+            .slice(0, 10);
           saveToLocalCache('survival_scores_v3', items);
           callback(items);
         } else {
@@ -586,12 +671,17 @@ export function subscribeSurvivalLeaderboard(callback: (scores: SurvivalScoreEnt
 }
 
 export async function submitSurvivalScore(entry: Omit<SurvivalScoreEntry, 'id' | 'createdAt'>): Promise<boolean> {
+  const cleanInitials = sanitizeInitials(entry.initials);
+  if (isBannedInitials(cleanInitials)) {
+    console.warn(`[Leaderboard] Blocked survival score with banned initials: ${cleanInitials}`);
+    return false;
+  }
+
   if (isDevelopmentEnvironment()) {
     console.info('[Leaderboard] Survival score submission bypassed in development environment.');
     return false;
   }
 
-  const cleanInitials = sanitizeInitials(entry.initials);
   const docId = generateDocId();
   const payload: SurvivalScoreEntry = {
     ...entry,
@@ -624,13 +714,17 @@ export async function fetchStoryFTC(): Promise<FTCEntry | null> {
     const snap = await getDoc(ftcRef);
     if (snap.exists()) {
       const data = snap.data() as FTCEntry;
+      if (isBannedInitials(data.initials)) {
+        return null;
+      }
       saveToLocalCache(LOCAL_STORY_FTC_CACHE_KEY, data);
       return data;
     }
   } catch (err) {
     console.warn('fetchStoryFTC error:', err);
   }
-  return loadFromLocalCache(LOCAL_STORY_FTC_CACHE_KEY, null);
+  const cached = loadFromLocalCache(LOCAL_STORY_FTC_CACHE_KEY, null);
+  return cached && !isBannedInitials(cached.initials) ? cached : null;
 }
 
 export function subscribeStoryFTC(callback: (ftc: FTCEntry | null) => void): Unsubscribe {
@@ -641,30 +735,49 @@ export function subscribeStoryFTC(callback: (ftc: FTCEntry | null) => void): Uns
       (snap) => {
         if (snap.exists()) {
           const data = snap.data() as FTCEntry;
+          if (isBannedInitials(data.initials)) {
+            callback(null);
+            return;
+          }
           saveToLocalCache(LOCAL_STORY_FTC_CACHE_KEY, data);
           callback(data);
         } else {
-          callback(loadFromLocalCache(LOCAL_STORY_FTC_CACHE_KEY, null));
+          const cached = loadFromLocalCache(LOCAL_STORY_FTC_CACHE_KEY, null);
+          callback(cached && !isBannedInitials(cached.initials) ? cached : null);
         }
       },
       (err) => {
         console.warn('Story FTC live snapshot error:', err);
-        callback(loadFromLocalCache(LOCAL_STORY_FTC_CACHE_KEY, null));
+        const cached = loadFromLocalCache(LOCAL_STORY_FTC_CACHE_KEY, null);
+        callback(cached && !isBannedInitials(cached.initials) ? cached : null);
       }
     );
   } catch {
-    callback(loadFromLocalCache(LOCAL_STORY_FTC_CACHE_KEY, null));
+    const cached = loadFromLocalCache(LOCAL_STORY_FTC_CACHE_KEY, null);
+    callback(cached && !isBannedInitials(cached.initials) ? cached : null);
     return () => {};
   }
 }
 
 export async function recordStoryFTCIfFirst(initials: string): Promise<{ isFTC: boolean; ftc: FTCEntry }> {
+  const cleanInitials = sanitizeInitials(initials);
+  if (isBannedInitials(cleanInitials)) {
+    return {
+      isFTC: false,
+      ftc: {
+        initials: 'AAA',
+        completedAt: new Date().toISOString(),
+        stageName: 'Invalid Initials',
+      },
+    };
+  }
+
   if (isDevelopmentEnvironment()) {
     console.info('[Leaderboard] Story FTC recording skipped in development environment.');
     return {
       isFTC: false,
       ftc: {
-        initials: sanitizeInitials(initials),
+        initials: cleanInitials,
         completedAt: new Date().toISOString(),
         stageName: 'Fracture Sovereign Defeated (Dev Mode)',
       },
@@ -672,7 +785,6 @@ export async function recordStoryFTCIfFirst(initials: string): Promise<{ isFTC: 
   }
 
   const ftcRef = doc(db, 'leaderboards_meta', 'story_ftc');
-  const cleanInitials = sanitizeInitials(initials);
 
   try {
     const result = await runTransaction(db, async (transaction) => {
@@ -715,13 +827,17 @@ export async function fetchArcadeFTC(): Promise<FTCEntry | null> {
     const snap = await getDoc(ftcRef);
     if (snap.exists()) {
       const data = snap.data() as FTCEntry;
+      if (isBannedInitials(data.initials)) {
+        return null;
+      }
       saveToLocalCache(LOCAL_ARCADE_FTC_CACHE_KEY, data);
       return data;
     }
   } catch (err) {
     console.warn('fetchArcadeFTC error:', err);
   }
-  return loadFromLocalCache(LOCAL_ARCADE_FTC_CACHE_KEY, null);
+  const cached = loadFromLocalCache(LOCAL_ARCADE_FTC_CACHE_KEY, null);
+  return cached && !isBannedInitials(cached.initials) ? cached : null;
 }
 
 export function subscribeArcadeFTC(callback: (ftc: FTCEntry | null) => void): Unsubscribe {
@@ -732,19 +848,26 @@ export function subscribeArcadeFTC(callback: (ftc: FTCEntry | null) => void): Un
       (snap) => {
         if (snap.exists()) {
           const data = snap.data() as FTCEntry;
+          if (isBannedInitials(data.initials)) {
+            callback(null);
+            return;
+          }
           saveToLocalCache(LOCAL_ARCADE_FTC_CACHE_KEY, data);
           callback(data);
         } else {
-          callback(loadFromLocalCache(LOCAL_ARCADE_FTC_CACHE_KEY, null));
+          const cached = loadFromLocalCache(LOCAL_ARCADE_FTC_CACHE_KEY, null);
+          callback(cached && !isBannedInitials(cached.initials) ? cached : null);
         }
       },
       (err) => {
         console.warn('Arcade FTC live snapshot error:', err);
-        callback(loadFromLocalCache(LOCAL_ARCADE_FTC_CACHE_KEY, null));
+        const cached = loadFromLocalCache(LOCAL_ARCADE_FTC_CACHE_KEY, null);
+        callback(cached && !isBannedInitials(cached.initials) ? cached : null);
       }
     );
   } catch {
-    callback(loadFromLocalCache(LOCAL_ARCADE_FTC_CACHE_KEY, null));
+    const cached = loadFromLocalCache(LOCAL_ARCADE_FTC_CACHE_KEY, null);
+    callback(cached && !isBannedInitials(cached.initials) ? cached : null);
     return () => {};
   }
 }
@@ -754,12 +877,24 @@ export async function recordArcadeFTCIfFirst(
   duration: number,
   totalHz: number
 ): Promise<{ isFTC: boolean; ftc: FTCEntry }> {
+  const cleanInitials = sanitizeInitials(initials);
+  if (isBannedInitials(cleanInitials)) {
+    return {
+      isFTC: false,
+      ftc: {
+        initials: 'AAA',
+        completedAt: new Date().toISOString(),
+        stageName: 'Invalid Initials',
+      },
+    };
+  }
+
   if (isDevelopmentEnvironment()) {
     console.info('[Leaderboard] Arcade FTC recording skipped in development environment.');
     return {
       isFTC: false,
       ftc: {
-        initials: sanitizeInitials(initials),
+        initials: cleanInitials,
         completedAt: new Date().toISOString(),
         stageName: 'Res 10 Victory (Dev Mode)',
         duration: Math.round(duration * 10) / 10,
@@ -769,7 +904,6 @@ export async function recordArcadeFTCIfFirst(
   }
 
   const ftcRef = doc(db, 'leaderboards_meta', 'arcade_ftc');
-  const cleanInitials = sanitizeInitials(initials);
 
   try {
     const result = await runTransaction(db, async (transaction) => {
