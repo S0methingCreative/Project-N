@@ -359,14 +359,15 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
 
           {/* Top 10 Table */}
           <div className="flex-1 overflow-y-auto border border-neutral-800 rounded-xl bg-black/40 p-1 sm:p-2 min-h-[220px]">
-            {/* 1. STORY HIGH SCORES: Track how far people are in progression with stage completed; remove time; remove score */}
+            {/* 1. STORY HIGH SCORES: Total completions + Current Level progression; single consolidated record per pilot */}
             {activeTab === 'story' && (
               <div className="space-y-1">
                 <div className="grid grid-cols-12 px-3 py-1.5 text-[10px] text-neutral-400 font-bold uppercase tracking-wider border-b border-neutral-800">
                   <div className="col-span-2 sm:col-span-1">RANK</div>
-                  <div className="col-span-3 sm:col-span-2">INITIALS</div>
-                  <div className="col-span-4 sm:col-span-7">STAGE COMPLETED</div>
-                  <div className="col-span-3 sm:col-span-2 text-right">DATE</div>
+                  <div className="col-span-2 sm:col-span-2">INITIALS</div>
+                  <div className="col-span-3 sm:col-span-2 text-center">COMPLETIONS</div>
+                  <div className="col-span-5 sm:col-span-5">CURRENT LEVEL</div>
+                  <div className="hidden sm:block sm:col-span-2 text-right">DATE</div>
                 </div>
                 {storyScores.map((entry, idx) => {
                   const rank = idx + 1;
@@ -375,7 +376,7 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
                     (playerCode && entry.initials === playerCode);
                   return (
                     <div
-                      key={entry.id || idx}
+                      key={entry.id || entry.initials || idx}
                       className={`grid grid-cols-12 items-center px-3 py-2 rounded-lg text-xs font-mono transition-colors ${
                         isHighlight
                           ? 'bg-amber-500/20 border border-amber-400/80 text-amber-200'
@@ -391,14 +392,17 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
                       <div className="col-span-2 sm:col-span-1 font-black flex items-center gap-1">
                         {rank === 1 ? <Crown className="w-3.5 h-3.5 text-amber-400" /> : `#${rank}`}
                       </div>
-                      <div className="col-span-3 sm:col-span-2 font-black tracking-widest text-white text-sm">
+                      <div className="col-span-2 sm:col-span-2 font-black tracking-widest text-white text-sm">
                         {entry.initials}
                       </div>
-                      <div className="col-span-4 sm:col-span-7 font-semibold text-emerald-300 truncate">
-                        {entry.stageName} {entry.completed ? '★ (CONQUERED)' : ''}
+                      <div className="col-span-3 sm:col-span-2 text-center font-bold text-amber-300 tabular-nums">
+                        {entry.completions ?? 0}
                       </div>
-                      <div className="col-span-3 sm:col-span-2 text-right text-neutral-400 tabular-nums text-[11px]">
-                        {formatDate(entry.createdAt)}
+                      <div className="col-span-5 sm:col-span-5 font-semibold text-emerald-300 truncate" title={entry.stageName}>
+                        {entry.stageName}
+                      </div>
+                      <div className="hidden sm:block sm:col-span-2 text-right text-neutral-400 tabular-nums text-[11px]">
+                        {formatDate(entry.updatedAt || entry.createdAt)}
                       </div>
                     </div>
                   );

@@ -16,12 +16,14 @@ import { db } from '../firebase';
 export interface StoryScoreEntry {
   id?: string;
   initials: string;
-  stageName: string;
-  stageNum: number;
+  completions: number; // total number of completions
+  stageName: string;   // current level / story progression display
+  stageNum: number;    // numeric stage ranking index for sorting
   bit: number;
   resolution: number;
   completed: boolean;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface ArcadeScoreEntry {
@@ -203,6 +205,7 @@ const FILLER_CODES = ['AAA', 'BBB', 'CCC', 'DDD', 'EEE', 'FFF', 'GGG', 'HHH', 'I
 // Default beatable records (AAA through JJJ)
 export const DEFAULT_STORY_SCORES: StoryScoreEntry[] = FILLER_CODES.map((code, idx) => ({
   initials: code,
+  completions: 0,
   stageName: '0D Void',
   stageNum: 0,
   bit: 0,
@@ -354,52 +357,145 @@ export async function registerPlayerCode(code: string): Promise<boolean> {
 }
 
 // ---------------------------------------------------------------------------
-// STORY LEADERBOARD (Furthest stage completed, no time, no score)
+// STORY LEADERBOARD (Consolidated per pilot: Total completions + current level)
 // ---------------------------------------------------------------------------
+
+/**
+ * Consolidates story score entries so each pilot displays only ONCE.
+ * Keeps records together:
+ * - Total number of completions (Math.max of all runs / explicit completions)
+ * - Current level / story progression (from most recent run)
+ * - Ranked first by total completions, second by current story progression (stageNum)
+ */
+export function consolidateStoryScores(rawItems: any[]): StoryScoreEntry[] {
+  const pilotMap = new Map<string, StoryScoreEntry>();
+
+  for (const raw of rawItems) {
+    if (!raw || !raw.initials) continue;
+    const clean = sanitizeInitials(raw.initials);
+    if (isBannedInitials(clean)) continue;
+
+    const rawCompletions = typeof raw.completions === 'number'
+      ? raw.completions
+      : (raw.completed ? 1 : 0);
+    const stageNum = typeof raw.stageNum === 'number' ? raw.stageNum : 0;
+    const stageName = (raw.stageName || '0D Void').slice(0, 64);
+    const bit = Math.max(0, Math.floor(raw.bit || 0));
+    const resolution = Math.max(0, Math.floor(raw.resolution || 0));
+    const completed = Boolean(raw.completed || rawCompletions > 0);
+    const createdAt = raw.createdAt || new Date().toISOString();
+    const updatedAt = raw.updatedAt || raw.createdAt;
+    const itemTime = new Date(updatedAt || createdAt).getTime();
+
+    if (!pilotMap.has(clean)) {
+      pilotMap.set(clean, {
+        id: raw.id || clean,
+        initials: clean,
+        completions: Math.max(0, rawCompletions),
+        stageName,
+        stageNum,
+        bit,
+        resolution,
+        completed,
+        createdAt,
+        updatedAt,
+      });
+    } else {
+      const existing = pilotMap.get(clean)!;
+      // Highest completions wins across all playthroughs
+      existing.completions = Math.max(existing.completions, rawCompletions);
+      existing.completed = Boolean(existing.completed || completed || existing.completions > 0);
+
+      // Current level / progression comes from the latest activity
+      const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+      if (itemTime >= existingTime) {
+        existing.stageName = stageName;
+        existing.stageNum = stageNum;
+        existing.bit = bit;
+        existing.resolution = resolution;
+        existing.updatedAt = updatedAt;
+      }
+    }
+  }
+
+  const list = Array.from(pilotMap.values());
+
+  // Rank first by total completions, second by current story progression
+  list.sort((a, b) => {
+    // 1st: Total completions
+    if (b.completions !== a.completions) {
+      return b.completions - a.completions;
+    }
+    // 2nd: Current story progression (stageNum)
+    if (b.stageNum !== a.stageNum) {
+      return b.stageNum - a.stageNum;
+    }
+    // Tie breaker: latest active
+    const timeA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+    const timeB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+    return timeB - timeA;
+  });
+
+  // If fewer than 10 unique pilots, fill with remaining default beatable records
+  if (list.length < 10) {
+    const existingCodes = new Set(list.map(e => e.initials));
+    for (const filler of DEFAULT_STORY_SCORES) {
+      if (!existingCodes.has(filler.initials)) {
+        list.push(filler);
+        existingCodes.add(filler.initials);
+        if (list.length >= 10) break;
+      }
+    }
+  }
+
+  return list.slice(0, 10);
+}
+
 export async function fetchStoryLeaderboard(): Promise<StoryScoreEntry[]> {
   try {
     const colRef = collection(db, 'leaderboards_story');
-    const q = query(colRef, orderBy('stageNum', 'desc'), limit(15));
+    // Fetch recent story entries up to 100 docs to consolidate per unique pilot
+    const q = query(colRef, limit(100));
     const snap = await getDocs(q);
     if (!snap.empty) {
-      const items = snap.docs
-        .map(d => ({ id: d.id, ...d.data() } as StoryScoreEntry))
-        .filter(item => !isBannedInitials(item.initials))
-        .slice(0, 10);
-      saveToLocalCache('story_scores_v3', items);
-      return items;
+      const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const consolidated = consolidateStoryScores(items);
+      saveToLocalCache('story_scores_v3', consolidated);
+      return consolidated;
     }
   } catch (err) {
     console.warn('fetchStoryLeaderboard error, using cache:', err);
   }
-  return loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
+  const cached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
+  return consolidateStoryScores(cached);
 }
 
 export function subscribeStoryLeaderboard(callback: (scores: StoryScoreEntry[]) => void): Unsubscribe {
   try {
     const colRef = collection(db, 'leaderboards_story');
-    const q = query(colRef, orderBy('stageNum', 'desc'), limit(15));
+    const q = query(colRef, limit(100));
     return onSnapshot(
       q,
       (snap) => {
         if (!snap.empty) {
-          const items = snap.docs
-            .map(d => ({ id: d.id, ...d.data() } as StoryScoreEntry))
-            .filter(item => !isBannedInitials(item.initials))
-            .slice(0, 10);
-          saveToLocalCache('story_scores_v3', items);
-          callback(items);
+          const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          const consolidated = consolidateStoryScores(items);
+          saveToLocalCache('story_scores_v3', consolidated);
+          callback(consolidated);
         } else {
-          callback(loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES));
+          const cached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
+          callback(consolidateStoryScores(cached));
         }
       },
       (err) => {
         console.warn('Story leaderboard live snapshot failed:', err);
-        callback(loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES));
+        const cached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
+        callback(consolidateStoryScores(cached));
       }
     );
   } catch {
-    callback(loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES));
+    const cached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
+    callback(consolidateStoryScores(cached));
     return () => {};
   }
 }
@@ -411,33 +507,49 @@ export async function submitStoryScore(entry: Omit<StoryScoreEntry, 'id' | 'crea
     return false;
   }
 
-  if (isDevelopmentEnvironment()) {
-    console.info('[Leaderboard] Story score submission bypassed in development environment.');
-    return false;
-  }
-
-  const docId = generateDocId();
+  const incomingCompletions = Math.max(0, Math.floor(entry.completions ?? (entry.completed ? 1 : 0)));
+  const nowIso = new Date().toISOString();
   const payload: StoryScoreEntry = {
     ...entry,
     initials: cleanInitials,
+    completions: incomingCompletions,
     stageName: entry.stageName.slice(0, 64),
     stageNum: typeof entry.stageNum === 'number' ? entry.stageNum : 0,
     bit: Math.max(0, Math.min(20, Math.floor(entry.bit || 0))),
     resolution: Math.max(0, Math.min(20, Math.floor(entry.resolution || 0))),
-    completed: Boolean(entry.completed),
-    createdAt: new Date().toISOString(),
+    completed: Boolean(entry.completed || incomingCompletions > 0),
+    createdAt: nowIso,
+    updatedAt: nowIso,
   };
 
+  // 1. Immediately update local storage cache keeping records together per pilot
+  const curCached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
+  const updatedCached = consolidateStoryScores([...curCached, payload]);
+  saveToLocalCache('story_scores_v3', updatedCached);
+
+  if (isDevelopmentEnvironment()) {
+    console.info('[Leaderboard] Story score submission saved locally (dev environment active).');
+    return false;
+  }
+
+  // 2. In live Firestore, keep document ID as cleanInitials so each pilot has exactly 1 document
   try {
-    await setDoc(doc(db, 'leaderboards_story', docId), payload);
+    const docRef = doc(db, 'leaderboards_story', cleanInitials);
+    const existingSnap = await getDoc(docRef);
+    if (existingSnap.exists()) {
+      const existingData = existingSnap.data() as Partial<StoryScoreEntry>;
+      const existingCompletions = typeof existingData.completions === 'number'
+        ? existingData.completions
+        : (existingData.completed ? 1 : 0);
+      payload.completions = Math.max(incomingCompletions, existingCompletions);
+      if (existingData.createdAt) {
+        payload.createdAt = existingData.createdAt;
+      }
+    }
+    await setDoc(docRef, payload);
     return true;
   } catch (err) {
     console.error('Failed to submit story score to Firestore:', err);
-    const current = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
-    const updated = [...current, { id: docId, ...payload }]
-      .sort((a, b) => b.stageNum - a.stageNum)
-      .slice(0, 10);
-    saveToLocalCache('story_scores_v3', updated);
     return false;
   }
 }

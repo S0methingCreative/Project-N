@@ -53,6 +53,10 @@
           "type": "boolean",
           "description": "Whether the player defeated the final Fracture Sovereign"
         },
+        "completions": {
+          "type": "number",
+          "description": "Total number of times the player completed the story mode"
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",

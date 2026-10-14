@@ -48,6 +48,7 @@ const DEFAULT_GAME_STATE: GameState = {
   deathScreen: null,
   totalRuns: 1,
   hasCompletedStory: false,
+  storyCompletions: 0,
   gameMode: 'story',
 };
 
@@ -149,6 +150,7 @@ function loadInitialGameState(): GameState {
         gameMode: 'story',
         totalRuns: savedStory.totalRuns || 1,
         hasCompletedStory: savedStory.hasCompletedStory || false,
+        storyCompletions: savedStory.storyCompletions ?? (savedStory.hasCompletedStory ? 1 : 0),
         highScores: savedHighScores,
         // Keep carrier active on resume if player has already unlocked N
         audioActive: false,
@@ -220,6 +222,7 @@ export default function App() {
           gameMode: 'story',
           totalRuns: gameState.totalRuns,
           hasCompletedStory: gameState.hasCompletedStory,
+          storyCompletions: gameState.storyCompletions || 0,
         };
         localStorage.setItem(STORY_SAVE_KEY, JSON.stringify(storyToSave));
         localStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(storyToSave));
@@ -379,6 +382,7 @@ export default function App() {
             volts: 0,
             baud: 0,
           },
+          storyCompletions: gameState.storyCompletions || (gameState.hasCompletedStory ? 1 : 0),
         };
         try {
           localStorage.setItem(STORY_SAVE_KEY, JSON.stringify(freshStory));
@@ -401,6 +405,7 @@ export default function App() {
           gameMode: 'story',
           totalRuns: prev.totalRuns || savedStory.totalRuns || 1,
           hasCompletedStory: prev.hasCompletedStory || savedStory.hasCompletedStory || false,
+          storyCompletions: prev.storyCompletions || savedStory.storyCompletions || (savedStory.hasCompletedStory ? 1 : 0),
           highScores: prev.highScores || loadSavedHighScores(),
           audioActive: true,
           carrierActive: true,
@@ -413,6 +418,7 @@ export default function App() {
           gameMode: 'story',
           totalRuns: (gameState.totalRuns || 1) + 1,
           hasCompletedStory: gameState.hasCompletedStory,
+          storyCompletions: gameState.storyCompletions || (gameState.hasCompletedStory ? 1 : 0),
           highScores: gameState.highScores || loadSavedHighScores(),
           audioActive: true,
           carrierActive: true,

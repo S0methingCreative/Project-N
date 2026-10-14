@@ -72,6 +72,7 @@ export interface GameState {
   gameMode?: GameMode;
   totalRuns?: number; // Cumulative runs attempted across playthrough
   hasCompletedStory?: boolean; // True once final boss is defeated for the first time
+  storyCompletions?: number; // Total number of story completions
   speedrunTime?: number;
   speedrunRuns?: number;
   hasCompletedSpeedrun?: boolean;

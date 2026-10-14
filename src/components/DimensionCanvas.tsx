@@ -1311,6 +1311,12 @@ export const DimensionCanvas: React.FC<Props> = ({
   const speedrunCompleteModalRef = useRef<{ time: number; runs: number } | null>(null);
   const [storyCompleteModal, setStoryCompleteModal] = useState<{ totalRuns: number } | null>(null);
   const storyCompleteModalRef = useRef<{ totalRuns: number } | null>(null);
+  const [storyCompletions, setStoryCompletions] = useState<number>(
+    gameState.storyCompletions || (gameState.hasCompletedStory ? 1 : 0)
+  );
+  const storyCompletionsRef = useRef<number>(
+    gameState.storyCompletions || (gameState.hasCompletedStory ? 1 : 0)
+  );
 
   const [survivalTime, setSurvivalTime] = useState<number>(0);
   const survivalTimeRef = useRef<number>(0);
@@ -1389,6 +1395,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       survivalSeconds?: number;
       totalHz?: number;
       isVictory?: boolean;
+      completions?: number;
     }
   ) => {
     const code = getPlayerCode() || 'AAA';
@@ -1398,13 +1405,18 @@ export const DimensionCanvas: React.FC<Props> = ({
       if (data.isVictory) {
         await recordStoryFTCIfFirst(code);
       }
+      const completionsToSubmit = typeof data.completions === 'number'
+        ? data.completions
+        : (data.isVictory ? storyCompletionsRef.current + 1 : storyCompletionsRef.current);
+
       await submitStoryScore({
         initials: code,
+        completions: completionsToSubmit,
         stageName: data.stageName || '0D Void',
         stageNum: data.stageNum || 0,
         bit: data.bit || 0,
         resolution: data.resolution || 0,
-        completed: Boolean(data.completed),
+        completed: Boolean(data.completed || completionsToSubmit > 0),
       });
     } else if (mode === 'arcade') {
       if (data.isVictory) {
@@ -1747,8 +1759,14 @@ export const DimensionCanvas: React.FC<Props> = ({
       playerXRef.current = 240;
     }
 
+    if (typeof gameState.storyCompletions === 'number') {
+      const highest = Math.max(storyCompletionsRef.current, gameState.storyCompletions);
+      storyCompletionsRef.current = highest;
+      setStoryCompletions(highest);
+    }
+
     stateRef.current = gameState;
-  }, [gameState.act1Bits, gameState.act1PurchasedN, gameState.act1Phase, gameState.act1SubPart, gameState.act1Resolution, gameState.overshields, gameState.gameMode, gameState.currentN, gameState.arcadeTime, gameState.totalRuns, gameState.hp]);
+  }, [gameState.act1Bits, gameState.act1PurchasedN, gameState.act1Phase, gameState.act1SubPart, gameState.act1Resolution, gameState.overshields, gameState.gameMode, gameState.currentN, gameState.arcadeTime, gameState.totalRuns, gameState.hp, gameState.storyCompletions]);
 
   // Refs for requestAnimationFrame loop
   const stateRef = useRef(gameState);
@@ -2178,6 +2196,16 @@ export const DimensionCanvas: React.FC<Props> = ({
         baud: 0,
       },
     }));
+
+    // Register current starting progression for Story mode (maintains total completions while resetting level to 0D Void)
+    saveRunRecord('story', {
+      stageName: '0D Void',
+      stageNum: 0,
+      bit: 0,
+      resolution: 0,
+      completed: false,
+      completions: storyCompletionsRef.current,
+    });
 
     onLogAction("✦ STORY MODE ENGAGED: Relaunching from 0-bit acoustic void! Return-to-menu enabled upon death.");
   };
@@ -2790,6 +2818,20 @@ export const DimensionCanvas: React.FC<Props> = ({
         soundEngine.triggerNote('G4');
         soundEngine.playCadenceResolution();
         onLogAction("BOUGHT 1 N! N=1 materialized in the top-left corner. A single stationary white pixel appears in the void.");
+
+        // Register N=1 milestone in Story mode
+        if (!gameModeRef.current || gameModeRef.current === 'story') {
+          saveRunRecord('story', {
+            stageName: '1D Point (N=1)',
+            stageNum: 0.5,
+            bit: 0,
+            resolution: 0,
+            completed: false,
+            completions: storyCompletionsRef.current,
+          });
+          onLogAction("✦ MILESTONE REACHED: 1D POINT (N=1) REGISTERED TO GLOBAL STORY RANKINGS");
+        }
+
         handleContinueAfterDeath();
       }
     } else if (deathScreen.target === 'bit') {
@@ -2827,6 +2869,7 @@ export const DimensionCanvas: React.FC<Props> = ({
             bit: nextBits,
             resolution: 0,
             completed: false,
+            completions: storyCompletionsRef.current,
           });
           onLogAction(`✦ MILESTONE REACHED: ${upgrade.name.toUpperCase()} REGISTERED TO GLOBAL STORY RANKINGS`);
         }
@@ -2901,6 +2944,7 @@ export const DimensionCanvas: React.FC<Props> = ({
             bit: 10,
             resolution: nextRes,
             completed: false,
+            completions: storyCompletionsRef.current,
           });
           onLogAction(`✦ MILESTONE REACHED: RESOLUTION ${nextRes} (${upgrade.fps}) REGISTERED TO GLOBAL STORY RANKINGS`);
         }
@@ -4509,6 +4553,9 @@ export const DimensionCanvas: React.FC<Props> = ({
                     // Normal / Story Mode Final Boss Defeated!
                     isRoundEndedRef.current = true;
                     const runsAttempted = (stateRef.current.totalRuns || 1);
+                    const newCompletions = storyCompletionsRef.current + 1;
+                    storyCompletionsRef.current = newCompletions;
+                    setStoryCompletions(newCompletions);
 
                     const storyModal = {
                       totalRuns: runsAttempted,
@@ -4526,11 +4573,13 @@ export const DimensionCanvas: React.FC<Props> = ({
                       resolution: 10,
                       completed: true,
                       isVictory: true,
+                      completions: newCompletions,
                     });
 
                     onUpdateState(prev => ({
                       ...prev,
                       hasCompletedStory: true,
+                      storyCompletions: newCompletions,
                       totalRuns: runsAttempted,
                     }));
                     onLogAction(`✦ CONGRATULATIONS! FRACTURE SOVEREIGN DEFEATED in ${runsAttempted} total runs! The dimensional engine is fully transcended!`);
@@ -4630,6 +4679,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                       bit: 10,
                       resolution: 0,
                       completed: false,
+                      completions: storyCompletionsRef.current,
                     });
                     onLogAction("✦ MILESTONE REACHED: BIT 10 (SOVEREIGN HARMONIZED) REGISTERED TO GLOBAL STORY RANKINGS");
                   }
