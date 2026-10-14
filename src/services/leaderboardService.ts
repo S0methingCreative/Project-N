@@ -61,11 +61,97 @@ export interface FTCEntry {
   totalHz?: number;
 }
 
-// Local storage fallback cache keys
-const LOCAL_LEADERBOARDS_CACHE_KEY = 'bit_resonance_leaderboards_cache_v2';
-const LOCAL_STORY_FTC_CACHE_KEY = 'game_n_story_ftc_cache_v1';
-const LOCAL_ARCADE_FTC_CACHE_KEY = 'game_n_arcade_ftc_cache_v1';
+// Environment detection helper: blocks live Firestore submissions in dev
+export function isDevelopmentEnvironment(): boolean {
+  if (typeof window === 'undefined') {
+    return process.env.NODE_ENV !== 'production';
+  }
+  const host = window.location.hostname.toLowerCase();
+  const isLocal =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host.endsWith('.local');
+  const isAisDev =
+    host.startsWith('ais-dev-') ||
+    host.includes('-dev-') ||
+    window.location.port === '3000';
+  const isViteDev = Boolean(import.meta.env?.DEV);
+  return isLocal || isAisDev || isViteDev;
+}
+
+// Local storage fallback cache keys (v3 clean slate)
+const LOCAL_LEADERBOARDS_CACHE_KEY = 'bit_resonance_leaderboards_cache_v3';
+const LOCAL_STORY_FTC_CACHE_KEY = 'game_n_story_ftc_cache_v3';
+const LOCAL_ARCADE_FTC_CACHE_KEY = 'game_n_arcade_ftc_cache_v3';
 export const PLAYER_CODE_STORAGE_KEY = 'game_n_player_code';
+export const SCORES_PURGE_FLAG = 'game_n_scores_wiped_v3';
+
+// Utility to completely wipe local high scores & old cached dev scores
+export function wipeAllSavedScores(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const keysToRemove = [
+      'game_n_high_scores_v1',
+      'game_n_high_scores_v2',
+      'game_n_high_scores_v3',
+      'story_scores_v2',
+      'arcade_scores_v2',
+      'speedrun_scores_v2',
+      'survival_scores_v2',
+      'story_scores_v3',
+      'arcade_scores_v3',
+      'speedrun_scores_v3',
+      'survival_scores_v3',
+      'bit_resonance_leaderboards_cache_v2',
+      'bit_resonance_leaderboards_cache_v3',
+      'game_n_story_ftc_cache_v1',
+      'game_n_story_ftc_cache_v2',
+      'game_n_story_ftc_cache_v3',
+      'game_n_arcade_ftc_cache_v1',
+      'game_n_arcade_ftc_cache_v2',
+      'game_n_arcade_ftc_cache_v3',
+    ];
+    for (const key of keysToRemove) {
+      localStorage.removeItem(key);
+    }
+
+    // Strip highScores from persistent story save so players keep progression without contaminated scores
+    const rawStory = localStorage.getItem('game_n_story_save_v2');
+    if (rawStory) {
+      try {
+        const parsed = JSON.parse(rawStory);
+        if (parsed && typeof parsed === 'object') {
+          delete parsed.highScores;
+          localStorage.setItem('game_n_story_save_v2', JSON.stringify(parsed));
+        }
+      } catch {}
+    }
+
+    const rawLegacy = localStorage.getItem('game_n_run_data_v1');
+    if (rawLegacy) {
+      try {
+        const parsed = JSON.parse(rawLegacy);
+        if (parsed && typeof parsed === 'object') {
+          delete parsed.highScores;
+          localStorage.setItem('game_n_run_data_v1', JSON.stringify(parsed));
+        }
+      } catch {}
+    }
+  } catch (err) {
+    console.warn('wipeAllSavedScores warning:', err);
+  }
+}
+
+// Auto-run once to purge legacy dev scores from browser
+if (typeof window !== 'undefined') {
+  try {
+    if (!localStorage.getItem(SCORES_PURGE_FLAG)) {
+      wipeAllSavedScores();
+      localStorage.setItem(SCORES_PURGE_FLAG, 'true');
+    }
+  } catch {}
+}
 
 export function getPlayerCode(): string | null {
   if (typeof window === 'undefined') return null;
@@ -203,6 +289,11 @@ export async function registerPlayerCode(code: string): Promise<boolean> {
 
   setPlayerCode(clean);
 
+  if (isDevelopmentEnvironment()) {
+    console.info('[Leaderboard] Pilot registration stored locally in development environment.');
+    return true;
+  }
+
   try {
     const playerRef = doc(db, 'players', clean);
     await setDoc(playerRef, {
@@ -226,13 +317,13 @@ export async function fetchStoryLeaderboard(): Promise<StoryScoreEntry[]> {
     const snap = await getDocs(q);
     if (!snap.empty) {
       const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as StoryScoreEntry));
-      saveToLocalCache('story_scores_v2', items);
+      saveToLocalCache('story_scores_v3', items);
       return items;
     }
   } catch (err) {
     console.warn('fetchStoryLeaderboard error, using cache:', err);
   }
-  return loadFromLocalCache('story_scores_v2', DEFAULT_STORY_SCORES);
+  return loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
 }
 
 export function subscribeStoryLeaderboard(callback: (scores: StoryScoreEntry[]) => void): Unsubscribe {
@@ -244,24 +335,29 @@ export function subscribeStoryLeaderboard(callback: (scores: StoryScoreEntry[]) 
       (snap) => {
         if (!snap.empty) {
           const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as StoryScoreEntry));
-          saveToLocalCache('story_scores_v2', items);
+          saveToLocalCache('story_scores_v3', items);
           callback(items);
         } else {
-          callback(loadFromLocalCache('story_scores_v2', DEFAULT_STORY_SCORES));
+          callback(loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES));
         }
       },
       (err) => {
         console.warn('Story leaderboard live snapshot failed:', err);
-        callback(loadFromLocalCache('story_scores_v2', DEFAULT_STORY_SCORES));
+        callback(loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES));
       }
     );
   } catch {
-    callback(loadFromLocalCache('story_scores_v2', DEFAULT_STORY_SCORES));
+    callback(loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES));
     return () => {};
   }
 }
 
 export async function submitStoryScore(entry: Omit<StoryScoreEntry, 'id' | 'createdAt'>): Promise<boolean> {
+  if (isDevelopmentEnvironment()) {
+    console.info('[Leaderboard] Story score submission bypassed in development environment.');
+    return false;
+  }
+
   const cleanInitials = sanitizeInitials(entry.initials);
   const docId = generateDocId();
   const payload: StoryScoreEntry = {
@@ -280,11 +376,11 @@ export async function submitStoryScore(entry: Omit<StoryScoreEntry, 'id' | 'crea
     return true;
   } catch (err) {
     console.error('Failed to submit story score to Firestore:', err);
-    const current = loadFromLocalCache('story_scores_v2', DEFAULT_STORY_SCORES);
+    const current = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
     const updated = [...current, { id: docId, ...payload }]
       .sort((a, b) => b.stageNum - a.stageNum)
       .slice(0, 10);
-    saveToLocalCache('story_scores_v2', updated);
+    saveToLocalCache('story_scores_v3', updated);
     return false;
   }
 }
@@ -299,13 +395,13 @@ export async function fetchArcadeLeaderboard(): Promise<ArcadeScoreEntry[]> {
     const snap = await getDocs(q);
     if (!snap.empty) {
       const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ArcadeScoreEntry));
-      saveToLocalCache('arcade_scores_v2', items);
+      saveToLocalCache('arcade_scores_v3', items);
       return items;
     }
   } catch (err) {
     console.warn('fetchArcadeLeaderboard error, using cache:', err);
   }
-  return loadFromLocalCache('arcade_scores_v2', DEFAULT_ARCADE_SCORES);
+  return loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES);
 }
 
 export function subscribeArcadeLeaderboard(callback: (scores: ArcadeScoreEntry[]) => void): Unsubscribe {
@@ -317,24 +413,29 @@ export function subscribeArcadeLeaderboard(callback: (scores: ArcadeScoreEntry[]
       (snap) => {
         if (!snap.empty) {
           const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as ArcadeScoreEntry));
-          saveToLocalCache('arcade_scores_v2', items);
+          saveToLocalCache('arcade_scores_v3', items);
           callback(items);
         } else {
-          callback(loadFromLocalCache('arcade_scores_v2', DEFAULT_ARCADE_SCORES));
+          callback(loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES));
         }
       },
       (err) => {
         console.warn('Arcade leaderboard live snapshot failed:', err);
-        callback(loadFromLocalCache('arcade_scores_v2', DEFAULT_ARCADE_SCORES));
+        callback(loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES));
       }
     );
   } catch {
-    callback(loadFromLocalCache('arcade_scores_v2', DEFAULT_ARCADE_SCORES));
+    callback(loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES));
     return () => {};
   }
 }
 
 export async function submitArcadeScore(entry: Omit<ArcadeScoreEntry, 'id' | 'createdAt'>): Promise<boolean> {
+  if (isDevelopmentEnvironment()) {
+    console.info('[Leaderboard] Arcade score submission bypassed in development environment.');
+    return false;
+  }
+
   const cleanInitials = sanitizeInitials(entry.initials);
   const docId = generateDocId();
   const payload: ArcadeScoreEntry = {
@@ -354,11 +455,11 @@ export async function submitArcadeScore(entry: Omit<ArcadeScoreEntry, 'id' | 'cr
     return true;
   } catch (err) {
     console.error('Failed to submit arcade score to Firestore:', err);
-    const current = loadFromLocalCache('arcade_scores_v2', DEFAULT_ARCADE_SCORES);
+    const current = loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES);
     const updated = [...current, { id: docId, ...payload }]
       .sort((a, b) => b.stageNum !== a.stageNum ? b.stageNum - a.stageNum : b.duration - a.duration)
       .slice(0, 10);
-    saveToLocalCache('arcade_scores_v2', updated);
+    saveToLocalCache('arcade_scores_v3', updated);
     return false;
   }
 }
@@ -373,13 +474,13 @@ export async function fetchSpeedrunLeaderboard(): Promise<SpeedrunScoreEntry[]> 
     const snap = await getDocs(q);
     if (!snap.empty) {
       const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as SpeedrunScoreEntry));
-      saveToLocalCache('speedrun_scores_v2', items);
+      saveToLocalCache('speedrun_scores_v3', items);
       return items;
     }
   } catch (err) {
     console.warn('fetchSpeedrunLeaderboard error, using cache:', err);
   }
-  return loadFromLocalCache('speedrun_scores_v2', DEFAULT_SPEEDRUN_SCORES);
+  return loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES);
 }
 
 export function subscribeSpeedrunLeaderboard(callback: (scores: SpeedrunScoreEntry[]) => void): Unsubscribe {
@@ -391,24 +492,29 @@ export function subscribeSpeedrunLeaderboard(callback: (scores: SpeedrunScoreEnt
       (snap) => {
         if (!snap.empty) {
           const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as SpeedrunScoreEntry));
-          saveToLocalCache('speedrun_scores_v2', items);
+          saveToLocalCache('speedrun_scores_v3', items);
           callback(items);
         } else {
-          callback(loadFromLocalCache('speedrun_scores_v2', DEFAULT_SPEEDRUN_SCORES));
+          callback(loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES));
         }
       },
       (err) => {
         console.warn('Speedrun leaderboard live snapshot failed:', err);
-        callback(loadFromLocalCache('speedrun_scores_v2', DEFAULT_SPEEDRUN_SCORES));
+        callback(loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES));
       }
     );
   } catch {
-    callback(loadFromLocalCache('speedrun_scores_v2', DEFAULT_SPEEDRUN_SCORES));
+    callback(loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES));
     return () => {};
   }
 }
 
 export async function submitSpeedrunScore(entry: Omit<SpeedrunScoreEntry, 'id' | 'createdAt'>): Promise<boolean> {
+  if (isDevelopmentEnvironment()) {
+    console.info('[Leaderboard] Speedrun score submission bypassed in development environment.');
+    return false;
+  }
+
   const cleanInitials = sanitizeInitials(entry.initials);
   const docId = generateDocId();
   const payload: SpeedrunScoreEntry = {
@@ -425,11 +531,11 @@ export async function submitSpeedrunScore(entry: Omit<SpeedrunScoreEntry, 'id' |
     return true;
   } catch (err) {
     console.error('Failed to submit speedrun score to Firestore:', err);
-    const current = loadFromLocalCache('speedrun_scores_v2', DEFAULT_SPEEDRUN_SCORES);
+    const current = loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES);
     const updated = [...current, { id: docId, ...payload }]
       .sort((a, b) => a.timeSeconds - b.timeSeconds)
       .slice(0, 10);
-    saveToLocalCache('speedrun_scores_v2', updated);
+    saveToLocalCache('speedrun_scores_v3', updated);
     return false;
   }
 }
@@ -444,13 +550,13 @@ export async function fetchSurvivalLeaderboard(): Promise<SurvivalScoreEntry[]> 
     const snap = await getDocs(q);
     if (!snap.empty) {
       const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as SurvivalScoreEntry));
-      saveToLocalCache('survival_scores_v2', items);
+      saveToLocalCache('survival_scores_v3', items);
       return items;
     }
   } catch (err) {
     console.warn('fetchSurvivalLeaderboard error, using cache:', err);
   }
-  return loadFromLocalCache('survival_scores_v2', DEFAULT_SURVIVAL_SCORES);
+  return loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES);
 }
 
 export function subscribeSurvivalLeaderboard(callback: (scores: SurvivalScoreEntry[]) => void): Unsubscribe {
@@ -462,24 +568,29 @@ export function subscribeSurvivalLeaderboard(callback: (scores: SurvivalScoreEnt
       (snap) => {
         if (!snap.empty) {
           const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as SurvivalScoreEntry));
-          saveToLocalCache('survival_scores_v2', items);
+          saveToLocalCache('survival_scores_v3', items);
           callback(items);
         } else {
-          callback(loadFromLocalCache('survival_scores_v2', DEFAULT_SURVIVAL_SCORES));
+          callback(loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES));
         }
       },
       (err) => {
         console.warn('Survival leaderboard live snapshot failed:', err);
-        callback(loadFromLocalCache('survival_scores_v2', DEFAULT_SURVIVAL_SCORES));
+        callback(loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES));
       }
     );
   } catch {
-    callback(loadFromLocalCache('survival_scores_v2', DEFAULT_SURVIVAL_SCORES));
+    callback(loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES));
     return () => {};
   }
 }
 
 export async function submitSurvivalScore(entry: Omit<SurvivalScoreEntry, 'id' | 'createdAt'>): Promise<boolean> {
+  if (isDevelopmentEnvironment()) {
+    console.info('[Leaderboard] Survival score submission bypassed in development environment.');
+    return false;
+  }
+
   const cleanInitials = sanitizeInitials(entry.initials);
   const docId = generateDocId();
   const payload: SurvivalScoreEntry = {
@@ -495,11 +606,11 @@ export async function submitSurvivalScore(entry: Omit<SurvivalScoreEntry, 'id' |
     return true;
   } catch (err) {
     console.error('Failed to submit survival score to Firestore:', err);
-    const current = loadFromLocalCache('survival_scores_v2', DEFAULT_SURVIVAL_SCORES);
+    const current = loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES);
     const updated = [...current, { id: docId, ...payload }]
       .sort((a, b) => b.survivalSeconds - a.survivalSeconds)
       .slice(0, 10);
-    saveToLocalCache('survival_scores_v2', updated);
+    saveToLocalCache('survival_scores_v3', updated);
     return false;
   }
 }
@@ -548,6 +659,18 @@ export function subscribeStoryFTC(callback: (ftc: FTCEntry | null) => void): Uns
 }
 
 export async function recordStoryFTCIfFirst(initials: string): Promise<{ isFTC: boolean; ftc: FTCEntry }> {
+  if (isDevelopmentEnvironment()) {
+    console.info('[Leaderboard] Story FTC recording skipped in development environment.');
+    return {
+      isFTC: false,
+      ftc: {
+        initials: sanitizeInitials(initials),
+        completedAt: new Date().toISOString(),
+        stageName: 'Fracture Sovereign Defeated (Dev Mode)',
+      },
+    };
+  }
+
   const ftcRef = doc(db, 'leaderboards_meta', 'story_ftc');
   const cleanInitials = sanitizeInitials(initials);
 
@@ -631,6 +754,20 @@ export async function recordArcadeFTCIfFirst(
   duration: number,
   totalHz: number
 ): Promise<{ isFTC: boolean; ftc: FTCEntry }> {
+  if (isDevelopmentEnvironment()) {
+    console.info('[Leaderboard] Arcade FTC recording skipped in development environment.');
+    return {
+      isFTC: false,
+      ftc: {
+        initials: sanitizeInitials(initials),
+        completedAt: new Date().toISOString(),
+        stageName: 'Res 10 Victory (Dev Mode)',
+        duration: Math.round(duration * 10) / 10,
+        totalHz: Math.floor(totalHz),
+      },
+    };
+  }
+
   const ftcRef = doc(db, 'leaderboards_meta', 'arcade_ftc');
   const cleanInitials = sanitizeInitials(initials);
 

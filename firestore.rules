@@ -59,6 +59,15 @@ service cloud.firestore {
         && data.createdAt is string && data.createdAt.size() <= 50;
     }
 
+    // Bootstrapped Admin check for administrative actions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == 'JacobCSanchez@gmail.com' && request.auth.token.email_verified == true;
+    }
+
     // Connection testing doc
     match /test/connection {
       allow read: if true;
@@ -68,35 +77,40 @@ service cloud.firestore {
     match /players/{code} {
       allow read: if true;
       allow create: if isValidInitials(code) && isValidPlayer(request.resource.data, code);
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     // Story Mode Leaderboard
     match /leaderboards_story/{id} {
       allow read: if true;
       allow create: if isValidId(id) && isValidStoryEntry(request.resource.data);
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     // Speedrun Mode Leaderboard
     match /leaderboards_speedrun/{id} {
       allow read: if true;
       allow create: if isValidId(id) && isValidSpeedrunEntry(request.resource.data);
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     // Survival Mode Leaderboard
     match /leaderboards_survival/{id} {
       allow read: if true;
       allow create: if isValidId(id) && isValidSurvivalEntry(request.resource.data);
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     // Arcade Mode Leaderboard
     match /leaderboards_arcade/{id} {
       allow read: if true;
       allow create: if isValidId(id) && isValidArcadeEntry(request.resource.data);
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     // First To Complete Story Mode (⚡FTC)
@@ -104,7 +118,8 @@ service cloud.firestore {
       allow read: if true;
       allow create: if !exists(/databases/$(database)/documents/leaderboards_meta/story_ftc)
                     && request.resource.data.initials is string && isValidInitials(request.resource.data.initials);
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     // First To Complete Arcade Mode (⚡FTC)
@@ -112,7 +127,8 @@ service cloud.firestore {
       allow read: if true;
       allow create: if !exists(/databases/$(database)/documents/leaderboards_meta/arcade_ftc)
                     && request.resource.data.initials is string && isValidInitials(request.resource.data.initials);
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
     // Legacy Pioneer Plaque fallback
@@ -120,7 +136,8 @@ service cloud.firestore {
       allow read: if true;
       allow create: if !exists(/databases/$(database)/documents/leaderboards_meta/story_pioneer)
                     && request.resource.data.initials is string && isValidInitials(request.resource.data.initials);
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isAdmin();
     }
   }
 }

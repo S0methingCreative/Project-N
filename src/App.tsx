@@ -7,7 +7,7 @@ import { MainMenuModal } from './components/MainMenuModal';
 import { soundEngine } from './audio/soundEngine';
 import { loadUserSettings, saveUserSettings, UserSettings } from './utils/settings';
 import { InitialsRegistrationModal } from './components/InitialsRegistrationModal';
-import { getPlayerCode } from './services/leaderboardService';
+import { getPlayerCode, isDevelopmentEnvironment, wipeAllSavedScores } from './services/leaderboardService';
 import {
   Cpu,
   RotateCcw,
@@ -19,7 +19,7 @@ import {
 
 const STORY_SAVE_KEY = 'game_n_story_save_v2';
 const RUN_STORAGE_KEY = 'game_n_run_data_v1';
-const HIGH_SCORES_STORAGE_KEY = 'game_n_high_scores_v1';
+const HIGH_SCORES_STORAGE_KEY = 'game_n_high_scores_v3';
 
 const DEFAULT_GAME_STATE: GameState = {
   act: 1,
@@ -99,10 +99,7 @@ function loadInitialGameState(): GameState {
         gameMode: 'story',
         totalRuns: savedStory.totalRuns || 1,
         hasCompletedStory: savedStory.hasCompletedStory || false,
-        highScores: {
-          ...savedHighScores,
-          ...(savedStory.highScores || {}),
-        },
+        highScores: savedHighScores,
         // Keep carrier active on resume if player has already unlocked N
         audioActive: false,
         carrierActive: Boolean(savedStory.act1PurchasedN),
@@ -176,8 +173,8 @@ export default function App() {
         localStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(storyToSave));
       }
 
-      // 2. High scores are always persisted across all game modes
-      if (gameState.highScores) {
+      // 2. High scores are persisted across game modes in live environments
+      if (gameState.highScores && !isDevelopmentEnvironment()) {
         localStorage.setItem(HIGH_SCORES_STORAGE_KEY, JSON.stringify(gameState.highScores));
       }
     } catch (err) {
@@ -193,7 +190,7 @@ export default function App() {
           localStorage.setItem(STORY_SAVE_KEY, JSON.stringify(gameState));
           localStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(gameState));
         }
-        if (gameState.highScores) {
+        if (gameState.highScores && !isDevelopmentEnvironment()) {
           localStorage.setItem(HIGH_SCORES_STORAGE_KEY, JSON.stringify(gameState.highScores));
         }
       } catch {}

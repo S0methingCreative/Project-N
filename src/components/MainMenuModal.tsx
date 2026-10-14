@@ -22,6 +22,7 @@ import { soundEngine } from '../audio/soundEngine';
 import { draw6BitBackground } from '../utils/backgroundArt';
 import { UserSettings, DEFAULT_USER_SETTINGS, saveUserSettings } from '../utils/settings';
 import { GlobalLeaderboardModal } from './GlobalLeaderboardModal';
+import { isDevelopmentEnvironment, wipeAllSavedScores } from '../services/leaderboardService';
 
 export interface StoryProgressSummary {
   hasSave: boolean;
@@ -71,6 +72,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   const [devCodeError, setDevCodeError] = useState<string>('');
   const [lockedNotice, setLockedNotice] = useState<string | null>(null);
   const [isGlobalLeaderboardOpen, setIsGlobalLeaderboardOpen] = useState<boolean>(false);
+  const [isWipedToast, setIsWipedToast] = useState<boolean>(false);
 
   useEffect(() => {
     if (!lockedNotice) return;
@@ -413,6 +415,15 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
             <Sliders className="w-3.5 h-3.5" />
             <span>OPTIONS</span>
           </button>
+
+          {isDevelopmentEnvironment() && (
+            <span
+              title="Development environment active: leaderboard score submissions are disabled to prevent dev scores in live rankings."
+              className="ml-auto hidden sm:flex items-center gap-1 px-2 py-1 rounded text-[9px] font-bold bg-amber-950/80 border border-amber-600/70 text-amber-300"
+            >
+              <span>DEV: SUBMISSIONS BYPASSED</span>
+            </span>
+          )}
         </div>
 
         {/* Tab 1: Game Modes */}
@@ -968,23 +979,46 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                   )}
 
                   {userSettings.controls.devToolsEnabled && (
-                    <div className="pt-2 border-t border-neutral-800 flex items-center justify-between">
-                      <div>
-                        <span className="text-xs font-bold text-neutral-200 block">Dev: Unlock All Modes</span>
-                        <span className="text-[10px] text-neutral-400 font-mono block">Bypasses Story completion lock for Survival & Speed Run</span>
+                    <>
+                      <div className="pt-2 border-t border-neutral-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-neutral-200 block">Dev: Unlock All Modes</span>
+                          <span className="text-[10px] text-neutral-400 font-mono block">Bypasses Story completion lock for Survival & Speed Run</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleDevUnlockAllModes(!userSettings.controls.unlockAllModesDev)}
+                          className={`px-2.5 py-1 rounded text-xs font-mono font-bold border transition-all cursor-pointer ${
+                            userSettings.controls.unlockAllModesDev
+                              ? 'bg-amber-950/80 border-amber-500 text-amber-300'
+                              : 'bg-neutral-800 border-neutral-700 text-neutral-400'
+                          }`}
+                        >
+                          {userSettings.controls.unlockAllModesDev ? 'UNLOCKED' : 'LOCKED'}
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleDevUnlockAllModes(!userSettings.controls.unlockAllModesDev)}
-                        className={`px-2.5 py-1 rounded text-xs font-mono font-bold border transition-all cursor-pointer ${
-                          userSettings.controls.unlockAllModesDev
-                            ? 'bg-amber-950/80 border-amber-500 text-amber-300'
-                            : 'bg-neutral-800 border-neutral-700 text-neutral-400'
-                        }`}
-                      >
-                        {userSettings.controls.unlockAllModesDev ? 'UNLOCKED' : 'LOCKED'}
-                      </button>
-                    </div>
+
+                      <div className="pt-2 border-t border-neutral-800 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-neutral-200 block">Dev: Wipe Saved High Scores</span>
+                          <span className="text-[10px] text-neutral-400 font-mono block">Purges all local high score records without affecting story progress</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            wipeAllSavedScores();
+                            setIsWipedToast(true);
+                            setTimeout(() => {
+                              setIsWipedToast(false);
+                              window.location.reload();
+                            }, 1200);
+                          }}
+                          className="px-2.5 py-1 rounded text-xs font-mono font-bold border border-red-500/60 bg-red-950/80 text-red-300 hover:bg-red-900 transition-all cursor-pointer"
+                        >
+                          {isWipedToast ? 'WIPED ✓' : 'WIPE SCORES'}
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
               </div>

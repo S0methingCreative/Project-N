@@ -30,6 +30,7 @@ import {
   subscribeArcadeFTC,
   getPlayerCode,
   setPlayerCode,
+  isDevelopmentEnvironment,
   StoryScoreEntry,
   SpeedrunScoreEntry,
   SurvivalScoreEntry,
@@ -244,6 +245,15 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
                     >
                       <Zap className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />
                       <span>⚡FTC: {getFtcWinnerCode()}</span>
+                    </span>
+                  )}
+
+                  {isDevelopmentEnvironment() && (
+                    <span
+                      title="Development environment active: leaderboard submissions are disabled to prevent dev scores in live rankings."
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-950/90 border border-amber-600/70 text-amber-300"
+                    >
+                      <span>DEV MODE · NO SUBMISSIONS</span>
                     </span>
                   )}
                 </div>
