@@ -1757,6 +1757,19 @@ export const DimensionCanvas: React.FC<Props> = ({
       damageFlashRef.current = 0;
       screenShakeRef.current = 0;
       playerXRef.current = 240;
+
+      // Register initial 0D Void presence on story scoreboard if pilot has provided initials but is stuck in the void
+      const pilotCode = getPlayerCode();
+      if (pilotCode && (!gameState.gameMode || gameState.gameMode === 'story')) {
+        saveRunRecord('story', {
+          stageName: '0D Void',
+          stageNum: 0,
+          bit: 0,
+          resolution: 0,
+          completed: false,
+          completions: storyCompletionsRef.current,
+        });
+      }
     }
 
     if (typeof gameState.storyCompletions === 'number') {
@@ -1917,8 +1930,8 @@ export const DimensionCanvas: React.FC<Props> = ({
       // Bit 5: Cycle through (Waltz, math rock, arcade techno); easy difficulty; slow tempo
       return { genre: genresCycle[cycleIndex], zone: 'easy' };
     } else if (bCount === 6) {
-      // Bit 6: Waltz; Medium difficulty; Medium tempo
-      return { genre: 'slow_waltz', zone: 'medium' };
+      // Bit 6: Fast Waltz; Hard difficulty; 156 BPM tempo with 3/4 triplet wave bursts
+      return { genre: 'slow_waltz', zone: 'hard' };
     } else if (bCount === 7) {
       // Bit 7: Math rock; Medium difficulty; Medium tempo
       return { genre: 'math_rock', zone: 'medium' };
@@ -2033,6 +2046,10 @@ export const DimensionCanvas: React.FC<Props> = ({
           currentZoneRef.current = pacing.zone;
           soundEngine.setMusicPacing(pacing.genre, pacing.zone);
           onLogAction(`🕹️ ARCADE PROGRESSION: Bit ${newBits} [${pacing.zone.toUpperCase()}] -> ${pacing.genre.replace('_', ' ').toUpperCase()} (${soundEngine.getBpm()} BPM)!`);
+          if (newBits === 6) {
+            onLogAction("✦ BIT 6 ACCELERATION: 156 BPM Hard Waltz & 3/4 Triplet Wave Bursts engaged!");
+            addCombatText("⚡ 3/4 TRIPLET WALTZ (156 BPM)!", playerXRef.current, 190, '#ffe655');
+          }
         }
 
         if (newBits === 9) {
@@ -3093,14 +3110,16 @@ export const DimensionCanvas: React.FC<Props> = ({
         return;
       }
 
-      // Death screen quick keys: B to buy, Enter / C to retry run (Spacebar disabled to avoid accidental restarts!)
+      // Death screen quick keys: B to buy (story mode only), Enter / C to continue/retry run (Spacebar disabled to avoid accidental restarts!)
       if (deathScreenRef.current) {
         if (deathBufferSecondsRef.current > 0) {
           e.preventDefault();
           return;
         }
         if (e.key === 'b' || e.key === 'B') {
-          handlePurchaseUpgrade();
+          if (gameModeRef.current !== 'speedrun') {
+            handlePurchaseUpgrade();
+          }
         } else if (e.key === 'Enter' || e.key === 'c' || e.key === 'C') {
           handleContinueAfterDeath();
         }
@@ -3688,8 +3707,16 @@ export const DimensionCanvas: React.FC<Props> = ({
             }
           } else if (targetZone === 'hard') {
             if (targetGenre === 'slow_waltz') {
-              cooldownThreshold = 48;
-              pulseSpeed = -4.4;
+              // Bit 6 in Arcade mode: 3/4 triplet wave bursts with syncopated spacing
+              if (gameModeRef.current === 'arcade' && bitsRef.current === 6) {
+                const waltzStep = currentPulses % 3;
+                // Beat 1 (Downbeat): 40 frames; Beat 2 & Beat 3 (Syncopated offbeats): 18 frames
+                cooldownThreshold = waltzStep === 0 ? 40 : 18;
+                pulseSpeed = -4.6;
+              } else {
+                cooldownThreshold = 48;
+                pulseSpeed = -4.4;
+              }
             } else if (targetGenre === 'math_rock') {
               const mathDelays = [12, 12, 28, 14, 24];
               cooldownThreshold = mathDelays[mathBurstStepRef.current % mathDelays.length];
@@ -3759,7 +3786,18 @@ export const DimensionCanvas: React.FC<Props> = ({
                 waveType = Math.random() < 0.8 ? 'bottom' : 'top';
               } else {
                 // Balanced! Use the progressive rhythm patterns:
-                if (targetZone === 'easy') {
+                if (gameModeRef.current === 'arcade' && bitsRef.current === 6) {
+                  // Arcade Bit 6: 3/4 triplet wave bursts with rotating measure motifs
+                  const waltzMotifs: Array<Array<'top' | 'bottom'>> = [
+                    ['top', 'bottom', 'bottom'], // Measure 0: Crest downbeat + double-trough offbeats
+                    ['bottom', 'top', 'top'],    // Measure 1: Trough downbeat + double-crest offbeats
+                    ['top', 'top', 'bottom'],    // Measure 2: Crest lead + syncopated trough resolution
+                    ['bottom', 'bottom', 'top'], // Measure 3: Trough lead + syncopated crest resolution
+                  ];
+                  const waltzStep = currentPulses % 3;
+                  const measureIdx = Math.floor(currentPulses / 3) % waltzMotifs.length;
+                  waveType = waltzMotifs[measureIdx][waltzStep];
+                } else if (targetZone === 'easy') {
                   // Strict 50/50 alternation based on actual wave count so packet skips don't bias:
                   waveType = (topWavesSpawnedRef.current <= bottomWavesSpawnedRef.current) ? 'top' : 'bottom';
                 } else if (targetZone === 'medium') {
@@ -3805,6 +3843,12 @@ export const DimensionCanvas: React.FC<Props> = ({
               else if (playerX >= 430) effectiveSpeed *= 1.45; // Emitter Maw accelerates pulses
             }
 
+            let waveAmplitude = 28;
+            if (gameModeRef.current === 'arcade' && bitsRef.current === 6 && (currentPulses % 3 === 0)) {
+              // Accented downbeat pulse (Beat 1)
+              waveAmplitude = 33;
+            }
+
             pulsesRef.current.push({
               x: TRACE_END,
               speed: effectiveSpeed,
@@ -3812,7 +3856,7 @@ export const DimensionCanvas: React.FC<Props> = ({
               kind: chosenKind,
               color: chosenColor,
               res: chosenRes,
-              amplitude: 28,
+              amplitude: waveAmplitude,
               reflected: false,
               id: Date.now() + Math.random(),
             });
@@ -4926,30 +4970,36 @@ export const DimensionCanvas: React.FC<Props> = ({
 
         // Active Game Mode HUD Indicators (only visible during active gameplay; hidden on kill screens / completion modals)
         if (!isRoundOver && !deathScreen && !speedrunCompleteModal && !survivalDeathModal && !arcadeKillModal && !arcadeVictoryModal && !storyCompleteModal) {
+          const modeHudX = w / 2;
+          const modeHudY = 50; // Brought down two lines below y=26 so it never covers existing text, and centered across the screen
+
           if (gameModeRef.current === 'speedrun') {
             ctx.save();
             ctx.fillStyle = '#00f0ff';
             ctx.font = 'bold 12px monospace';
-            const hudX = (subPartRef.current === 2 || (hasN && currentBits > 0)) ? 320 : 24;
-            const hudY = (hasN && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
-            ctx.fillText(`⚡ SPEED RUN: ${formatTime(speedrunTimeRef.current)}  [RUN #${speedrunRunsRef.current}]`, hudX, hudY);
+            ctx.textAlign = 'center';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+            ctx.shadowBlur = 4;
+            ctx.fillText(`⚡ SPEED RUN: ${formatTime(speedrunTimeRef.current)}  [RUN #${speedrunRunsRef.current}]`, modeHudX, modeHudY);
             ctx.restore();
           } else if (gameModeRef.current === 'survival') {
             ctx.save();
             ctx.fillStyle = '#ff4466';
             ctx.font = 'bold 12px monospace';
-            const hudX = (subPartRef.current === 2 || (hasN && currentBits > 0)) ? 320 : 24;
-            const hudY = (hasN && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
-            ctx.fillText(`⚔️ SURVIVAL: ${formatTime(survivalTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]`, hudX, hudY);
+            ctx.textAlign = 'center';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+            ctx.shadowBlur = 4;
+            ctx.fillText(`⚔️ SURVIVAL: ${formatTime(survivalTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]`, modeHudX, modeHudY);
             ctx.restore();
           } else if (gameModeRef.current === 'arcade') {
             ctx.save();
             ctx.fillStyle = '#c084fc';
             ctx.font = 'bold 12px monospace';
-            const hudX = (subPartRef.current === 2 || (hasN && currentBits > 0)) ? 320 : 24;
-            const hudY = (hasN && currentBits === 0 && subPartRef.current !== 2) ? 46 : 26;
+            ctx.textAlign = 'center';
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+            ctx.shadowBlur = 4;
             const livesStr = arcadeLivesRef.current === 2 ? '💖💖 2 LIVES' : '💖 1 LIFE';
-            ctx.fillText(`🕹️ ARCADE: ${formatTime(arcadeTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]  [${livesStr}]`, hudX, hudY);
+            ctx.fillText(`🕹️ ARCADE: ${formatTime(arcadeTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]  [${livesStr}]`, modeHudX, modeHudY);
             ctx.restore();
           }
         }
@@ -5353,7 +5403,15 @@ export const DimensionCanvas: React.FC<Props> = ({
               </div>
 
               <div className="text-emerald-300 font-bold text-xs sm:text-sm">
-                {deathScreen.target === 'N' ? (
+                {gameState.gameMode === 'speedrun' ? (
+                  (deathScreen.target === 'resolution' && resolution >= 9) ? (
+                    <span className="text-amber-300 font-mono">BOSS 2 ENCOUNTER: DEFEAT FRACTURE SOVEREIGN TO UNLOCK RESOLUTION 10 (240 FPS)</span>
+                  ) : (deathScreen.target === 'bit' && bits >= 9) ? (
+                    <span className="text-amber-300 font-mono">BOSS 1 ENCOUNTER: DEFEAT CORRUPTED SOVEREIGN TO UNLOCK BIT 10</span>
+                  ) : (
+                    <span className="text-cyan-300 font-mono">SPEEDRUN RUN #{speedrunRunsRef.current} · RESUME THE CLOCK TO CONTINUE</span>
+                  )
+                ) : deathScreen.target === 'N' ? (
                   <span>SPEND {deathScreen.costHz} HZ AND {deathScreen.costV} V TO COMPILE N=1?</span>
                 ) : deathScreen.target === 'resolution' ? (
                   resolution >= 9 ? (
@@ -5377,47 +5435,49 @@ export const DimensionCanvas: React.FC<Props> = ({
               )}
 
               <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-1">
-                {((deathScreen.target === 'resolution' && resolution >= 9) || (deathScreen.target === 'bit' && bits >= 9)) ? (
-                  <button
-                    onClick={handleContinueAfterDeath}
-                    disabled={deathBufferSeconds > 0}
-                    className={`w-full sm:w-auto px-5 py-3 font-bold rounded-lg text-xs transition-all shadow-lg flex items-center justify-center gap-1.5 font-mono ${
-                      deathBufferSeconds > 0
-                        ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-50'
-                        : 'bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white active:scale-95 cursor-pointer shadow-amber-950/60 border border-amber-400/30'
-                    }`}
-                  >
-                    <Sparkles className="w-4 h-4 text-amber-200" />
-                    <span>{deathScreen.target === 'resolution' ? 'CHALLENGE BOSS 2' : 'CHALLENGE BOSS 1'}</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={handlePurchaseUpgrade}
-                    disabled={
-                      deathBufferSeconds > 0 ||
-                      (deathScreen.target === 'resolution' && Math.max(gameState.resources.baud, stateRef.current.resources.baud) < (deathScreen.costBaud || 0)) ||
-                      (Math.max(gameState.resources.hertz, stateRef.current.resources.hertz) < deathScreen.costHz) ||
-                      (Math.max(gameState.resources.volts, stateRef.current.resources.volts) < deathScreen.costV)
-                    }
-                    className={`w-full sm:w-auto px-5 py-3 font-bold rounded-lg text-xs transition-all shadow-lg flex items-center justify-center gap-1.5 font-mono ${
-                      deathBufferSeconds > 0
-                        ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-50'
-                        : ((deathScreen.target === 'resolution' && Math.max(gameState.resources.baud, stateRef.current.resources.baud) < (deathScreen.costBaud || 0)) ||
-                           (Math.max(gameState.resources.hertz, stateRef.current.resources.hertz) < deathScreen.costHz) ||
-                           (Math.max(gameState.resources.volts, stateRef.current.resources.volts) < deathScreen.costV))
-                        ? 'bg-neutral-800/80 text-neutral-500 border border-neutral-700/60 cursor-not-allowed opacity-60'
-                        : 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white active:scale-95 cursor-pointer shadow-blue-950/60 border border-blue-400/30'
-                    }`}
-                  >
-                    <Sparkles className="w-4 h-4 text-blue-200" />
-                    <span>
-                      {deathScreen.target === 'N'
-                        ? 'COMPILE 1 N'
-                        : deathScreen.target === 'resolution'
-                        ? `COMPILE RES ${resolution + 1}`
-                        : `COMPILE BIT ${bits + 1}`}
-                    </span>
-                  </button>
+                {gameState.gameMode !== 'speedrun' && (
+                  ((deathScreen.target === 'resolution' && resolution >= 9) || (deathScreen.target === 'bit' && bits >= 9)) ? (
+                    <button
+                      onClick={handleContinueAfterDeath}
+                      disabled={deathBufferSeconds > 0}
+                      className={`w-full sm:w-auto px-5 py-3 font-bold rounded-lg text-xs transition-all shadow-lg flex items-center justify-center gap-1.5 font-mono ${
+                        deathBufferSeconds > 0
+                          ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-50'
+                          : 'bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white active:scale-95 cursor-pointer shadow-amber-950/60 border border-amber-400/30'
+                      }`}
+                    >
+                      <Sparkles className="w-4 h-4 text-amber-200" />
+                      <span>{deathScreen.target === 'resolution' ? 'CHALLENGE BOSS 2' : 'CHALLENGE BOSS 1'}</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handlePurchaseUpgrade}
+                      disabled={
+                        deathBufferSeconds > 0 ||
+                        (deathScreen.target === 'resolution' && Math.max(gameState.resources.baud, stateRef.current.resources.baud) < (deathScreen.costBaud || 0)) ||
+                        (Math.max(gameState.resources.hertz, stateRef.current.resources.hertz) < deathScreen.costHz) ||
+                        (Math.max(gameState.resources.volts, stateRef.current.resources.volts) < deathScreen.costV)
+                      }
+                      className={`w-full sm:w-auto px-5 py-3 font-bold rounded-lg text-xs transition-all shadow-lg flex items-center justify-center gap-1.5 font-mono ${
+                        deathBufferSeconds > 0
+                          ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-50'
+                          : ((deathScreen.target === 'resolution' && Math.max(gameState.resources.baud, stateRef.current.resources.baud) < (deathScreen.costBaud || 0)) ||
+                             (Math.max(gameState.resources.hertz, stateRef.current.resources.hertz) < deathScreen.costHz) ||
+                             (Math.max(gameState.resources.volts, stateRef.current.resources.volts) < deathScreen.costV))
+                          ? 'bg-neutral-800/80 text-neutral-500 border border-neutral-700/60 cursor-not-allowed opacity-60'
+                          : 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white active:scale-95 cursor-pointer shadow-blue-950/60 border border-blue-400/30'
+                      }`}
+                    >
+                      <Sparkles className="w-4 h-4 text-blue-200" />
+                      <span>
+                        {deathScreen.target === 'N'
+                          ? 'COMPILE 1 N'
+                          : deathScreen.target === 'resolution'
+                          ? `COMPILE RES ${resolution + 1}`
+                          : `COMPILE BIT ${bits + 1}`}
+                      </span>
+                    </button>
+                  )
                 )}
 
                 <button
@@ -5426,10 +5486,13 @@ export const DimensionCanvas: React.FC<Props> = ({
                   className={`w-full sm:w-auto px-5 py-3 rounded-lg text-xs transition-all border font-mono font-bold flex items-center justify-center gap-1.5 ${
                     deathBufferSeconds > 0
                       ? 'bg-neutral-800 text-neutral-500 border-neutral-700 cursor-not-allowed opacity-50'
+                      : gameState.gameMode === 'speedrun'
+                      ? 'bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white border-cyan-400/40 shadow-lg shadow-cyan-950/50 active:scale-95 cursor-pointer'
                       : 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white border-emerald-400/40 shadow-lg shadow-emerald-950/50 active:scale-95 cursor-pointer'
                   }`}
                 >
-                  <span>RETRY RUN</span>
+                  {gameState.gameMode === 'speedrun' && <Play className="w-3.5 h-3.5 fill-current" />}
+                  <span>{gameState.gameMode === 'speedrun' ? 'CONTINUE RUN' : 'RETRY RUN'}</span>
                 </button>
 
                 {(gameState.gameMode === 'story' || gameState.hasCompletedStory || onOpenMainMenu) && (

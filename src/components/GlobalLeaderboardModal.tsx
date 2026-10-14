@@ -168,6 +168,7 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
     if (onCodeChanged) {
       onCodeChanged(newCode);
     }
+    fetchStoryLeaderboard().then(setStoryScores);
   };
 
   if (!isOpen) return null;

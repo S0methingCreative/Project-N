@@ -338,6 +338,23 @@ export async function registerPlayerCode(code: string): Promise<boolean> {
 
   setPlayerCode(clean);
 
+  const initialStoryPayload: StoryScoreEntry = {
+    initials: clean,
+    completions: 0,
+    stageName: '0D Void',
+    stageNum: 0,
+    bit: 0,
+    resolution: 0,
+    completed: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  // 1. Immediately seed into local story cache so they appear on the scoreboard right away
+  const curCached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
+  const updatedCached = consolidateStoryScores([...curCached, initialStoryPayload]);
+  saveToLocalCache('story_scores_v3', updatedCached);
+
   if (isDevelopmentEnvironment()) {
     console.info('[Leaderboard] Pilot registration stored locally in development environment.');
     return true;
@@ -349,6 +366,13 @@ export async function registerPlayerCode(code: string): Promise<boolean> {
       code: clean,
       createdAt: new Date().toISOString(),
     });
+
+    // Also write to leaderboards_story if not already exists so players stuck in 0D void appear
+    const storyDocRef = doc(db, 'leaderboards_story', clean);
+    const existingSnap = await getDoc(storyDocRef);
+    if (!existingSnap.exists()) {
+      await setDoc(storyDocRef, initialStoryPayload);
+    }
     return true;
   } catch (err) {
     console.warn('registerPlayerCode Firestore write warning:', err);
@@ -371,8 +395,10 @@ export function consolidateStoryScores(rawItems: any[]): StoryScoreEntry[] {
   const pilotMap = new Map<string, StoryScoreEntry>();
 
   for (const raw of rawItems) {
-    if (!raw || !raw.initials) continue;
-    const clean = sanitizeInitials(raw.initials);
+    if (!raw) continue;
+    const rawInitials = raw.initials || raw.code;
+    if (!rawInitials) continue;
+    const clean = sanitizeInitials(rawInitials);
     if (isBannedInitials(clean)) continue;
 
     const rawCompletions = typeof raw.completions === 'number'
@@ -406,14 +432,18 @@ export function consolidateStoryScores(rawItems: any[]): StoryScoreEntry[] {
       existing.completions = Math.max(existing.completions, rawCompletions);
       existing.completed = Boolean(existing.completed || completed || existing.completions > 0);
 
-      // Current level / progression comes from the latest activity
-      const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
-      if (itemTime >= existingTime) {
-        existing.stageName = stageName;
-        existing.stageNum = stageNum;
-        existing.bit = bit;
-        existing.resolution = resolution;
-        existing.updatedAt = updatedAt;
+      // If incoming is 0D Void from registered players but existing already has progression, do not downgrade
+      if (stageNum === 0 && existing.stageNum > 0 && !raw.updatedAt) {
+        // Keep existing higher stage progression
+      } else {
+        const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+        if (itemTime >= existingTime || stageNum > existing.stageNum) {
+          existing.stageName = stageName;
+          existing.stageNum = stageNum;
+          existing.bit = bit;
+          existing.resolution = resolution;
+          existing.updatedAt = updatedAt;
+        }
       }
     }
   }
@@ -454,12 +484,49 @@ export function consolidateStoryScores(rawItems: any[]): StoryScoreEntry[] {
 export async function fetchStoryLeaderboard(): Promise<StoryScoreEntry[]> {
   try {
     const colRef = collection(db, 'leaderboards_story');
-    // Fetch recent story entries up to 100 docs to consolidate per unique pilot
-    const q = query(colRef, limit(100));
-    const snap = await getDocs(q);
-    if (!snap.empty) {
-      const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      const consolidated = consolidateStoryScores(items);
+    const playersRef = collection(db, 'players');
+
+    // Fetch story entries and registered players in parallel
+    const [storySnap, playersSnap] = await Promise.all([
+      getDocs(query(colRef, limit(100))),
+      getDocs(query(playersRef, limit(100))).catch(() => null),
+    ]);
+
+    const storyItems = !storySnap.empty ? storySnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
+    const playerItems = playersSnap && !playersSnap.empty
+      ? playersSnap.docs.map(d => {
+          const p = d.data();
+          const code = sanitizeInitials(p.code || d.id);
+          return {
+            id: code,
+            initials: code,
+            completions: 0,
+            stageName: '0D Void',
+            stageNum: 0,
+            bit: 0,
+            resolution: 0,
+            completed: false,
+            createdAt: p.createdAt || new Date().toISOString(),
+          };
+        })
+      : [];
+
+    const localCode = getPlayerCode();
+    const localItem = localCode ? [{
+      id: localCode,
+      initials: localCode,
+      completions: 0,
+      stageName: '0D Void',
+      stageNum: 0,
+      bit: 0,
+      resolution: 0,
+      completed: false,
+      createdAt: new Date().toISOString(),
+    }] : [];
+
+    const combined = [...playerItems, ...localItem, ...storyItems];
+    if (combined.length > 0) {
+      const consolidated = consolidateStoryScores(combined);
       saveToLocalCache('story_scores_v3', consolidated);
       return consolidated;
     }
@@ -467,25 +534,71 @@ export async function fetchStoryLeaderboard(): Promise<StoryScoreEntry[]> {
     console.warn('fetchStoryLeaderboard error, using cache:', err);
   }
   const cached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
-  return consolidateStoryScores(cached);
+  const localCode = getPlayerCode();
+  const localExtra = localCode ? [{
+    id: localCode,
+    initials: localCode,
+    completions: 0,
+    stageName: '0D Void',
+    stageNum: 0,
+    bit: 0,
+    resolution: 0,
+    completed: false,
+    createdAt: new Date().toISOString(),
+  }] : [];
+  return consolidateStoryScores([...cached, ...localExtra]);
 }
 
 export function subscribeStoryLeaderboard(callback: (scores: StoryScoreEntry[]) => void): Unsubscribe {
   try {
     const colRef = collection(db, 'leaderboards_story');
-    const q = query(colRef, limit(100));
-    return onSnapshot(
-      q,
+    const playersRef = collection(db, 'players');
+    let latestStoryDocs: any[] = [];
+    let latestPlayerDocs: any[] = [];
+
+    const notify = () => {
+      const playerVoidEntries = latestPlayerDocs.map(d => {
+        const p = d.data();
+        const code = sanitizeInitials(p.code || d.id);
+        return {
+          id: code,
+          initials: code,
+          completions: 0,
+          stageName: '0D Void',
+          stageNum: 0,
+          bit: 0,
+          resolution: 0,
+          completed: false,
+          createdAt: p.createdAt || new Date().toISOString(),
+        };
+      });
+
+      const storyEntries = latestStoryDocs.map(d => ({ id: d.id, ...d.data() }));
+
+      const localCode = getPlayerCode();
+      const localEntries = localCode ? [{
+        id: localCode,
+        initials: localCode,
+        completions: 0,
+        stageName: '0D Void',
+        stageNum: 0,
+        bit: 0,
+        resolution: 0,
+        completed: false,
+        createdAt: new Date().toISOString(),
+      }] : [];
+
+      const combined = [...playerVoidEntries, ...localEntries, ...storyEntries];
+      const consolidated = consolidateStoryScores(combined);
+      saveToLocalCache('story_scores_v3', consolidated);
+      callback(consolidated);
+    };
+
+    const unsubStory = onSnapshot(
+      query(colRef, limit(100)),
       (snap) => {
-        if (!snap.empty) {
-          const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          const consolidated = consolidateStoryScores(items);
-          saveToLocalCache('story_scores_v3', consolidated);
-          callback(consolidated);
-        } else {
-          const cached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
-          callback(consolidateStoryScores(cached));
-        }
+        latestStoryDocs = snap.docs;
+        notify();
       },
       (err) => {
         console.warn('Story leaderboard live snapshot failed:', err);
@@ -493,7 +606,24 @@ export function subscribeStoryLeaderboard(callback: (scores: StoryScoreEntry[]) 
         callback(consolidateStoryScores(cached));
       }
     );
-  } catch {
+
+    const unsubPlayers = onSnapshot(
+      query(playersRef, limit(100)),
+      (snap) => {
+        latestPlayerDocs = snap.docs;
+        notify();
+      },
+      (err) => {
+        console.warn('Players live snapshot warning:', err);
+      }
+    );
+
+    return () => {
+      unsubStory();
+      unsubPlayers();
+    };
+  } catch (err) {
+    console.warn('subscribeStoryLeaderboard error, using cache:', err);
     const cached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
     callback(consolidateStoryScores(cached));
     return () => {};
@@ -544,6 +674,13 @@ export async function submitStoryScore(entry: Omit<StoryScoreEntry, 'id' | 'crea
       payload.completions = Math.max(incomingCompletions, existingCompletions);
       if (existingData.createdAt) {
         payload.createdAt = existingData.createdAt;
+      }
+      // If incoming is 0D Void but existing has progressed further, do not downgrade
+      if (payload.stageNum === 0 && (existingData.stageNum || 0) > 0) {
+        payload.stageName = existingData.stageName || payload.stageName;
+        payload.stageNum = existingData.stageNum || 0;
+        payload.bit = existingData.bit || 0;
+        payload.resolution = existingData.resolution || 0;
       }
     }
     await setDoc(docRef, payload);
