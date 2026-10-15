@@ -336,7 +336,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                 </span>
               ) : (
                 <span className="text-[10px] text-emerald-400/80 font-bold hidden sm:inline">
-                  6-BIT SYNTHESIS
+                  DIMENSIONAL COMPILER
                 </span>
               )}
             </div>
@@ -1028,7 +1028,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
 
         {/* Thank You Appreciation on Menu Screen */}
         <div className="mt-1 pt-2 border-t border-neutral-800/80 flex items-center justify-center text-[10px] text-emerald-400/90 font-mono tracking-widest uppercase">
-          <span>✦ BIT RESONANCE · THANK YOU FOR PLAYING ✦</span>
+          <span>✦ SOMETHING CREATIVE · THANKS FOR CREATING ✦</span>
         </div>
       </div>
 
