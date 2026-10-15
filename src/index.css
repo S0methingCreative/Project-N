@@ -23,3 +23,32 @@ html, body, #root {
   user-select: none;
   background-color: #000000;
 }
+
+/* Custom visible scrollbar for story mode top 100 high scores table */
+.story-scrollable {
+  scrollbar-width: thin !important;
+  scrollbar-color: rgba(245, 158, 11, 0.6) rgba(15, 17, 23, 0.9) !important;
+  -ms-overflow-style: auto !important;
+}
+
+.story-scrollable::-webkit-scrollbar {
+  display: block !important;
+  width: 8px !important;
+  height: 8px !important;
+}
+
+.story-scrollable::-webkit-scrollbar-track {
+  background: rgba(15, 17, 23, 0.9) !important;
+  border-radius: 4px;
+}
+
+.story-scrollable::-webkit-scrollbar-thumb {
+  background: rgba(245, 158, 11, 0.5) !important;
+  border-radius: 4px;
+  border: 1px solid rgba(245, 158, 11, 0.3) !important;
+}
+
+.story-scrollable::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 158, 11, 0.85) !important;
+}
+

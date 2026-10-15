@@ -559,7 +559,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[10px] text-neutral-300">
-                    Starts at Bit 1 with 1 Life. Scales to Medium at Bit 6, Hard at Bit 10; Boss 1 at Bit 9.
+                    Starts at Bit 1 with 1 Life. Scales to Medium at Bit 6, gets hard at 9 (Boss 1). Completes at First Boss.
                   </p>
                 </div>
                 <div className="mt-2 pt-1.5 border-t border-neutral-800 flex items-center justify-between text-[10px] text-purple-400 font-bold">

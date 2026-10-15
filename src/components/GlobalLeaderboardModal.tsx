@@ -240,7 +240,7 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
                     <span>{isLive ? 'LIVE FIRESTORE' : 'OFFLINE CACHE'}</span>
                   </span>
 
-                  {/* FTC Banner: small banner similar in shape and size and to the right of the live firestore icon */}
+                  {/* FTC Banner: solid yellow lightning bolt with enlarged FTC winner display */}
                   {showFtcBanner && (
                     <span
                       title={
@@ -248,17 +248,18 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
                           ? `Story First To Complete: ${storyFTC?.initials || 'Unclaimed'}`
                           : `Arcade First To Complete: ${arcadeFTC?.initials || 'Unclaimed'}`
                       }
-                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-amber-950/80 border border-amber-500/60 text-amber-300 animate-in fade-in duration-150"
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm sm:text-base font-black uppercase tracking-wider bg-amber-950/90 border border-amber-400 text-amber-300 animate-in fade-in duration-150 shadow-md shadow-amber-950/60"
                     >
-                      <Zap className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />
-                      <span>⚡FTC: {getFtcWinnerCode()}</span>
+                      <Zap className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />
+                      <span className="font-black tracking-wide text-amber-200">FTC: {getFtcWinnerCode()}</span>
                     </span>
                   )}
 
-
                 </div>
                 <p className="text-[10px] text-neutral-400 font-mono">
-                  Cross-device Top 10 Hall of Fame · 3-Letter Arcade Protocol
+                  {activeTab === 'story'
+                    ? 'Cross-device Top 100 Hall of Fame · 3-Letter Arcade Protocol'
+                    : 'Cross-device Top 10 Hall of Fame · 3-Letter Arcade Protocol'}
                   {playerCode && (
                     <span className="ml-1 text-amber-400 font-bold">
                       · ACTIVE CODE: [{playerCode}]
@@ -357,12 +358,18 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
             </button>
           </div>
 
-          {/* Top 10 Table */}
-          <div className="flex-1 overflow-y-auto border border-neutral-800 rounded-xl bg-black/40 p-1 sm:p-2 min-h-[220px]">
-            {/* 1. STORY HIGH SCORES: Total completions + Current Level progression; single consolidated record per pilot */}
+          {/* High Scores Table: Top 100 with scroll bar for Story mode, Top 10 for other modes */}
+          <div
+            className={`flex-1 border border-neutral-800 rounded-xl bg-black/40 p-1 sm:p-2 ${
+              activeTab === 'story'
+                ? 'max-h-[416px] overflow-y-auto story-scrollable pr-1.5'
+                : 'overflow-y-auto min-h-[220px]'
+            }`}
+          >
+            {/* 1. STORY HIGH SCORES: Top 100; sticky header; top 10 remain first seen then scroll down */}
             {activeTab === 'story' && (
               <div className="space-y-1">
-                <div className="grid grid-cols-12 px-3 py-1.5 text-[10px] text-neutral-400 font-bold uppercase tracking-wider border-b border-neutral-800">
+                <div className="sticky top-0 z-10 bg-[#090c15] grid grid-cols-12 px-3 py-2 text-[10px] text-neutral-400 font-bold uppercase tracking-wider border-b border-neutral-800 shadow-sm">
                   <div className="col-span-2 sm:col-span-1">RANK</div>
                   <div className="col-span-2 sm:col-span-2">INITIALS</div>
                   <div className="col-span-3 sm:col-span-2 text-center">COMPLETIONS</div>

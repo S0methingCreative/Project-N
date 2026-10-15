@@ -219,8 +219,21 @@ export function setPlayerCode(code: string): void {
 
 const FILLER_CODES = ['AAA', 'BBB', 'CCC', 'DDD', 'EEE', 'FFF', 'GGG', 'HHH', 'III', 'JJJ'];
 
-// Default beatable records (AAA through JJJ)
-export const DEFAULT_STORY_SCORES: StoryScoreEntry[] = FILLER_CODES.map((code, idx) => ({
+const STORY_100_CODES = [
+  'AAA', 'BBB', 'CCC', 'DDD', 'EEE', 'FFF', 'GGG', 'HHH', 'III', 'JJJ',
+  'ACE', 'ARC', 'ASH', 'BAT', 'BEN', 'BOB', 'BUG', 'CAB', 'CAT', 'COW',
+  'DAN', 'DEN', 'DOC', 'DOG', 'DOT', 'DUK', 'EAG', 'EAR', 'ELI', 'FOX',
+  'GAL', 'GEO', 'GUS', 'GUY', 'HEX', 'HOP', 'IAN', 'ICE', 'IVY', 'JAX',
+  'JEF', 'JOE', 'JON', 'JOY', 'KAI', 'KEN', 'KID', 'KIM', 'KOB', 'KYL',
+  'LEO', 'LEX', 'LOU', 'LUK', 'LUX', 'MAX', 'MIK', 'NED', 'NEO', 'NIX',
+  'NOA', 'NOX', 'OAK', 'OWL', 'PAN', 'PAW', 'PEG', 'PIX', 'PRM', 'QIX',
+  'RAD', 'RAM', 'RAY', 'RED', 'REX', 'RIO', 'ROB', 'RON', 'ROY', 'SAM',
+  'SOL', 'SON', 'SKY', 'TAE', 'TED', 'TEO', 'TIM', 'TOM', 'TYR', 'VAL',
+  'VAN', 'VIC', 'VOX', 'WES', 'WIN', 'WIZ', 'XEN', 'YAR', 'ZAC', 'ZEN',
+];
+
+// Default beatable records for Story Mode (Top 100)
+export const DEFAULT_STORY_SCORES: StoryScoreEntry[] = STORY_100_CODES.map((code, idx) => ({
   initials: code,
   completions: 0,
   stageName: '0D Void',
@@ -228,7 +241,7 @@ export const DEFAULT_STORY_SCORES: StoryScoreEntry[] = FILLER_CODES.map((code, i
   bit: 0,
   resolution: 0,
   completed: false,
-  createdAt: `2026-01-01T00:0${idx}:00Z`,
+  createdAt: `2026-01-01T00:${(idx % 60).toString().padStart(2, '0')}:00Z`,
 }));
 
 export const DEFAULT_ARCADE_SCORES: ArcadeScoreEntry[] = FILLER_CODES.map((code, idx) => ({
@@ -573,19 +586,20 @@ export function consolidateStoryScores(rawItems: any[]): StoryScoreEntry[] {
     return timeB - timeA;
   });
 
-  // If fewer than 10 unique pilots, fill with remaining default beatable records
-  if (list.length < 10) {
+  // If fewer than 100 unique pilots, fill with remaining default beatable records
+  if (list.length < 100) {
     const existingCodes = new Set(list.map(e => e.initials));
     for (const filler of DEFAULT_STORY_SCORES) {
       if (!existingCodes.has(filler.initials)) {
         list.push(filler);
         existingCodes.add(filler.initials);
-        if (list.length >= 10) break;
+        if (list.length >= 100) break;
       }
     }
   }
 
-  return list.slice(0, 10);
+  // Expand Story Mode only to top 100
+  return list.slice(0, 100);
 }
 
 export async function fetchStoryLeaderboard(): Promise<StoryScoreEntry[]> {

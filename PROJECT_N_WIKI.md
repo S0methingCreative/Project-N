@@ -9,7 +9,7 @@ This wiki covers the progression systems, unlock requirements, and game mechanic
 | Mode | Unlock Condition | Description |
 |:---|:---|:---|
 | **Story Mode** | Always Unlocked | The core narrative experience. Progress from 0D Void to 240 FPS Mastery. |
-| **Arcade Mode** | Always Unlocked | A high-stakes 1-Life challenge. Difficulty scales with your Bit/Res level. |
+| **Arcade Mode** | Always Unlocked | High-stakes 1-Life challenge. Starts at Bit 1 with no extra lives. Scales to Medium at Bit 6, gets hard at 9, and completes upon defeating the First Boss (Corrupted Sovereign). Does not have Part 2. |
 | **Speed Run** | Defeat Story Final Boss | Attempt to complete the entire Story Mode in the fastest time possible. |
 | **Survival** | Defeat Story Final Boss | Start with max unlocks and survive an endless onslaught of bosses and surges. |
 
@@ -75,15 +75,21 @@ After mastering dimensionality, you must scale the engine's temporal resolution 
 ## 🕹️ Mode Mechanics
 
 ### Arcade Mode Difficulty Scaling
-- **Bits 1-5**: Slow Waltz (Easy Zone) - Low speed, simple patterns.
-- **Bits 6-8**: Arcade Techno (Regular Zone) - Faster pulses, variable rhythms.
-- **Bit 9+**: Digital Hardcore (Crazy Zone) - Aggressive spikes and error zones.
+- **Bits 1-2**: Slow Waltz (Easy Zone) - Low speed, simple 3/4 cadence.
+- **Bit 3**: Math Rock (Easy Zone) - Syncopated 5/8 rhythms.
+- **Bit 4**: Arcade Techno (Easy Zone) - Driving 4/4 electronic pulses.
+- **Bit 5**: Cycling (Easy Zone) - Cycles Waltz, Rock, and Techno every 8 pulses.
+- **Bit 6**: Math Rock (Medium Zone) - Accelerated polyrhythmic wave structures.
+- **Bit 7**: Arcade Techno (Medium Zone) - 140 BPM electronic pulse trains.
+- **Bit 8**: Cycling (Medium Zone) - Cycles Waltz, Rock, and Techno every 8 pulses.
+- **Bit 9**: Cycling 2 (Hard Zone) - Cycles Rock and Techno; First Boss (Corrupted Sovereign) encounter. Conquering the First Boss achieves Arcade Victory (mode completes at First Boss with no Part 2 or extra lives).
 
 ### Survival Mode
 - **Status**: God Mode Lite.
 - **Starting Gear**: All Bits (10) and Resolutions (10) unlocked instantly.
 - **Overshields**: Starts with 5.
-- **Progression**: Endless. Difficulty scales past "Crazy" into uncharted error spikes.
+- **Progression**: Endless. Starts a little easier and progresses to standard difficulty by 30 seconds, escalating past "Crazy" to "Difficult".
+- **Boss Spawns**: Boss 1 (Corrupted Sovereign) spawns at 1 minute (60s); Boss 2 (Fracture Sovereign) engages at 2 minutes (120s).
 
 ### Polarizer Guide
 - **UP (Crest)**: Use to absorb high-amplitude pulses.

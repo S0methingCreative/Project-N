@@ -565,7 +565,7 @@ export default function App() {
         resources: { hertz: 0, volts: 0, baud: 0 },
       }));
     } else if (mode === 'survival') {
-      soundEngine.setMusicPacing('math_rock', 'medium');
+      soundEngine.setMusicPacing('arcade_techno', 'easy');
       soundEngine.startBackgroundMusic();
       setGameState(prev => ({
         ...DEFAULT_GAME_STATE,
@@ -579,6 +579,7 @@ export default function App() {
         act1Bits: 10,
         act1SubPart: 2,
         act1Resolution: 10,
+        act1Phase: 'point',
         overshields: 5,
         hp: 100,
         maxHp: 100,

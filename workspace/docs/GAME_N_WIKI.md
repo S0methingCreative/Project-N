@@ -88,14 +88,15 @@ High-stakes competitive mode engineered for pure execution and split timing.
 - **Victory Condition**: Defeat of Boss 2 and compilation of Resolution 10 stops the speedrun clock with millisecond precision.
 
 ### 2.3 Arcade Mode
-A structured 20-stage roguelite ladder emphasizing resource efficiency and single-life survival.
-- **Stage Progression Ladder (20 Distinct Stages)**:
-  - **Part One (10 Stages)**: Stages 1–10 correspond to Bits 1 through 10.
-  - **Part Two (10 Stages)**: Stages 11–20 correspond to Resolutions 1 through 10.
+A structured 9-stage challenge emphasizing resource efficiency and strict single-life survival, culminating in the First Boss confrontation.
+- **Stage Progression Ladder (9 Distinct Stages)**:
+  - Stages 1–9 correspond to Bits 1 through 9.
+  - Conquering Boss 1 (Corrupted Sovereign, Bit 9) achieves immediate Arcade Victory!
+  - Arcade mode strictly does NOT have Part 2 or extra lives.
 - **Lives Pool**:
-  - Begins with strictly **1 Life** (`lives = 1`).
-  - Gaining access to Part Two ($N=2$) grants a single milestone bonus: **+1 Extra Life** (`lives = 2`).
-- **Permadeath**: Depleting all lives triggers a permanent **GAME OVER** screen displaying:
+  - Begins and remains with strictly **1 Life** (`lives = 1`).
+  - No extra lives are awarded at any point during the run.
+- **Permadeath**: Depleting your 1 life triggers a permanent **GAME OVER** screen displaying:
   - Stage Reached (e.g., `Stage 09: Bit 9 - The Precipice`)
   - Survival Duration (`mm:ss.sss`)
   - Total Harmonics Harvested
@@ -103,27 +104,25 @@ A structured 20-stage roguelite ladder emphasizing resource efficiency and singl
 - **Stage Upgrade Costs (`ARCADE_BIT_UNLOCK_COSTS`)**:
   | Stage | Target Bit | Hz Required | V Required | Special Stage Milestone |
   | :--- | :--- | :--- | :--- | :--- |
-  | 1 | Bit 1 | $1\text{ Hz}$ | $0\text{ V}$ | Binary Monochrome Raster |
-  | 2 | Bit 2 | $3\text{ Hz}$ | $3\text{ V}$ | 2-Bit Vector Axis |
-  | 3 | Bit 3 | $6\text{ Hz}$ | $6\text{ V}$ | Polarizer Reticle |
-  | 4 | Bit 4 | $10\text{ Hz}$ | $10\text{ V}$ | Calibrated Distance Bus |
-  | 5 | Bit 5 | $16\text{ Hz}$ | $16\text{ V}$ | Upper & Lower Rail Horizontals |
-  | 6 | Bit 6 | $24\text{ Hz}$ | $24\text{ V}$ | Telemetry Gauge + Fast 3/4 Waltz |
-  | 7 | Bit 7 | $32\text{ Hz}$ | $32\text{ V}$ | Beat Horizon Phase Grid |
-  | 8 | Bit 8 | $42\text{ Hz}$ | $42\text{ V}$ | Neutralizer Mode Unlocked |
-  | 9 | Bit 9 | $50\text{ Hz}$ | $50\text{ V}$ | Boss 1: Corrupted Sovereign |
-  | 10 | Bit 10 | $0\text{ Hz}$ (Boss Victory) | $0\text{ V}$ | Dimensional Rift Opens ($N=2$) |
+  | 1 | Bit 1 | $0\text{ Hz}$ | $0\text{ V}$ | Starting Baseline (1-Bit Oscilloscope) |
+  | 2 | Bit 2 | $2\text{ Hz}$ | $2\text{ V}$ | 2-Bit Vector Axis |
+  | 3 | Bit 3 | $3\text{ Hz}$ | $3\text{ V}$ | Polarizer Reticle |
+  | 4 | Bit 4 | $6\text{ Hz}$ | $6\text{ V}$ | Calibrated Distance Bus |
+  | 5 | Bit 5 | $10\text{ Hz}$ | $10\text{ V}$ | Upper & Lower Rail Horizontals |
+  | 6 | Bit 6 | $16\text{ Hz}$ | $16\text{ V}$ | Telemetry Gauge (Math Rock, Medium) |
+  | 7 | Bit 7 | $24\text{ Hz}$ | $24\text{ V}$ | Beat Horizon Phase Grid (Arcade Techno, Medium) |
+  | 8 | Bit 8 | $36\text{ Hz}$ | $36\text{ V}$ | Neutralizer Mode (Cycling, Medium) |
+  | 9 | Bit 9 | $50\text{ Hz}$ | $50\text{ V}$ | Boss 1: Corrupted Sovereign (Cycling 2, Hard — Victory Completes Mode) |
 - **Stage Pacing Architecture (`getArcadePacing`)**:
   Arcade mode explicitly locks musical genres and tempos per stage rather than relying purely on pulse counters:
   - **Stage 1 & 2 (Bits 1–2)**: `genre = 'slow_waltz'`, `difficulty = 'easy'` ($68\text{ BPM}$)
   - **Stage 3 (Bit 3)**: `genre = 'math_rock'`, `difficulty = 'easy'` ($92\text{ BPM}$)
   - **Stage 4 (Bit 4)**: `genre = 'arcade_techno'`, `difficulty = 'easy'` ($128\text{ BPM}$)
-  - **Stage 5 (Bit 5)**: `genre = 'cycling'`, `difficulty = 'easy'` (Cycles Waltz $\leftrightarrow$ Rock $\leftrightarrow$ Techno)
-  - **Stage 6 (Bit 6)**: `genre = 'slow_waltz'`, `difficulty = 'hard'`, **Fast 156 BPM 3/4 Triplet Waltz**
-  - **Stage 7 (Bit 7)**: `genre = 'math_rock'`, `difficulty = 'medium'` ($110\text{ BPM}$)
-  - **Stage 8 (Bit 8)**: `genre = 'arcade_techno'`, `difficulty = 'medium'` ($140\text{ BPM}$)
-  - **Stage 9 (Bit 9)**: `genre = 'cycling'`, `difficulty = 'medium'`, Boss 1 Encounter
-  - **Stage 10 (Bit 10)**: Victory Transition Stage
+  - **Stage 5 (Bit 5)**: `genre = 'cycling'`, `difficulty = 'easy'` (Cycles Waltz $\leftrightarrow$ Rock $\leftrightarrow$ Techno every 8 pulses)
+  - **Stage 6 (Bit 6)**: `genre = 'math_rock'`, `difficulty = 'medium'` ($110\text{ BPM}$)
+  - **Stage 7 (Bit 7)**: `genre = 'arcade_techno'`, `difficulty = 'medium'` ($140\text{ BPM}$)
+  - **Stage 8 (Bit 8)**: `genre = 'cycling'`, `difficulty = 'medium'` (Cycles Waltz $\leftrightarrow$ Rock $\leftrightarrow$ Techno every 8 pulses)
+  - **Stage 9 (Bit 9)**: `genre = 'cycling2'`, `difficulty = 'hard'` (Cycles Rock and Techno every 8 pulses; Boss 1 Encounter — Conquering achieves Mode Victory!)
 
 ### 2.4 Survival Mode
 Endurance trial taking place entirely within the overclocked $2\text{D}$ engine.
@@ -134,8 +133,8 @@ Endurance trial taking place entirely within the overclocked $2\text{D}$ engine.
   - Defensive Matrix: **5 Overshields** + $100\text{ HP}$ Base Integrity
   - All environmental sectors (Harmonic Slit, Attenuation Zone, Emitter Maw) active from second 0.
 - **Time-Based Difficulty Escalation**:
-  Survival difficulty scales strictly by elapsed survival time:
-  $$\text{Tier}(t) = \begin{cases} \text{easy} & 0\text{s} \le t < 25\text{s} \\ \text{medium} & 25\text{s} \le t < 50\text{s} \\ \text{hard} & 50\text{s} \le t < 75\text{s} \\ \text{crazy} & 75\text{s} \le t < 100\text{s} \\ \text{difficult} & t \ge 100\text{s} \end{cases}$$
+  Survival difficulty scales strictly by elapsed survival time (starting a little easier with an introductory pace ramp over the first 30s):
+  $$\text{Tier}(t) = \begin{cases} \text{easy} & 0\text{s} \le t < 30\text{s} \quad (\text{introductory warmup progressing to current standard difficulty}) \\ \text{medium} & 30\text{s} \le t < 50\text{s} \\ \text{hard} & 50\text{s} \le t < 75\text{s} \\ \text{crazy} & 75\text{s} \le t < 100\text{s} \\ \text{difficult} & t \ge 100\text{s} \end{cases}$$
 - **Timed Sovereign Invasions**:
   - **$t = 60\text{s}$ (1:00)**: **Boss 1 (Corrupted Sovereign)** infiltrates the line.
   - **$t = 120\text{s}$ (2:00)**: **Boss 2 (Fracture Sovereign)** engages with full sector spotlight shifts.
@@ -151,13 +150,13 @@ Free-form sandbox allowing players to manually test bit upgrades, audio synthesi
 | Feature | Story Mode | Speedrun Mode | Arcade Mode | Survival Mode |
 | :--- | :--- | :--- | :--- | :--- |
 | **Starting Dimension** | $0\text{D}$ Void | $0\text{D}$ Void | $1\text{D}$ (Bit 1) | $2\text{D}$ (Res 10, Bit 10) |
-| **Initial Lives** | Infinite (Respawn) | Infinite (Timer Keeps Running) | 1 Life (+1 at Part 2) | 1 Life (Strict Permadeath) |
+| **Initial Lives** | Infinite (Respawn) | Infinite (Timer Keeps Running) | 1 Life (Strict Permadeath, No Extra Lives) | 1 Life (Strict Permadeath) |
 | **Starting Overshields** | 0 | 0 | 0 | 5 Stacks |
 | **Auto-Compile** | Unlocked via upgrade | Active from Frame 0 | Auto per stage payment | Not applicable |
 | **Pacing Model** | Pulse Count Dependent | Continuous Pulse Escalation | Stage-Locked (`getArcadePacing`) | Survival Time ($25\text{s}$ bands) |
-| **Death Consequence** | Checkpoint Reset | Pulse count \& tempo reset | Permanent Game Over | Permanent Game Over |
+| **Death Consequence** | Checkpoint Reset | Pulse count & tempo reset | Permanent Game Over | Permanent Game Over |
 | **Local Persistence** | `game_n_story_save_v2` | Session only | Session high scores | Session high scores |
-| **Boss Invasions** | Bit 9 \& Res 9 | Bit 9 \& Res 9 | Stage 9 \& Stage 19 | $t=60\text{s}$ \& $t=120\text{s}$ |
+| **Boss Invasions** | Bit 9 & Res 9 | Bit 9 & Res 9 | Stage 9 (Boss 1, Completes Mode) | $t=60\text{s}$ & $t=120\text{s}$ |
 
 ---
 
@@ -262,7 +261,7 @@ BIT 10: 1024-Color Master Engine Compiled ──> Opens Part Two Rift
     - Frequency Readout (`Hz`)
     - Amplitude Readout (`V`)
     - Current Music Genre & BPM
-  - *Arcade Mode Unique Event*: Reaching Stage 6 activates a fast **156 BPM 3/4 Triplet Waltz** with high-density sinusoidal bursts.
+  - *Arcade Mode Unique Event*: Reaching Stage 6 activates **Math Rock (Medium Difficulty)** with accelerating 5/8 polyrhythmic pulses.
 
 #### Bit 7: 128 Colors (Beat Horizon Phase Grid)
 - **Visuals**: 128-color depth.

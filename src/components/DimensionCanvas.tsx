@@ -1620,6 +1620,8 @@ export const DimensionCanvas: React.FC<Props> = ({
 
     const nextPhase: 'void' | 'point' | 'boss' | 'ray' = !gameState.act1PurchasedN
       ? 'void'
+      : gameState.gameMode === 'survival'
+      ? 'point'
       : (nextSubPart === 1 && nextBits >= 9)
       ? 'boss'
       : (gameState.act1Bits >= 9 && gameState.act1Phase === 'line_segment')
@@ -1630,8 +1632,8 @@ export const DimensionCanvas: React.FC<Props> = ({
     setAct1Phase(nextPhase);
     phaseRef.current = nextPhase;
 
-    // Reset boss health when loading / updating to bit 9 or res 9
-    if (nextSubPart === 1 && nextBits >= 9) {
+    // Reset boss health when loading / updating to bit 9 or res 9 (Story / Speedrun only)
+    if (gameState.gameMode !== 'survival' && nextSubPart === 1 && nextBits >= 9) {
       setAct1Phase('boss');
       phaseRef.current = 'boss';
       setBossHp(MAX_BOSS_1_HP);
@@ -1639,7 +1641,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       bossMissesRef.current = 0;
       bossHitFlashRef.current = 0;
     }
-    if (nextSubPart === 2 && nextRes >= 9) {
+    if (gameState.gameMode !== 'survival' && nextSubPart === 2 && nextRes >= 9) {
       setBoss2Hp(MAX_BOSS_2_HP);
       boss2HpRef.current = MAX_BOSS_2_HP;
       bossTargetTimerRef.current = 0;
@@ -1912,43 +1914,53 @@ export const DimensionCanvas: React.FC<Props> = ({
   // 9 - cycle through (Waltz, math rock, arcade techno); Medium difficulty; Medium tempo
   // 10 - waltz; Fast difficulty; Fast tempo
   // Arcade Pacing:
-  // Starts at Easy (0-3 bits), scales to Medium (4-7 bits), and scales to Hard at 8 bits unlocked (Bits 8 & 9 Boss)
+  // Arcade Pacing Model:
+  // Stages 1 & 2 (Bits 1 & 2): Waltz, Easy
+  // Stage 3 (Bit 3): Math Rock, Easy
+  // Stage 4 (Bit 4): Arcade Techno, Easy
+  // Stage 5 (Bit 5): Cycling (Waltz, Rock, Techno), Easy
+  // Stage 6 (Bit 6): Math Rock, Medium
+  // Stage 7 (Bit 7): Arcade Techno, Medium
+  // Stage 8 (Bit 8): Cycling (Waltz, Rock, Techno), Medium
+  // Stage 9 (Bit 9): Cycling 2 (Rock & Techno), Hard (First Boss: Corrupted Sovereign)
   const getArcadePacing = (
     _subP: number,
     bCount: number,
     _resCount: number,
     pulseCount: number
-  ): { genre: MusicGenre; zone: SpeedZone } => {
+  ): { genre: MusicGenre; zone: SpeedZone; pacingName: 'slow_waltz' | 'math_rock' | 'arcade_techno' | 'cycling' | 'cycling2' } => {
+    // 'cycling': cycles through Slow Waltz, Math Rock, and Arcade Techno every 8 pulses
     const genresCycle: MusicGenre[] = ['slow_waltz', 'math_rock', 'arcade_techno'];
     const cycleIndex = Math.floor(pulseCount / 8) % 3;
 
+    // 'cycling2': cycles Rock and Techno every 8 pulses
+    const genresCycle2: MusicGenre[] = ['math_rock', 'arcade_techno'];
+    const cycleIndex2 = Math.floor(pulseCount / 8) % 2;
+
     if (bCount <= 2) {
       // Bits 1 & 2: Waltz; easy difficulty; slow tempo
-      return { genre: 'slow_waltz', zone: 'easy' };
+      return { genre: 'slow_waltz', zone: 'easy', pacingName: 'slow_waltz' };
     } else if (bCount === 3) {
       // Bit 3: Math rock; easy difficulty; slow tempo
-      return { genre: 'math_rock', zone: 'easy' };
+      return { genre: 'math_rock', zone: 'easy', pacingName: 'math_rock' };
     } else if (bCount === 4) {
       // Bit 4: Arcade techno; easy difficulty; slow tempo
-      return { genre: 'arcade_techno', zone: 'easy' };
+      return { genre: 'arcade_techno', zone: 'easy', pacingName: 'arcade_techno' };
     } else if (bCount === 5) {
-      // Bit 5: Cycle through (Waltz, math rock, arcade techno); easy difficulty; slow tempo
-      return { genre: genresCycle[cycleIndex], zone: 'easy' };
+      // Bit 5: Cycling (Waltz, math rock, arcade techno); easy difficulty; slow tempo
+      return { genre: genresCycle[cycleIndex], zone: 'easy', pacingName: 'cycling' };
     } else if (bCount === 6) {
-      // Bit 6: Fast Waltz; Hard difficulty; 156 BPM tempo with 3/4 triplet wave bursts
-      return { genre: 'slow_waltz', zone: 'hard' };
+      // Bit 6: Math rock; medium difficulty
+      return { genre: 'math_rock', zone: 'medium', pacingName: 'math_rock' };
     } else if (bCount === 7) {
-      // Bit 7: Math rock; Medium difficulty; Medium tempo
-      return { genre: 'math_rock', zone: 'medium' };
+      // Bit 7: Arcade techno; medium difficulty
+      return { genre: 'arcade_techno', zone: 'medium', pacingName: 'arcade_techno' };
     } else if (bCount === 8) {
-      // Bit 8: Arcade techno; Medium difficulty; Medium tempo
-      return { genre: 'arcade_techno', zone: 'medium' };
-    } else if (bCount === 9) {
-      // Bit 9: Cycle through (Waltz, math rock, arcade techno); Medium difficulty; Medium tempo (Boss 1)
-      return { genre: genresCycle[cycleIndex], zone: 'medium' };
+      // Bit 8: Cycling (Waltz, math rock, arcade techno); medium difficulty
+      return { genre: genresCycle[cycleIndex], zone: 'medium', pacingName: 'cycling' };
     } else {
-      // Bit 10: Waltz; Fast difficulty; Fast tempo (Transcendence / Victory)
-      return { genre: 'slow_waltz', zone: 'hard' };
+      // Bit 9 (and Boss 1): Cycling 2 (Cycles Rock and Techno); hard difficulty
+      return { genre: genresCycle2[cycleIndex2], zone: 'hard', pacingName: 'cycling2' };
     }
   };
 
@@ -1971,19 +1983,11 @@ export const DimensionCanvas: React.FC<Props> = ({
         setAct1Phase('point');
         phaseRef.current = 'point';
 
-        if (gameModeRef.current === 'arcade') {
-          arcadeLivesRef.current = 2;
-          setArcadeLives(2);
-          addCombatText('💖 +1 LIFE UNLOCKED (N=1)! [LIVES: 2]', playerXRef.current, 190, '#ff55bb');
-          onLogAction("💖 ARCADE LIFE GRANTED: N=1 materialized! Extra life awarded (Total Lives = 2)!");
-        }
-
         onUpdateState(prev => ({
           ...prev,
           currentN: 1,
           act1PurchasedN: true,
           act1Phase: 'point',
-          arcadeLives: prev.gameMode === 'arcade' ? 2 : prev.arcadeLives,
           resources: {
             ...prev.resources,
             hertz: Math.max(0, prev.resources.hertz - 1),
@@ -2050,10 +2054,18 @@ export const DimensionCanvas: React.FC<Props> = ({
           currentGenreRef.current = pacing.genre;
           currentZoneRef.current = pacing.zone;
           soundEngine.setMusicPacing(pacing.genre, pacing.zone);
-          onLogAction(`🕹️ ARCADE PROGRESSION: Bit ${newBits} [${pacing.zone.toUpperCase()}] -> ${pacing.genre.replace('_', ' ').toUpperCase()} (${soundEngine.getBpm()} BPM)!`);
+          const genreDisplay = pacing.pacingName === 'cycling2'
+            ? 'CYCLING 2 (Rock & Techno)'
+            : pacing.pacingName === 'cycling'
+            ? 'CYCLING (Waltz / Rock / Techno)'
+            : pacing.genre.replace('_', ' ').toUpperCase();
+          onLogAction(`🕹️ ARCADE PROGRESSION: Bit ${newBits} [${pacing.zone.toUpperCase()}] -> ${genreDisplay} (${soundEngine.getBpm()} BPM)!`);
           if (newBits === 6) {
-            onLogAction("✦ BIT 6 ACCELERATION: 156 BPM Hard Waltz & 3/4 Triplet Wave Bursts engaged!");
-            addCombatText("⚡ 3/4 TRIPLET WALTZ (156 BPM)!", playerXRef.current, 190, '#ffe655');
+            onLogAction("✦ BIT 6 TRANSITION: Math Rock (Medium Difficulty) engaged!");
+            addCombatText("⚡ MATH ROCK (MEDIUM)!", playerXRef.current, 190, '#ffe655');
+          } else if (newBits === 9) {
+            onLogAction("✦ BIT 9 CLIMAX: Cycling 2 (Rock & Techno - Hard Difficulty) & Corrupted Sovereign engaged!");
+            addCombatText("⚡ CYCLING 2 (HARD)!", playerXRef.current, 190, '#ff4466');
           }
         }
 
@@ -2073,8 +2085,8 @@ export const DimensionCanvas: React.FC<Props> = ({
     }
 
     // 3. Auto-purchase Resolution upgrades (Part 2 ONLY: subPart === 2 && currentN === 2)
-    // Resolution 10 requires defeating Boss 2 (Fracture Sovereign)
-    if (subPartRef.current === 2 && resolutionRef.current < 9) {
+    // Arcade mode completes at Boss 1 and strictly does NOT have Part 2
+    if (gameModeRef.current !== 'arcade' && subPartRef.current === 2 && resolutionRef.current < 9) {
       const nextResIdx = resolutionRef.current;
       const upgrade = RESOLUTION_UPGRADES[nextResIdx];
       if (
@@ -2126,15 +2138,6 @@ export const DimensionCanvas: React.FC<Props> = ({
         soundEngine.playCadenceResolution();
         addCombatText(`⚡ AUTO: ${upgrade.fps}!`, playerXRef.current, 190, '#ffe655');
         onLogAction(`AUTO-COMPILE: ${upgrade.name} (${upgrade.fps}) compiled!`);
-
-        // In arcade mode, immediately apply new pacing from progression table
-        if (gameModeRef.current === 'arcade') {
-          const pacing = getArcadePacing(2, bitsRef.current, newRes, runPulsesRef.current);
-          currentGenreRef.current = pacing.genre;
-          currentZoneRef.current = pacing.zone;
-          soundEngine.setMusicPacing(pacing.genre, pacing.zone);
-          onLogAction(`🕹️ ARCADE PROGRESSION: Resolution ${newRes} [${pacing.zone.toUpperCase()}] -> ${pacing.genre.replace('_', ' ').toUpperCase()} (${soundEngine.getBpm()} BPM)!`);
-        }
       }
     }
   };
@@ -2357,6 +2360,9 @@ export const DimensionCanvas: React.FC<Props> = ({
     setActiveSurvivalBoss('none');
     activeSurvivalBossRef.current = 'none';
 
+    setAct1Phase('point');
+    phaseRef.current = 'point';
+
     pulsesRef.current = [];
     playerXRef.current = 240;
     runPulsesRef.current = 0;
@@ -2381,6 +2387,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       act1Bits: 10,
       act1SubPart: 2,
       act1Resolution: 10,
+      act1Phase: 'point',
       hasAttemptedSurvival: true,
     }));
 
@@ -2481,7 +2488,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       resources: { hertz: 0, volts: 0, baud: 0 },
     }));
 
-    onLogAction("🕹️ ARCADE MODE ENGAGED: Starting from Bit 1 with 1 Life! Scales to Medium at Bit 6, Hard at Bit 10; defeat Corrupted Sovereign at Bit 9 for victory!");
+    onLogAction("🕹️ ARCADE MODE ENGAGED: Starting from Bit 1 with 1 Life! Scales to Medium at Bit 6, gets hard at 9 (Boss 1); conquer Corrupted Sovereign for victory!");
   };
 
   // Death Screen Trigger (reads refs for 100% accurate resource banking)
@@ -2834,12 +2841,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         hasNRef.current = true;
         setAct1Phase('point');
         phaseRef.current = 'point';
-        if (gameModeRef.current === 'arcade') {
-          arcadeLivesRef.current = 2;
-          setArcadeLives(2);
-          addCombatText('💖 +1 LIFE UNLOCKED (N=1)! [LIVES: 2]', playerXRef.current, 190, '#ff55bb');
-          onLogAction("💖 ARCADE LIFE GRANTED: N=1 materialized! Extra life awarded (Total Lives = 2)!");
-        }
+
         soundEngine.triggerNote('G4');
         soundEngine.playCadenceResolution();
         onLogAction("BOUGHT 1 N! N=1 materialized in the top-left corner. A single stationary white pixel appears in the void.");
@@ -3311,7 +3313,9 @@ export const DimensionCanvas: React.FC<Props> = ({
         time,
         currentZoneRef.current,
         currentGenreRef.current,
-        phase,
+        gameModeRef.current === 'survival'
+          ? (activeSurvivalBossRef.current === 'boss1' ? 'boss' : 'point')
+          : phase,
         bossHpRef.current,
         bossMissesRef.current,
         playerXRef.current,
@@ -3387,8 +3391,8 @@ export const DimensionCanvas: React.FC<Props> = ({
         );
 
         if (!isRoundOver && !isMainMenuOpenRef.current && (hasN || stateRef.current.carrierActive)) {
-          // At start of run on bit 9 or res 9, guarantee boss health is reset to full
-          if (runPulsesRef.current === 0) {
+          // At start of run on bit 9 or res 9, guarantee boss health is reset to full (Story / Speedrun only)
+          if (gameModeRef.current !== 'survival' && runPulsesRef.current === 0) {
             if ((subPartRef.current === 1 || stateRef.current.act1SubPart === 1) && (bitsRef.current >= 9 || stateRef.current.act1Bits >= 9)) {
               if (phaseRef.current !== 'boss') {
                 setAct1Phase('boss');
@@ -3411,8 +3415,8 @@ export const DimensionCanvas: React.FC<Props> = ({
             }
           }
 
-          // In Part 1 Boss fight: boss pulls player toward right!
-          if (phase === 'boss' && subPartRef.current === 1) {
+          // In Part 1 Boss fight (or Survival Boss 1): boss pulls player toward right!
+          if ((gameModeRef.current !== 'survival' && phase === 'boss' && subPartRef.current === 1) || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
             // If player incorrectly polarizes more than 1 projectile (bossMissesRef.current > 1),
             // gravitational suction accelerates irreversibly, dragging player into the singularity!
             const pullRate = bossMissesRef.current > 1 ? 140 : bossMissesRef.current === 1 ? 26 : 14;
@@ -3423,8 +3427,8 @@ export const DimensionCanvas: React.FC<Props> = ({
             }
           }
 
-          // In Part 2 Boss fight (Resolution >= 9): cycle boss vulnerable target sector
-          if (subPartRef.current === 2 && resolutionRef.current >= 9) {
+          // In Part 2 Boss fight (Resolution >= 9 or Survival Boss 2): cycle boss vulnerable target sector
+          if ((gameModeRef.current !== 'survival' && subPartRef.current === 2 && resolutionRef.current >= 9) || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss2')) {
             bossTargetTimerRef.current += dt;
             if (bossTargetTimerRef.current >= 6.5) {
               bossTargetTimerRef.current = 0;
@@ -3562,7 +3566,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           } else if (gameModeRef.current === 'survival') {
             // Survival mode starts at regular difficulty and progresses over time past Crazy to Difficult:
             const sTime = survivalTimeRef.current;
-            if (sTime < 25) targetZone = 'easy';
+            if (sTime < 30) targetZone = 'easy';
             else if (sTime < 50) targetZone = 'medium';
             else if (sTime < 75) targetZone = 'hard';
             else if (sTime < 100) targetZone = 'crazy';
@@ -3652,9 +3656,10 @@ export const DimensionCanvas: React.FC<Props> = ({
 
           // Check Dramatic Boss Music (Story, Speed Run, & Survival)
           const isBossActive =
-            ((phase === 'boss' && bossHpRef.current > 0) ||
-            (subPartRef.current === 2 && resolutionRef.current >= 9 && boss2HpRef.current > 0) ||
-            (gameModeRef.current === 'survival' && activeSurvivalBossRef.current !== 'none'));
+            gameModeRef.current === 'survival'
+              ? activeSurvivalBossRef.current !== 'none'
+              : ((phase === 'boss' && bossHpRef.current > 0) ||
+                 (subPartRef.current === 2 && resolutionRef.current >= 9 && boss2HpRef.current > 0));
 
           if (isBossActive) {
             if (!soundEngine.isBossMusicActive()) {
@@ -3760,6 +3765,17 @@ export const DimensionCanvas: React.FC<Props> = ({
             pulseSpeed = -8.5;
           }
 
+          // Survival mode intro ramp: start a little easier but progress to current difficulty by 30 seconds
+          if (gameModeRef.current === 'survival' && survivalTimeRef.current < 30) {
+            const introProgress = Math.min(1, Math.max(0, survivalTimeRef.current / 30));
+            // Cooldown starts ~35% more spacious (easier rhythm reading) and tightens to 1.0x by 30s
+            const cooldownScale = 1.35 - 0.35 * introProgress;
+            cooldownThreshold = Math.round(cooldownThreshold * cooldownScale);
+            // Pulse speed starts ~22% gentler (-2.5) and accelerates to 1.0x (-3.2) by 30s
+            const speedScale = 0.78 + 0.22 * introProgress;
+            pulseSpeed = pulseSpeed * speedScale;
+          }
+
           if (spawnCooldownRef.current >= cooldownThreshold) {
             spawnCooldownRef.current = 0;
             runPulsesRef.current++;
@@ -3771,7 +3787,10 @@ export const DimensionCanvas: React.FC<Props> = ({
             let chosenRes: 'hz' | 'volts' | 'baud' = 'hz';
 
             // Ability to spawn neutral packets unlocks at Bit 8, during boss fight, in Part Two, or during survival boss:
-            const isAnyBoss = (phase === 'boss' || activeSurvivalBossRef.current !== 'none');
+            const isAnyBoss =
+              gameModeRef.current === 'survival'
+                ? activeSurvivalBossRef.current !== 'none'
+                : (phase === 'boss' || (subPartRef.current === 2 && resolutionRef.current >= 9));
             const canSpawnPackets = (currentBits >= 8 || isAnyBoss || subPartRef.current === 2);
             // Spawn packet every 3 pulses during boss fight so player can regularly deflect damage and beat boss:
             const isPacketStep = canSpawnPackets && (currentPulses % (isAnyBoss ? 3 : 5) === 0);
@@ -4155,7 +4174,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           }
 
           // Render Boss Node (Part One Boss Phase or Survival Boss 1)
-          if (phase === 'boss' || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
+          if ((gameModeRef.current !== 'survival' && phase === 'boss') || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
             const bossFlash = bossHitFlashRef.current > 0;
             ctx.fillStyle = bossFlash ? '#ffffff' : '#33ff66';
             ctx.shadowColor = bossFlash ? '#ffffff' : '#33ff66';
@@ -4201,7 +4220,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           }
 
           // Render Fracture Sovereign Sprite (Part Two Boss Phase at Resolution 9 or Survival Boss 2)
-          if ((subPartRef.current === 2 && resolutionRef.current >= 9) || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss2')) {
+          if ((gameModeRef.current !== 'survival' && subPartRef.current === 2 && resolutionRef.current >= 9) || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss2')) {
             const bossX = TRACE_END;
             const bossY = TRACE_Y;
             const bossFlash = bossHitFlashRef.current > 0;
@@ -4488,7 +4507,7 @@ export const DimensionCanvas: React.FC<Props> = ({
             }
 
             // Part Two Boss (Resolution 9 or Survival Boss 2)
-            if ((subPartRef.current === 2 && resolutionRef.current >= 9) || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss2')) {
+            if ((gameModeRef.current !== 'survival' && subPartRef.current === 2 && resolutionRef.current >= 9) || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss2')) {
               const pSec = playerX < 240 ? 'attenuation' : playerX < 430 ? 'harmonic' : 'emitter';
               if (pSec === bossTargetZoneRef.current) {
                 soundEngine.playBossDamageChord(2);
@@ -4545,47 +4564,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                       };
                     });
                     onLogAction(`✦ SPEEDRUN COMPLETED in ${formatTime(finalTime)} across ${finalRuns} runs! Select Speed Run or Survival Mode!`);
-                  } else if (gameModeRef.current === 'arcade') {
-                    isRoundEndedRef.current = true;
-                    const finalTime = arcadeTimeRef.current;
-                    const lives = arcadeLivesRef.current;
-                    const arcModal = {
-                      time: finalTime,
-                      livesRemaining: lives,
-                    };
-                    arcadeVictoryModalRef.current = arcModal;
-                    setArcadeVictoryModal(arcModal);
-                    pulsesRef.current = [];
-                    redErrorZonesRef.current = [];
 
-                    // Automatically save Arcade victory record under unique 3-letter code
-                    saveRunRecord('arcade', {
-                      stageName: 'Res 10 Victory (240 FPS)',
-                      stageNum: 20,
-                      bit: 10,
-                      duration: finalTime,
-                      totalHz: arcadeTotalHzRef.current,
-                      completed: true,
-                      isVictory: true,
-                    });
-
-                    onUpdateState(prev => {
-                      const curBestTime = prev.highScores?.arcadeBestTime || 0;
-                      const isNewBest = !curBestTime || finalTime < curBestTime;
-                      return {
-                        ...prev,
-                        arcadeTime: finalTime,
-                        arcadeFurthestStage: 'Victory! (Res 10 Complete)',
-                        arcadeFurthestStageNum: 20,
-                        highScores: {
-                          ...prev.highScores,
-                          arcadeBestStage: 'Victory! (Res 10 Complete)',
-                          arcadeBestStageNum: 20,
-                          arcadeBestTime: isNewBest ? finalTime : curBestTime,
-                        },
-                      };
-                    });
-                    onLogAction(`👑 ARCADE VICTORY! Conquered the escalation in ${formatTime(finalTime)} with ${lives} lives remaining! Recorded in Vault.`);
                   } else {
                     // Normal / Story Mode Final Boss Defeated!
                     isRoundEndedRef.current = true;
@@ -4633,7 +4612,7 @@ export const DimensionCanvas: React.FC<Props> = ({
             }
 
             // Part One Boss (Phase === 'boss' or Survival Boss 1)
-            if (phase === 'boss' || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
+            if ((gameModeRef.current !== 'survival' && phase === 'boss') || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
               const dmg = 15;
               soundEngine.playBossDamageChord(1);
               bossHitFlashRef.current = 1;
@@ -4773,7 +4752,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                 p.speed = Math.abs(p.speed) * 1.4;
                 p.x = playerX + paddleHalf + 10;
               } else {
-                if (phase === 'boss' || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
+                if ((gameModeRef.current !== 'survival' && phase === 'boss') || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
                   bossMissesRef.current++;
                 }
                 soundEngine.playIncorrectHit('crest');
@@ -4819,7 +4798,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                 p.speed = Math.abs(p.speed) * 1.4;
                 p.x = playerX + paddleHalf + 10;
               } else {
-                if (phase === 'boss' || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
+                if ((gameModeRef.current !== 'survival' && phase === 'boss') || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
                   bossMissesRef.current++;
                 }
                 soundEngine.playIncorrectHit('trough');
@@ -4996,13 +4975,13 @@ export const DimensionCanvas: React.FC<Props> = ({
             ctx.textAlign = 'center';
             ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
             ctx.shadowBlur = 4;
-            const livesStr = arcadeLivesRef.current === 2 ? '💖💖 2 LIVES' : '💖 1 LIFE';
+            const livesStr = '💖 1 LIFE';
             ctx.fillText(`🕹️ ARCADE: ${formatTime(arcadeTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]  [${livesStr}]`, modeHudX, modeHudY);
             ctx.restore();
           }
         }
 
-        if (phase === 'boss' || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
+        if ((gameModeRef.current !== 'survival' && phase === 'boss') || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
           ctx.fillStyle = '#ff4466';
           ctx.font = '13px monospace';
           ctx.fillText(`SOVEREIGN: ${Math.round((bossHpRef.current / MAX_BOSS_1_HP) * 100)}%`, w - 180, 26);
@@ -5925,10 +5904,10 @@ export const DimensionCanvas: React.FC<Props> = ({
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-neutral-400">Lives Remaining:</span>
-                  <span className="text-sm font-bold text-rose-300">{arcadeVictoryModal.livesRemaining} / 2 LIVES</span>
+                  <span className="text-sm font-bold text-rose-300">1 / 1 LIFE</span>
                 </div>
                 <div className="pt-2 border-t border-neutral-800 text-[11px] text-emerald-400 font-bold">
-                  Corrupted Sovereign conquered across escalating difficulty (Easy → Hard at 8 Bits)!
+                  Corrupted Sovereign conquered across escalating difficulty (Easy → Hard at Bit 9 with Cycling 2)!
                 </div>
               </div>
 

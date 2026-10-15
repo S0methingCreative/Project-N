@@ -2,7 +2,7 @@ import { HarmonicMode } from '../types/game';
 
 export type SpeedZone = 'easy' | 'medium' | 'hard' | 'crazy' | 'difficult';
 export type MusicGenre = 'slow_waltz' | 'math_rock' | 'arcade_techno';
-export type MusicStage = MusicGenre | 'slow_dance' | 'arcade_rave';
+export type MusicStage = MusicGenre | 'slow_dance' | 'arcade_rave' | 'cycling' | 'cycling2';
 
 class SoundEngine {
   private ctx: AudioContext | null = null;
@@ -189,6 +189,10 @@ class SoundEngine {
       genre = 'arcade_techno';
     } else if (stage === 'math_rock') {
       genre = 'math_rock';
+    } else if (stage === 'cycling2') {
+      genre = 'math_rock';
+    } else if (stage === 'cycling') {
+      genre = 'slow_waltz';
     }
     this.setMusicPacing(genre, this.speedZone);
   }
