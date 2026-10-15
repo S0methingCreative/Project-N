@@ -349,46 +349,133 @@ export async function checkCodeAvailability(
   }
 }
 
+export const RESOLUTION_FPS_MAP: Record<number, string> = {
+  1: '15 FPS',
+  2: '24 FPS',
+  3: '30 FPS',
+  4: '45 FPS',
+  5: '60 FPS',
+  6: '75 FPS',
+  7: '90 FPS',
+  8: '120 FPS',
+  9: '144 FPS',
+  10: '240 FPS',
+};
+
+export function getLocalPlayerStoryProgression(code: string): StoryScoreEntry {
+  const clean = sanitizeInitials(code);
+  let completions = 0;
+  let stageName = '0D Void';
+  let stageNum = 0;
+  let bit = 0;
+  let resolution = 0;
+  let completed = false;
+
+  if (typeof window !== 'undefined') {
+    try {
+      const rawStory = localStorage.getItem('game_n_story_save_v2') || localStorage.getItem('game_n_run_data_v1');
+      if (rawStory) {
+        const parsed = JSON.parse(rawStory);
+        if (parsed && typeof parsed === 'object') {
+          completions = Math.max(0, Number(parsed.storyCompletions) || (parsed.hasCompletedStory ? 1 : 0));
+          completed = Boolean(parsed.hasCompletedStory || completions > 0);
+
+          const rawRes = Number(parsed.act1Resolution ?? parsed.resolution ?? 0);
+          const rawSubPart = Number(parsed.act1SubPart ?? parsed.subPart ?? 1);
+          const rawBits = Number(parsed.act1Bits ?? parsed.bits ?? 0);
+
+          if (rawSubPart === 2 || rawBits >= 10 || rawRes > 0) {
+            resolution = Math.max(0, Math.min(10, rawRes));
+            bit = 10;
+            stageNum = 10 + resolution;
+            const fps = RESOLUTION_FPS_MAP[resolution] || `${resolution * 15} FPS`;
+            stageName = resolution > 0 ? `Resolution ${resolution} (${fps})` : '1D Line Segment';
+          } else if (parsed.act1PurchasedN || rawBits > 0) {
+            bit = Math.max(0, Math.min(10, rawBits));
+            resolution = 0;
+            stageNum = bit;
+            stageName = bit > 0 ? `Bit ${bit}` : 'N = 1 Point';
+          }
+        }
+      }
+    } catch {}
+  }
+
+  const nowIso = new Date().toISOString();
+  return {
+    id: clean,
+    initials: clean,
+    completions,
+    stageName,
+    stageNum,
+    bit,
+    resolution,
+    completed,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+}
+
+export async function syncPlayerStoryProgress(): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  const playerCode = getPlayerCode();
+  if (!playerCode) return false;
+
+  const localProgression = getLocalPlayerStoryProgression(playerCode);
+  if (!localProgression || (localProgression.stageNum === 0 && localProgression.completions === 0)) {
+    return false;
+  }
+
+  try {
+    return await submitStoryScore({
+      initials: localProgression.initials,
+      completions: localProgression.completions,
+      stageName: localProgression.stageName,
+      stageNum: localProgression.stageNum,
+      bit: localProgression.bit,
+      resolution: localProgression.resolution,
+      completed: localProgression.completed,
+    });
+  } catch (err) {
+    console.warn('syncPlayerStoryProgress error:', err);
+    return false;
+  }
+}
+
 export async function registerPlayerCode(code: string): Promise<boolean> {
   const clean = code.trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
   if (clean.length !== 3 || !/^[A-Z]{3}$/.test(clean) || isBannedInitials(clean)) return false;
 
   setPlayerCode(clean);
 
-  const initialStoryPayload: StoryScoreEntry = {
-    initials: clean,
-    completions: 0,
-    stageName: '0D Void',
-    stageNum: 0,
-    bit: 0,
-    resolution: 0,
-    completed: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
+  // Capture current local progression if player already reached resolutions before registering
+  const initialStoryPayload: StoryScoreEntry = getLocalPlayerStoryProgression(clean);
 
   // 1. Immediately seed into local story cache so they appear on the scoreboard right away
   const curCached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
   const updatedCached = consolidateStoryScores([...curCached, initialStoryPayload]);
   saveToLocalCache('story_scores_v3', updatedCached);
 
-  if (isDevelopmentEnvironment()) {
-    console.info('[Leaderboard] Pilot registration stored locally in development environment.');
-    return true;
-  }
-
   try {
     const playerRef = doc(db, 'players', clean);
-    await setDoc(playerRef, {
-      code: clean,
-      createdAt: new Date().toISOString(),
-    });
+    const existingPlayer = await getDoc(playerRef);
+    if (!existingPlayer.exists()) {
+      await setDoc(playerRef, {
+        code: clean,
+        createdAt: new Date().toISOString(),
+      });
+    }
 
-    // Also write to leaderboards_story if not already exists so players stuck in 0D void appear
+    // Write to leaderboards_story if not already exists or if local progress is higher
     const storyDocRef = doc(db, 'leaderboards_story', clean);
     const existingSnap = await getDoc(storyDocRef);
     if (!existingSnap.exists()) {
       await setDoc(storyDocRef, initialStoryPayload);
+    } else {
+      const existingData = existingSnap.data() as Partial<StoryScoreEntry>;
+      if ((existingData.stageNum || 0) < initialStoryPayload.stageNum) {
+        await setDoc(storyDocRef, { ...existingData, ...initialStoryPayload }, { merge: true });
+      }
     }
     return true;
   } catch (err) {
@@ -449,14 +536,17 @@ export function consolidateStoryScores(rawItems: any[]): StoryScoreEntry[] {
       existing.completions = Math.max(existing.completions, rawCompletions);
       existing.completed = Boolean(existing.completed || completed || existing.completions > 0);
 
-      // If incoming is 0D Void from registered players but existing already has progression, do not downgrade
-      if (stageNum === 0 && existing.stageNum > 0 && !raw.updatedAt) {
-        // Keep existing higher stage progression
-      } else {
+      // Higher story progression wins; never downgrade a player's stage or resolution
+      if (stageNum > existing.stageNum) {
+        existing.stageName = stageName;
+        existing.stageNum = stageNum;
+        existing.bit = bit;
+        existing.resolution = resolution;
+        existing.updatedAt = updatedAt;
+      } else if (stageNum === existing.stageNum) {
         const existingTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
-        if (itemTime >= existingTime || stageNum > existing.stageNum) {
+        if (itemTime >= existingTime) {
           existing.stageName = stageName;
-          existing.stageNum = stageNum;
           existing.bit = bit;
           existing.resolution = resolution;
           existing.updatedAt = updatedAt;
@@ -528,18 +618,11 @@ export async function fetchStoryLeaderboard(): Promise<StoryScoreEntry[]> {
         })
       : [];
 
+    // Proactively sync current player progression if pending
+    syncPlayerStoryProgress().catch(() => {});
+
     const localCode = getPlayerCode();
-    const localItem = localCode ? [{
-      id: localCode,
-      initials: localCode,
-      completions: 0,
-      stageName: '0D Void',
-      stageNum: 0,
-      bit: 0,
-      resolution: 0,
-      completed: false,
-      createdAt: new Date().toISOString(),
-    }] : [];
+    const localItem = localCode ? [getLocalPlayerStoryProgression(localCode)] : [];
 
     const combined = [...playerItems, ...localItem, ...storyItems];
     if (combined.length > 0) {
@@ -552,17 +635,7 @@ export async function fetchStoryLeaderboard(): Promise<StoryScoreEntry[]> {
   }
   const cached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
   const localCode = getPlayerCode();
-  const localExtra = localCode ? [{
-    id: localCode,
-    initials: localCode,
-    completions: 0,
-    stageName: '0D Void',
-    stageNum: 0,
-    bit: 0,
-    resolution: 0,
-    completed: false,
-    createdAt: new Date().toISOString(),
-  }] : [];
+  const localExtra = localCode ? [getLocalPlayerStoryProgression(localCode)] : [];
   return consolidateStoryScores([...cached, ...localExtra]);
 }
 
@@ -593,17 +666,7 @@ export function subscribeStoryLeaderboard(callback: (scores: StoryScoreEntry[]) 
       const storyEntries = latestStoryDocs.map(d => ({ id: d.id, ...d.data() }));
 
       const localCode = getPlayerCode();
-      const localEntries = localCode ? [{
-        id: localCode,
-        initials: localCode,
-        completions: 0,
-        stageName: '0D Void',
-        stageNum: 0,
-        bit: 0,
-        resolution: 0,
-        completed: false,
-        createdAt: new Date().toISOString(),
-      }] : [];
+      const localEntries = localCode ? [getLocalPlayerStoryProgression(localCode)] : [];
 
       const combined = [...playerVoidEntries, ...localEntries, ...storyEntries];
       const consolidated = consolidateStoryScores(combined);
@@ -674,11 +737,6 @@ export async function submitStoryScore(entry: Omit<StoryScoreEntry, 'id' | 'crea
   const updatedCached = consolidateStoryScores([...curCached, payload]);
   saveToLocalCache('story_scores_v3', updatedCached);
 
-  if (isDevelopmentEnvironment()) {
-    console.info('[Leaderboard] Story score submission saved locally (dev environment active).');
-    return false;
-  }
-
   // 2. In live Firestore, keep document ID as cleanInitials so each pilot has exactly 1 document
   try {
     const docRef = doc(db, 'leaderboards_story', cleanInitials);
@@ -692,8 +750,8 @@ export async function submitStoryScore(entry: Omit<StoryScoreEntry, 'id' | 'crea
       if (existingData.createdAt) {
         payload.createdAt = existingData.createdAt;
       }
-      // If incoming is 0D Void but existing has progressed further, do not downgrade
-      if (payload.stageNum === 0 && (existingData.stageNum || 0) > 0) {
+      // If existing has progressed further, do not downgrade
+      if ((existingData.stageNum || 0) > payload.stageNum) {
         payload.stageName = existingData.stageName || payload.stageName;
         payload.stageNum = existingData.stageNum || 0;
         payload.bit = existingData.bit || 0;
@@ -763,11 +821,6 @@ export async function submitArcadeScore(entry: Omit<ArcadeScoreEntry, 'id' | 'cr
   const cleanInitials = sanitizeInitials(entry.initials);
   if (isBannedInitials(cleanInitials)) {
     console.warn(`[Leaderboard] Blocked arcade score with banned initials: ${cleanInitials}`);
-    return false;
-  }
-
-  if (isDevelopmentEnvironment()) {
-    console.info('[Leaderboard] Arcade score submission bypassed in development environment.');
     return false;
   }
 
@@ -856,11 +909,6 @@ export async function submitSpeedrunScore(entry: Omit<SpeedrunScoreEntry, 'id' |
     return false;
   }
 
-  if (isDevelopmentEnvironment()) {
-    console.info('[Leaderboard] Speedrun score submission bypassed in development environment.');
-    return false;
-  }
-
   const docId = generateDocId();
   const payload: SpeedrunScoreEntry = {
     ...entry,
@@ -940,11 +988,6 @@ export async function submitSurvivalScore(entry: Omit<SurvivalScoreEntry, 'id' |
   const cleanInitials = sanitizeInitials(entry.initials);
   if (isBannedInitials(cleanInitials)) {
     console.warn(`[Leaderboard] Blocked survival score with banned initials: ${cleanInitials}`);
-    return false;
-  }
-
-  if (isDevelopmentEnvironment()) {
-    console.info('[Leaderboard] Survival score submission bypassed in development environment.');
     return false;
   }
 
@@ -1034,18 +1077,6 @@ export async function recordStoryFTCIfFirst(initials: string): Promise<{ isFTC: 
         initials: 'AAA',
         completedAt: new Date().toISOString(),
         stageName: 'Invalid Initials',
-      },
-    };
-  }
-
-  if (isDevelopmentEnvironment()) {
-    console.info('[Leaderboard] Story FTC recording skipped in development environment.');
-    return {
-      isFTC: false,
-      ftc: {
-        initials: cleanInitials,
-        completedAt: new Date().toISOString(),
-        stageName: 'Fracture Sovereign Defeated (Dev Mode)',
       },
     };
   }
@@ -1151,20 +1182,6 @@ export async function recordArcadeFTCIfFirst(
         initials: 'AAA',
         completedAt: new Date().toISOString(),
         stageName: 'Invalid Initials',
-      },
-    };
-  }
-
-  if (isDevelopmentEnvironment()) {
-    console.info('[Leaderboard] Arcade FTC recording skipped in development environment.');
-    return {
-      isFTC: false,
-      ftc: {
-        initials: cleanInitials,
-        completedAt: new Date().toISOString(),
-        stageName: 'Res 10 Victory (Dev Mode)',
-        duration: Math.round(duration * 10) / 10,
-        totalHz: Math.floor(totalHz),
       },
     };
   }

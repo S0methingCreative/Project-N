@@ -416,14 +416,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
             <span>OPTIONS</span>
           </button>
 
-          {isDevelopmentEnvironment() && (
-            <span
-              title="Development environment active: leaderboard score submissions are disabled to prevent dev scores in live rankings."
-              className="ml-auto hidden sm:flex items-center gap-1 px-2 py-1 rounded text-[9px] font-bold bg-amber-950/80 border border-amber-600/70 text-amber-300"
-            >
-              <span>DEV: SUBMISSIONS BYPASSED</span>
-            </span>
-          )}
+
         </div>
 
         {/* Tab 1: Game Modes */}

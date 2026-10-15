@@ -31,6 +31,7 @@ import {
   getPlayerCode,
   setPlayerCode,
   isDevelopmentEnvironment,
+  syncPlayerStoryProgress,
   StoryScoreEntry,
   SpeedrunScoreEntry,
   SurvivalScoreEntry,
@@ -87,17 +88,21 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
 
     setIsLoading(true);
 
-    // Initial fetch
-    Promise.all([
-      fetchStoryLeaderboard().then(setStoryScores),
-      fetchArcadeLeaderboard().then(setArcadeScores),
-      fetchSpeedrunLeaderboard().then(setSpeedrunScores),
-      fetchSurvivalLeaderboard().then(setSurvivalScores),
-      fetchStoryFTC().then(setStoryFTC),
-      fetchArcadeFTC().then(setArcadeFTC),
-    ]).finally(() => {
-      setIsLoading(false);
-    });
+    // Initial sync and fetch
+    syncPlayerStoryProgress()
+      .catch(() => {})
+      .finally(() => {
+        Promise.all([
+          fetchStoryLeaderboard().then(setStoryScores),
+          fetchArcadeLeaderboard().then(setArcadeScores),
+          fetchSpeedrunLeaderboard().then(setSpeedrunScores),
+          fetchSurvivalLeaderboard().then(setSurvivalScores),
+          fetchStoryFTC().then(setStoryFTC),
+          fetchArcadeFTC().then(setArcadeFTC),
+        ]).finally(() => {
+          setIsLoading(false);
+        });
+      });
 
     // Real-time Firestore subscriptions
     const unsubStory = subscribeStoryLeaderboard((scores) => {
@@ -146,6 +151,7 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
   const handleRefresh = async () => {
     soundEngine.playCadenceResolution();
     setIsLoading(true);
+    await syncPlayerStoryProgress().catch(() => {});
     await Promise.all([
       fetchStoryLeaderboard().then(setStoryScores),
       fetchArcadeLeaderboard().then(setArcadeScores),
@@ -249,14 +255,7 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
                     </span>
                   )}
 
-                  {isDevelopmentEnvironment() && (
-                    <span
-                      title="Development environment active: leaderboard submissions are disabled to prevent dev scores in live rankings."
-                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-950/90 border border-amber-600/70 text-amber-300"
-                    >
-                      <span>DEV MODE · NO SUBMISSIONS</span>
-                    </span>
-                  )}
+
                 </div>
                 <p className="text-[10px] text-neutral-400 font-mono">
                   Cross-device Top 10 Hall of Fame · 3-Letter Arcade Protocol

@@ -7,7 +7,7 @@ import { MainMenuModal } from './components/MainMenuModal';
 import { soundEngine } from './audio/soundEngine';
 import { loadUserSettings, saveUserSettings, UserSettings } from './utils/settings';
 import { InitialsRegistrationModal } from './components/InitialsRegistrationModal';
-import { getPlayerCode, isDevelopmentEnvironment, wipeAllSavedScores } from './services/leaderboardService';
+import { getPlayerCode, isDevelopmentEnvironment, syncPlayerStoryProgress, wipeAllSavedScores } from './services/leaderboardService';
 import {
   Cpu,
   RotateCcw,
@@ -323,14 +323,25 @@ export default function App() {
         localStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(storyToSave));
       }
 
-      // 2. High scores are persisted across game modes in live environments
-      if (gameState.highScores && !isDevelopmentEnvironment()) {
+      // 2. High scores are persisted across game modes in all environments
+      if (gameState.highScores) {
         localStorage.setItem(HIGH_SCORES_STORAGE_KEY, JSON.stringify(gameState.highScores));
       }
     } catch (err) {
       console.warn('Failed to save run data to localStorage:', err);
     }
   }, [gameState]);
+
+  // Proactively auto-sync story progression to global high scores on mount and resolution changes
+  React.useEffect(() => {
+    syncPlayerStoryProgress().catch(() => {});
+  }, []);
+
+  React.useEffect(() => {
+    if (gameState.act1Resolution && gameState.act1Resolution > 0) {
+      syncPlayerStoryProgress().catch(() => {});
+    }
+  }, [gameState.act1Resolution]);
 
   // Before unload handler to guarantee current run data is saved before browser closes
   React.useEffect(() => {
@@ -340,7 +351,7 @@ export default function App() {
           localStorage.setItem(STORY_SAVE_KEY, JSON.stringify(gameState));
           localStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(gameState));
         }
-        if (gameState.highScores && !isDevelopmentEnvironment()) {
+        if (gameState.highScores) {
           localStorage.setItem(HIGH_SCORES_STORAGE_KEY, JSON.stringify(gameState.highScores));
         }
       } catch {}
