@@ -82,7 +82,24 @@ export function isDevelopmentEnvironment(): boolean {
   return isLocal || isAisDev || isViteDev;
 }
 
-export const BANNED_INITIALS: readonly string[] = ['FAG'];
+export const BANNED_INITIALS: readonly string[] = [
+  'CUM',
+  'FAG',
+  'KKK',
+  'FUK',
+  'COK',
+  'DIK',
+  'SHT',
+  'CNT',
+  'FUC',
+  'JIZ',
+  'NIG',
+  'CUK',
+  'CUC',
+  'PUS',
+  'DIX',
+  'PED',
+];
 
 export function isBannedInitials(initials: string | null | undefined): boolean {
   if (!initials) return false;
@@ -176,7 +193,7 @@ export function getPlayerCode(): string | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem(PLAYER_CODE_STORAGE_KEY);
-    if (raw && /^[A-Z0-9]{3}$/i.test(raw.trim())) {
+    if (raw && /^[A-Z]{3}$/i.test(raw.trim())) {
       const clean = raw.trim().toUpperCase();
       if (isBannedInitials(clean)) {
         localStorage.removeItem(PLAYER_CODE_STORAGE_KEY);
@@ -191,8 +208,8 @@ export function getPlayerCode(): string | null {
 export function setPlayerCode(code: string): void {
   if (typeof window === 'undefined') return;
   try {
-    const clean = code.trim().toUpperCase().slice(0, 3);
-    if (isBannedInitials(clean)) {
+    const clean = code.trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+    if (clean.length !== 3 || isBannedInitials(clean)) {
       localStorage.removeItem(PLAYER_CODE_STORAGE_KEY);
       return;
     }
@@ -241,7 +258,7 @@ export const DEFAULT_SURVIVAL_SCORES: SurvivalScoreEntry[] = FILLER_CODES.map((c
 }));
 
 export function sanitizeInitials(raw: string): string {
-  const clean = raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 3);
+  const clean = raw.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
   const padded = clean.padEnd(3, 'A');
   if (isBannedInitials(padded)) {
     return 'AAA';
@@ -287,8 +304,8 @@ export async function checkCodeAvailability(
   currentCode?: string
 ): Promise<{ available: boolean; reason?: string }> {
   const clean = code.trim().toUpperCase();
-  if (clean.length !== 3 || !/^[A-Z0-9]{3}$/.test(clean)) {
-    return { available: false, reason: 'Must be exactly 3 alphanumeric characters (A-Z, 0-9).' };
+  if (clean.length !== 3 || !/^[A-Z]{3}$/.test(clean)) {
+    return { available: false, reason: 'Must be exactly 3 letters (A-Z).' };
   }
 
   if (isBannedInitials(clean)) {
@@ -333,8 +350,8 @@ export async function checkCodeAvailability(
 }
 
 export async function registerPlayerCode(code: string): Promise<boolean> {
-  const clean = code.trim().toUpperCase().slice(0, 3);
-  if (clean.length !== 3 || isBannedInitials(clean)) return false;
+  const clean = code.trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+  if (clean.length !== 3 || !/^[A-Z]{3}$/.test(clean) || isBannedInitials(clean)) return false;
 
   setPlayerCode(clean);
 

@@ -3,7 +3,7 @@ import { Shield, Check, AlertCircle, X, ChevronUp, ChevronDown, Sparkles, Loader
 import { checkCodeAvailability, registerPlayerCode, isBannedInitials } from '../services/leaderboardService';
 import { soundEngine } from '../audio/soundEngine';
 
-const VALID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split('');
+const VALID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 interface InitialsRegistrationModalProps {
   isOpen: boolean;
@@ -134,9 +134,9 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
         return;
       }
 
-      // Direct letter or number input
+      // Direct letter input (A-Z only)
       const keyUpper = e.key.toUpperCase();
-      if (/^[A-Z0-9]$/.test(keyUpper)) {
+      if (/^[A-Z]$/.test(keyUpper)) {
         e.preventDefault();
         soundEngine.playCadenceResolution();
         setLetters((prev) => {
@@ -299,7 +299,7 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
             )
           ) : (
             <span className="text-neutral-500 text-[11px]">
-              Use keyboard (A-Z, 0-9) or arrows to set code
+              Use keyboard (A-Z) or arrows to set code
             </span>
           )}
         </div>

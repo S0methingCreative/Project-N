@@ -13,7 +13,7 @@ interface InitialsEntryModalProps {
   onCancel?: () => void;
 }
 
-const CHAR_SET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'.split('');
+const CHAR_SET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 export const InitialsEntryModal: React.FC<InitialsEntryModalProps> = ({
   isOpen,
@@ -79,7 +79,7 @@ export const InitialsEntryModal: React.FC<InitialsEntryModalProps> = ({
       if (!isBannedInitials(currentInitials)) {
         handleRegister();
       }
-    } else if (e.key.length === 1 && /[a-zA-Z0-9]/.test(e.key)) {
+    } else if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
       e.preventDefault();
       const char = e.key.toUpperCase();
       setLetters((prev) => {
