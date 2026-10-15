@@ -15,6 +15,8 @@ import {
   X,
   Layers,
   Sparkles,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 
 const STORY_SAVE_KEY = 'game_n_story_save_v2';
@@ -193,6 +195,99 @@ export default function App() {
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // True Browser Fullscreen Mode state & toggle
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(() => {
+    if (typeof document === 'undefined') return false;
+    const doc = document as any;
+    return Boolean(
+      doc.fullscreenElement ||
+      doc.webkitFullscreenElement ||
+      doc.mozFullScreenElement ||
+      doc.msFullscreenElement
+    );
+  });
+
+  const toggleFullscreen = () => {
+    try {
+      if (typeof document === 'undefined') return;
+      const doc = document as any;
+      const docEl = document.documentElement as any;
+      const isCurrentlyFullscreen = Boolean(
+        doc.fullscreenElement ||
+        doc.webkitFullscreenElement ||
+        doc.mozFullScreenElement ||
+        doc.msFullscreenElement
+      );
+
+      if (!isCurrentlyFullscreen) {
+        if (docEl.requestFullscreen) {
+          docEl.requestFullscreen().catch(() => {});
+        } else if (docEl.webkitRequestFullscreen) {
+          docEl.webkitRequestFullscreen();
+        } else if (docEl.mozRequestFullScreen) {
+          docEl.mozRequestFullScreen();
+        } else if (docEl.msRequestFullscreen) {
+          docEl.msRequestFullscreen();
+        }
+      } else {
+        if (doc.exitFullscreen) {
+          doc.exitFullscreen().catch(() => {});
+        } else if (doc.webkitExitFullscreen) {
+          doc.webkitExitFullscreen();
+        } else if (doc.mozCancelFullScreen) {
+          doc.mozCancelFullScreen();
+        } else if (doc.msExitFullscreen) {
+          doc.msExitFullscreen();
+        }
+      }
+    } catch (err) {
+      console.warn('Fullscreen toggle error:', err);
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const doc = document as any;
+      setIsFullscreen(
+        Boolean(
+          doc.fullscreenElement ||
+          doc.webkitFullscreenElement ||
+          doc.mozFullScreenElement ||
+          doc.msFullscreenElement
+        )
+      );
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'f' || e.key === 'F') {
+        const target = e.target as HTMLElement | null;
+        if (
+          target instanceof HTMLInputElement ||
+          target instanceof HTMLTextAreaElement ||
+          target?.isContentEditable
+        ) {
+          return;
+        }
+        e.preventDefault();
+        toggleFullscreen();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, []);
 
   // Save the player's progression: Story mode save is kept strictly preserved
@@ -432,7 +527,7 @@ export default function App() {
         setGameState(initialStory);
       }
     } else if (mode === 'speedrun') {
-      soundEngine.setMusicPacing('arcade_techno', 'easy');
+      soundEngine.setMusicPacing('slow_waltz', 'easy');
       soundEngine.startBackgroundMusic();
       setGameState(prev => ({
         ...DEFAULT_GAME_STATE,
@@ -555,6 +650,25 @@ export default function App() {
 
   return (
     <div className="fixed inset-0 w-full h-[100dvh] bg-black text-neutral-100 font-sans overflow-hidden select-none touch-none">
+      {/* NEARLY TRANSPARENT GREY TOGGLE WITH NO EFFECTS IN TOP RIGHT CORNER (ALWAYS ACCESSIBLE) */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          toggleFullscreen();
+        }}
+        aria-label={isFullscreen ? 'Exit full screen (F)' : 'Enter full screen (F)'}
+        title={isFullscreen ? 'Exit full screen (F)' : 'Enter full screen (F)'}
+        style={{ right: 'max(12px, env(safe-area-inset-right, 12px))' }}
+        className="fixed top-3 z-[60] p-1.5 min-h-[36px] min-w-[36px] rounded bg-neutral-800/20 hover:bg-neutral-800/40 active:bg-neutral-800/60 text-neutral-400/50 hover:text-neutral-300 border border-neutral-700/20 transition-colors cursor-pointer select-none touch-manipulation flex items-center justify-center"
+      >
+        {isFullscreen ? (
+          <Minimize2 className="w-3.5 h-3.5" />
+        ) : (
+          <Maximize2 className="w-3.5 h-3.5" />
+        )}
+      </button>
+
       {/* Standalone Fullscreen Game Window (Border-free & Edge-to-Edge) */}
       <main className="relative w-full h-full overflow-hidden flex flex-col bg-black">
         <DimensionCanvas

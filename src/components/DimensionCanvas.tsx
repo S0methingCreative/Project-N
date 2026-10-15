@@ -1380,6 +1380,8 @@ export const DimensionCanvas: React.FC<Props> = ({
   const [globalScoresTab, setGlobalScoresTab] = useState<LeaderboardTab>('story');
   const [highlightInitials, setHighlightInitials] = useState<string | undefined>(undefined);
 
+
+
   // Automatically save run record under unique 3-letter pilot code
   const saveRunRecord = async (
     mode: 'story' | 'speedrun' | 'survival' | 'arcade',
@@ -1690,6 +1692,9 @@ export const DimensionCanvas: React.FC<Props> = ({
           integrityRef.current = 100;
           setOvershields(0);
           overshieldsRef.current = 0;
+          currentGenreRef.current = 'slow_waltz';
+          currentZoneRef.current = 'easy';
+          soundEngine.setMusicPacing('slow_waltz', 'easy');
           soundEngine.setBossMusic(false);
         } else if (gameState.gameMode === 'story') {
           setStoryCompleteModal(null);
@@ -2059,6 +2064,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           bossHpRef.current = MAX_BOSS_1_HP;
           bossMissesRef.current = 0;
           bossHitFlashRef.current = 0;
+          runPulsesRef.current = 0;
           onUpdateState(prev => ({ ...prev, act1Phase: 'line_segment' }));
           onLogAction("DESTINATION LOCKED BY CORRUPTED SOVEREIGN! 48 Hz/V collected — Boss fight begins! Defeat Boss 1 to compile Bit 10!");
         }
@@ -2102,6 +2108,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           bossTargetTimerRef.current = 0;
           bossTargetZoneRef.current = 'harmonic';
           bossHitFlashRef.current = 0;
+          runPulsesRef.current = 0;
         }
 
         onUpdateState(prev => ({
@@ -2759,6 +2766,7 @@ export const DimensionCanvas: React.FC<Props> = ({
     setRunVolts(0);
     setRunBaud(0);
     pulsesRef.current = [];
+    particlesRef.current = [];
     playerXRef.current = 240;
     runPulsesRef.current = 0;
     runTimeRef.current = 0;
@@ -3315,9 +3323,13 @@ export const DimensionCanvas: React.FC<Props> = ({
         bossTargetZoneRef.current
       );
 
-      // Red damage flash overlay (only when 1-bit+ graphics are unlocked)
+      // Damage flash overlay (white screen flash in 0D Void & N=1, red/green in 1-bit+)
       if (damageFlashRef.current > 0) {
-        if (hasN && (bitsRef.current >= 1 || subPartRef.current === 2)) {
+        if (!hasN || bitsRef.current === 0) {
+          // White damage flash for 0D Void and N=1 (0 bits), matching the green flash in bit=1
+          ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(0.85, damageFlashRef.current * 0.85)})`;
+          ctx.fillRect(-10, -10, w + 20, h + 20);
+        } else if (hasN && (bitsRef.current >= 1 || subPartRef.current === 2)) {
           ctx.fillStyle = `rgba(255, 30, 60, ${damageFlashRef.current * 0.24})`;
           ctx.fillRect(-10, -10, w + 20, h + 20);
         }
@@ -3597,7 +3609,8 @@ export const DimensionCanvas: React.FC<Props> = ({
               targetGenre = ((currentPulses - 44) % 32 < 16) ? 'math_rock' : 'arcade_techno';
             }
           } else {
-            // Standard Runs:
+            // Story Mode & Speedrun Mode standard runs:
+            // Difficulty dynamically escalates based on pulse count at the same rate:
             if (currentPulses <= 8) {
               targetZone = 'easy';
               targetGenre = 'slow_waltz';
@@ -3637,11 +3650,11 @@ export const DimensionCanvas: React.FC<Props> = ({
             }
           }
 
-          // Check Dramatic Boss Music
+          // Check Dramatic Boss Music (Story, Speed Run, & Survival)
           const isBossActive =
-            (phase === 'boss' && bossHpRef.current > 0) ||
+            ((phase === 'boss' && bossHpRef.current > 0) ||
             (subPartRef.current === 2 && resolutionRef.current >= 9 && boss2HpRef.current > 0) ||
-            (gameModeRef.current === 'survival' && activeSurvivalBossRef.current !== 'none');
+            (gameModeRef.current === 'survival' && activeSurvivalBossRef.current !== 'none'));
 
           if (isBossActive) {
             if (!soundEngine.isBossMusicActive()) {
@@ -4382,26 +4395,6 @@ export const DimensionCanvas: React.FC<Props> = ({
           const hudX = 20;
           ctx.textAlign = 'left';
 
-          // Clean, responsive graphical player integrity gauge
-          const gaugeW = Math.min(130, w * 0.28);
-          const gaugeH = 6;
-          const gaugeY = h - 38;
-          ctx.fillStyle = 'rgba(5, 12, 10, 0.85)';
-          ctx.fillRect(hudX, gaugeY, gaugeW, gaugeH);
-          ctx.strokeStyle = roundedIntegrity < 35 ? '#ff3355' : roundedIntegrity < 65 ? '#ffaa33' : '#33ff66';
-          ctx.lineWidth = 1;
-          ctx.strokeRect(hudX - 0.5, gaugeY - 0.5, gaugeW + 1, gaugeH + 1);
-
-          const hpFillW = Math.max(0, Math.min(gaugeW, (roundedIntegrity / 100) * gaugeW));
-          ctx.fillStyle = roundedIntegrity < 35 ? '#ff3355' : roundedIntegrity < 65 ? '#ffaa33' : '#33ff66';
-          ctx.fillRect(hudX, gaugeY, hpFillW, gaugeH);
-
-          if (overshieldsRef.current > 0) {
-            ctx.fillStyle = '#00f0ff';
-            const osFillW = Math.min(gaugeW, (overshieldsRef.current / 10) * gaugeW);
-            ctx.fillRect(hudX, gaugeY + gaugeH - 2, osFillW, 2);
-          }
-
           const shortPol = polarityRef.current === 1 ? '▲ UP' : polarityRef.current === -1 ? '▼ DOWN' : '■ NEUTRAL';
           const overshieldText = overshieldsRef.current > 0 ? ` | 🛡️ +${overshieldsRef.current * 20} HP` : '';
           ctx.fillStyle = roundedIntegrity < 35 ? '#ff3355' : roundedIntegrity < 65 ? '#ffaa33' : '#33ff66';
@@ -4714,6 +4707,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                   resolutionRef.current = 0;
                   setAct1Phase('point');
                   phaseRef.current = 'point';
+                  runPulsesRef.current = 0;
 
                   // Register Bit 10 milestone immediately upon Sovereign defeat in Story mode
                   if (!gameModeRef.current || gameModeRef.current === 'story') {
@@ -4747,8 +4741,8 @@ export const DimensionCanvas: React.FC<Props> = ({
 
               addSparks(TRACE_END, TRACE_Y, '#ffff44', currentBits >= 8 ? 20 : 12);
             } else {
-              // Reflected wave safely dissipates off right edge in non-boss phases
-              addSparks(TRACE_END, TRACE_Y, '#55ff99', 6);
+              // Reflected wave safely dissipates off right edge in non-boss phases (white explosion pixels in 0D & N=1)
+              addSparks(TRACE_END, TRACE_Y, (!hasN || currentBits === 0) ? '#ffffff' : '#55ff99', 10);
             }
             pulsesRef.current.splice(i, 1);
             continue;
@@ -4774,7 +4768,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                 if (gameModeRef.current === 'arcade') arcadeTotalHzRef.current += currentSectorYield;
                 checkAutoPurchases();
                 bossMissesRef.current = 0;
-                addSparks(playerX, TRACE_Y, '#55ff99', currentBits >= 8 ? 20 : 10);
+                addSparks(playerX, TRACE_Y, (!hasN || currentBits === 0) ? '#ffffff' : '#55ff99', currentBits >= 8 ? 20 : 10);
                 p.reflected = true;
                 p.speed = Math.abs(p.speed) * 1.4;
                 p.x = playerX + paddleHalf + 10;
@@ -4799,12 +4793,14 @@ export const DimensionCanvas: React.FC<Props> = ({
                   const nextH = Math.max(0, integrityRef.current - effectiveDmg);
                   integrityRef.current = nextH;
                   setIntegrity(nextH);
+                  addSparks(playerX, TRACE_Y, (!hasN || currentBits === 0) ? '#ffffff' : '#ff3344', 16);
                   if (nextH <= 0) {
                     triggerDeathRef.current("Crest chord clash collapsed integrity.");
                     break;
                   }
+                } else {
+                  addSparks(playerX, TRACE_Y, (!hasN || currentBits === 0) ? '#ffffff' : '#ff3344', 16);
                 }
-                addSparks(playerX, TRACE_Y, '#ff3344', 16);
                 pulsesRef.current.splice(i, 1);
                 continue;
               }
@@ -4818,7 +4814,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                 if (gameModeRef.current === 'survival') survivalResourcesRef.current.volts += currentSectorYield;
                 checkAutoPurchases();
                 bossMissesRef.current = 0;
-                addSparks(playerX, TRACE_Y, '#ff66aa', currentBits >= 8 ? 24 : 14);
+                addSparks(playerX, TRACE_Y, (!hasN || currentBits === 0) ? '#ffffff' : '#ff66aa', currentBits >= 8 ? 24 : 14);
                 p.reflected = true;
                 p.speed = Math.abs(p.speed) * 1.4;
                 p.x = playerX + paddleHalf + 10;
@@ -4843,12 +4839,14 @@ export const DimensionCanvas: React.FC<Props> = ({
                   const nextH = Math.max(0, integrityRef.current - effectiveDmg);
                   integrityRef.current = nextH;
                   setIntegrity(nextH);
+                  addSparks(playerX, TRACE_Y, (!hasN || currentBits === 0) ? '#ffffff' : '#ff3377', 16);
                   if (nextH <= 0) {
                     triggerDeathRef.current("Trough chord clash collapsed integrity.");
                     break;
                   }
+                } else {
+                  addSparks(playerX, TRACE_Y, (!hasN || currentBits === 0) ? '#ffffff' : '#ff3377', 16);
                 }
-                addSparks(playerX, TRACE_Y, '#ff3377', 16);
                 pulsesRef.current.splice(i, 1);
                 continue;
               }
@@ -4876,7 +4874,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                 }
 
                 // Matching absorption animation & particles
-                addSparks(playerX, TRACE_Y, '#66ccff', 22);
+                addSparks(playerX, TRACE_Y, (!hasN || currentBits === 0) ? '#ffffff' : '#66ccff', 22);
                 p.reflected = true;
                 p.speed = Math.abs(p.speed) * 1.4;
                 p.x = playerX + paddleHalf + 10;
@@ -4980,7 +4978,7 @@ export const DimensionCanvas: React.FC<Props> = ({
             ctx.textAlign = 'center';
             ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
             ctx.shadowBlur = 4;
-            ctx.fillText(`⚡ SPEED RUN: ${formatTime(speedrunTimeRef.current)}  [RUN #${speedrunRunsRef.current}]`, modeHudX, modeHudY);
+            ctx.fillText(`⚡ SPEED RUN: ${formatTime(speedrunTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]  [RUN #${speedrunRunsRef.current}]`, modeHudX, modeHudY);
             ctx.restore();
           } else if (gameModeRef.current === 'survival') {
             ctx.save();
@@ -5010,7 +5008,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           ctx.fillText(`SOVEREIGN: ${Math.round((bossHpRef.current / MAX_BOSS_1_HP) * 100)}%`, w - 180, 26);
         }
 
-      // Update Particles (rendered only when 1-bit+ graphics are unlocked)
+      // Update Particles (white explosion pixels in 0D Void & N=1, colored/quantized in 1-bit+)
       for (let i = particlesRef.current.length - 1; i >= 0; i--) {
         const pt = particlesRef.current[i];
         if (!pt) continue;
@@ -5021,7 +5019,13 @@ export const DimensionCanvas: React.FC<Props> = ({
           particlesRef.current.splice(i, 1);
           continue;
         }
-        if (hasN && (currentBits >= 1 || subPartRef.current === 2)) {
+        if (!hasN || currentBits === 0) {
+          // White version of explosion pixels for 0D Void and N=1 (0 bits)
+          ctx.fillStyle = '#ffffff';
+          ctx.globalAlpha = Math.max(0, pt.alpha);
+          ctx.fillRect(Math.round(pt.x), Math.round(pt.y), 2.5, 2.5);
+          ctx.globalAlpha = 1;
+        } else if (hasN && (currentBits >= 1 || subPartRef.current === 2)) {
           ctx.fillStyle = pt.color;
           ctx.globalAlpha = Math.max(0, pt.alpha);
           ctx.fillRect(pt.x, pt.y, 2.5, 2.5);
@@ -5310,11 +5314,11 @@ export const DimensionCanvas: React.FC<Props> = ({
           onTouchCancel={handleCanvasTouchCancel}
         />
 
-        {/* DEV TOOLS: NEARLY TRANSPARENT BUTTONS ON TOP OF TOP RIGHT QUADRANT */}
+        {/* TOP-RIGHT CORNER: DEV CONTROLS (IF ENABLED) */}
         {Boolean(userSettings?.controls?.devToolsEnabled) && !isMainMenuOpen && !deathScreen && !speedrunCompleteModal && !survivalDeathModal && !arcadeKillModal && !arcadeVictoryModal && (
           <div
-            style={{ right: 'max(12px, env(safe-area-inset-right, 12px))' }}
-            className="absolute top-3 sm:top-4 z-30 flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-opacity"
+            style={{ right: 'max(52px, calc(env(safe-area-inset-right, 12px) + 40px))' }}
+            className="absolute top-3 sm:top-4 z-40 flex items-center gap-1.5 opacity-40 hover:opacity-100 transition-opacity"
           >
             {onDevAddBit && (
               <button
