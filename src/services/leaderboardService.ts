@@ -796,50 +796,119 @@ export async function submitStoryScore(entry: Omit<StoryScoreEntry, 'id' | 'crea
 // ---------------------------------------------------------------------------
 // ARCADE LEADERBOARD (Furthest stage reached then duration, Total HZ tracked)
 // ---------------------------------------------------------------------------
+
+export function consolidateArcadeScores(rawItems: any[]): ArcadeScoreEntry[] {
+  const pilotMap = new Map<string, ArcadeScoreEntry>();
+
+  for (const raw of rawItems) {
+    if (!raw) continue;
+    const clean = sanitizeInitials(raw.initials || raw.code);
+    if (!clean || isBannedInitials(clean)) continue;
+
+    const stageNum = typeof raw.stageNum === 'number' ? raw.stageNum : 0;
+    const duration = typeof raw.duration === 'number' ? raw.duration : 0;
+    const totalHz = typeof raw.totalHz === 'number' ? raw.totalHz : 0;
+    const completed = Boolean(raw.completed);
+    const stageName = (raw.stageName || (stageNum > 0 ? `Bit ${stageNum}` : '0D Void')).slice(0, 64);
+    const createdAt = raw.createdAt || new Date().toISOString();
+
+    if (!pilotMap.has(clean)) {
+      pilotMap.set(clean, {
+        id: raw.id || clean,
+        initials: clean,
+        stageName,
+        stageNum,
+        bit: raw.bit || stageNum,
+        duration,
+        totalHz,
+        completed,
+        createdAt,
+      });
+    } else {
+      const cur = pilotMap.get(clean)!;
+      // Ranked first by furthest stage reached (stageNum), second by duration, third by totalHz
+      const isBetter =
+        stageNum > cur.stageNum ||
+        (stageNum === cur.stageNum && duration > cur.duration) ||
+        (stageNum === cur.stageNum && duration === cur.duration && totalHz > cur.totalHz);
+
+      if (isBetter) {
+        pilotMap.set(clean, {
+          id: raw.id || clean,
+          initials: clean,
+          stageName,
+          stageNum,
+          bit: raw.bit || stageNum,
+          duration,
+          totalHz,
+          completed: Boolean(completed || cur.completed),
+          createdAt,
+        });
+      }
+    }
+  }
+
+  const list = Array.from(pilotMap.values());
+  list.sort((a, b) => {
+    if (b.stageNum !== a.stageNum) return b.stageNum - a.stageNum;
+    if (b.duration !== a.duration) return b.duration - a.duration;
+    return b.totalHz - a.totalHz;
+  });
+
+  // Fill up to 10 with default records if fewer than 10 unique pilots
+  if (list.length < 10) {
+    const existingCodes = new Set(list.map(e => e.initials));
+    for (const filler of DEFAULT_ARCADE_SCORES) {
+      if (!existingCodes.has(filler.initials)) {
+        list.push(filler);
+        existingCodes.add(filler.initials);
+        if (list.length >= 10) break;
+      }
+    }
+  }
+
+  return list.slice(0, 10);
+}
+
 export async function fetchArcadeLeaderboard(): Promise<ArcadeScoreEntry[]> {
   try {
     const colRef = collection(db, 'leaderboards_arcade');
-    const q = query(colRef, orderBy('stageNum', 'desc'), orderBy('duration', 'desc'), limit(15));
-    const snap = await getDocs(q);
+    const snap = await getDocs(colRef);
     if (!snap.empty) {
-      const items = snap.docs
-        .map(d => ({ id: d.id, ...d.data() } as ArcadeScoreEntry))
-        .filter(item => !isBannedInitials(item.initials))
-        .slice(0, 10);
-      saveToLocalCache('arcade_scores_v3', items);
-      return items;
+      const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const consolidated = consolidateArcadeScores(items);
+      saveToLocalCache('arcade_scores_v3', consolidated);
+      return consolidated;
     }
   } catch (err) {
     console.warn('fetchArcadeLeaderboard error, using cache:', err);
   }
-  return loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES);
+  const cached = loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES);
+  return consolidateArcadeScores(cached);
 }
 
 export function subscribeArcadeLeaderboard(callback: (scores: ArcadeScoreEntry[]) => void): Unsubscribe {
   try {
     const colRef = collection(db, 'leaderboards_arcade');
-    const q = query(colRef, orderBy('stageNum', 'desc'), orderBy('duration', 'desc'), limit(15));
     return onSnapshot(
-      q,
+      colRef,
       (snap) => {
         if (!snap.empty) {
-          const items = snap.docs
-            .map(d => ({ id: d.id, ...d.data() } as ArcadeScoreEntry))
-            .filter(item => !isBannedInitials(item.initials))
-            .slice(0, 10);
-          saveToLocalCache('arcade_scores_v3', items);
-          callback(items);
+          const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          const consolidated = consolidateArcadeScores(items);
+          saveToLocalCache('arcade_scores_v3', consolidated);
+          callback(consolidated);
         } else {
-          callback(loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES));
+          callback(consolidateArcadeScores(loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES)));
         }
       },
       (err) => {
         console.warn('Arcade leaderboard live snapshot failed:', err);
-        callback(loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES));
+        callback(consolidateArcadeScores(loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES)));
       }
     );
   } catch {
-    callback(loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES));
+    callback(consolidateArcadeScores(loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES)));
     return () => {};
   }
 }
@@ -870,9 +939,7 @@ export async function submitArcadeScore(entry: Omit<ArcadeScoreEntry, 'id' | 'cr
   } catch (err) {
     console.error('Failed to submit arcade score to Firestore:', err);
     const current = loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES);
-    const updated = [...current, { id: docId, ...payload }]
-      .sort((a, b) => b.stageNum !== a.stageNum ? b.stageNum - a.stageNum : b.duration - a.duration)
-      .slice(0, 10);
+    const updated = consolidateArcadeScores([...current, { id: docId, ...payload }]);
     saveToLocalCache('arcade_scores_v3', updated);
     return false;
   }
@@ -881,50 +948,102 @@ export async function submitArcadeScore(entry: Omit<ArcadeScoreEntry, 'id' | 'cr
 // ---------------------------------------------------------------------------
 // SPEEDRUN LEADERBOARD (Fastest completion time, completions only)
 // ---------------------------------------------------------------------------
+
+export function consolidateSpeedrunScores(rawItems: any[]): SpeedrunScoreEntry[] {
+  const pilotMap = new Map<string, SpeedrunScoreEntry>();
+
+  for (const raw of rawItems) {
+    if (!raw) continue;
+    const clean = sanitizeInitials(raw.initials || raw.code);
+    if (!clean || isBannedInitials(clean)) continue;
+    if (!raw.completed) continue; // Speedrun only ranks completions
+
+    const timeSeconds = typeof raw.timeSeconds === 'number' ? raw.timeSeconds : 5999.9;
+    const runs = typeof raw.runs === 'number' ? raw.runs : 1;
+    const createdAt = raw.createdAt || new Date().toISOString();
+
+    if (!pilotMap.has(clean)) {
+      pilotMap.set(clean, {
+        id: raw.id || clean,
+        initials: clean,
+        timeSeconds,
+        runs,
+        completed: true,
+        createdAt,
+      });
+    } else {
+      const cur = pilotMap.get(clean)!;
+      // Fastest completion time wins (lower timeSeconds)
+      if (timeSeconds < cur.timeSeconds) {
+        pilotMap.set(clean, {
+          id: raw.id || clean,
+          initials: clean,
+          timeSeconds,
+          runs: Math.max(runs, cur.runs),
+          completed: true,
+          createdAt,
+        });
+      }
+    }
+  }
+
+  const list = Array.from(pilotMap.values());
+  list.sort((a, b) => a.timeSeconds - b.timeSeconds);
+
+  // Fill up to 10 with default records if fewer than 10
+  if (list.length < 10) {
+    const existingCodes = new Set(list.map(e => e.initials));
+    for (const filler of DEFAULT_SPEEDRUN_SCORES) {
+      if (!existingCodes.has(filler.initials)) {
+        list.push(filler);
+        existingCodes.add(filler.initials);
+        if (list.length >= 10) break;
+      }
+    }
+  }
+
+  return list.slice(0, 10);
+}
+
 export async function fetchSpeedrunLeaderboard(): Promise<SpeedrunScoreEntry[]> {
   try {
     const colRef = collection(db, 'leaderboards_speedrun');
-    const q = query(colRef, orderBy('timeSeconds', 'asc'), limit(15));
-    const snap = await getDocs(q);
+    const snap = await getDocs(colRef);
     if (!snap.empty) {
-      const items = snap.docs
-        .map(d => ({ id: d.id, ...d.data() } as SpeedrunScoreEntry))
-        .filter(item => !isBannedInitials(item.initials))
-        .slice(0, 10);
-      saveToLocalCache('speedrun_scores_v3', items);
-      return items;
+      const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const consolidated = consolidateSpeedrunScores(items);
+      saveToLocalCache('speedrun_scores_v3', consolidated);
+      return consolidated;
     }
   } catch (err) {
     console.warn('fetchSpeedrunLeaderboard error, using cache:', err);
   }
-  return loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES);
+  const cached = loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES);
+  return consolidateSpeedrunScores(cached);
 }
 
 export function subscribeSpeedrunLeaderboard(callback: (scores: SpeedrunScoreEntry[]) => void): Unsubscribe {
   try {
     const colRef = collection(db, 'leaderboards_speedrun');
-    const q = query(colRef, orderBy('timeSeconds', 'asc'), limit(15));
     return onSnapshot(
-      q,
+      colRef,
       (snap) => {
         if (!snap.empty) {
-          const items = snap.docs
-            .map(d => ({ id: d.id, ...d.data() } as SpeedrunScoreEntry))
-            .filter(item => !isBannedInitials(item.initials))
-            .slice(0, 10);
-          saveToLocalCache('speedrun_scores_v3', items);
-          callback(items);
+          const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          const consolidated = consolidateSpeedrunScores(items);
+          saveToLocalCache('speedrun_scores_v3', consolidated);
+          callback(consolidated);
         } else {
-          callback(loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES));
+          callback(consolidateSpeedrunScores(loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES)));
         }
       },
       (err) => {
         console.warn('Speedrun leaderboard live snapshot failed:', err);
-        callback(loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES));
+        callback(consolidateSpeedrunScores(loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES)));
       }
     );
   } catch {
-    callback(loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES));
+    callback(consolidateSpeedrunScores(loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES)));
     return () => {};
   }
 }
@@ -952,9 +1071,7 @@ export async function submitSpeedrunScore(entry: Omit<SpeedrunScoreEntry, 'id' |
   } catch (err) {
     console.error('Failed to submit speedrun score to Firestore:', err);
     const current = loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES);
-    const updated = [...current, { id: docId, ...payload }]
-      .sort((a, b) => a.timeSeconds - b.timeSeconds)
-      .slice(0, 10);
+    const updated = consolidateSpeedrunScores([...current, { id: docId, ...payload }]);
     saveToLocalCache('speedrun_scores_v3', updated);
     return false;
   }
@@ -963,50 +1080,106 @@ export async function submitSpeedrunScore(entry: Omit<SpeedrunScoreEntry, 'id' |
 // ---------------------------------------------------------------------------
 // SURVIVAL LEADERBOARD (Longest time survived + Total HZ)
 // ---------------------------------------------------------------------------
+
+export function consolidateSurvivalScores(rawItems: any[]): SurvivalScoreEntry[] {
+  const pilotMap = new Map<string, SurvivalScoreEntry>();
+
+  for (const raw of rawItems) {
+    if (!raw) continue;
+    const clean = sanitizeInitials(raw.initials || raw.code);
+    if (!clean || isBannedInitials(clean)) continue;
+
+    const survivalSeconds = typeof raw.survivalSeconds === 'number' ? raw.survivalSeconds : 0;
+    const totalHz = typeof raw.totalHz === 'number' ? raw.totalHz : 0;
+    const createdAt = raw.createdAt || new Date().toISOString();
+
+    if (!pilotMap.has(clean)) {
+      pilotMap.set(clean, {
+        id: raw.id || clean,
+        initials: clean,
+        survivalSeconds,
+        totalHz,
+        createdAt,
+      });
+    } else {
+      const cur = pilotMap.get(clean)!;
+      // Longest survival time wins, then totalHz
+      const isBetter =
+        survivalSeconds > cur.survivalSeconds ||
+        (survivalSeconds === cur.survivalSeconds && totalHz > cur.totalHz);
+
+      if (isBetter) {
+        pilotMap.set(clean, {
+          id: raw.id || clean,
+          initials: clean,
+          survivalSeconds,
+          totalHz,
+          createdAt,
+        });
+      }
+    }
+  }
+
+  const list = Array.from(pilotMap.values());
+  list.sort((a, b) => {
+    if (b.survivalSeconds !== a.survivalSeconds) return b.survivalSeconds - a.survivalSeconds;
+    return b.totalHz - a.totalHz;
+  });
+
+  // Fill up to 10 with default records if fewer than 10
+  if (list.length < 10) {
+    const existingCodes = new Set(list.map(e => e.initials));
+    for (const filler of DEFAULT_SURVIVAL_SCORES) {
+      if (!existingCodes.has(filler.initials)) {
+        list.push(filler);
+        existingCodes.add(filler.initials);
+        if (list.length >= 10) break;
+      }
+    }
+  }
+
+  return list.slice(0, 10);
+}
+
 export async function fetchSurvivalLeaderboard(): Promise<SurvivalScoreEntry[]> {
   try {
     const colRef = collection(db, 'leaderboards_survival');
-    const q = query(colRef, orderBy('survivalSeconds', 'desc'), limit(15));
-    const snap = await getDocs(q);
+    const snap = await getDocs(colRef);
     if (!snap.empty) {
-      const items = snap.docs
-        .map(d => ({ id: d.id, ...d.data() } as SurvivalScoreEntry))
-        .filter(item => !isBannedInitials(item.initials))
-        .slice(0, 10);
-      saveToLocalCache('survival_scores_v3', items);
-      return items;
+      const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const consolidated = consolidateSurvivalScores(items);
+      saveToLocalCache('survival_scores_v3', consolidated);
+      return consolidated;
     }
   } catch (err) {
     console.warn('fetchSurvivalLeaderboard error, using cache:', err);
   }
-  return loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES);
+  const cached = loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES);
+  return consolidateSurvivalScores(cached);
 }
 
 export function subscribeSurvivalLeaderboard(callback: (scores: SurvivalScoreEntry[]) => void): Unsubscribe {
   try {
     const colRef = collection(db, 'leaderboards_survival');
-    const q = query(colRef, orderBy('survivalSeconds', 'desc'), limit(15));
     return onSnapshot(
-      q,
+      colRef,
       (snap) => {
         if (!snap.empty) {
-          const items = snap.docs
-            .map(d => ({ id: d.id, ...d.data() } as SurvivalScoreEntry))
-            .filter(item => !isBannedInitials(item.initials))
-            .slice(0, 10);
-          saveToLocalCache('survival_scores_v3', items);
-          callback(items);
+          const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          const consolidated = consolidateSurvivalScores(items);
+          saveToLocalCache('survival_scores_v3', consolidated);
+          callback(consolidated);
         } else {
-          callback(loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES));
+          callback(consolidateSurvivalScores(loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES)));
         }
       },
       (err) => {
         console.warn('Survival leaderboard live snapshot failed:', err);
-        callback(loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES));
+        callback(consolidateSurvivalScores(loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES)));
       }
     );
   } catch {
-    callback(loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES));
+    callback(consolidateSurvivalScores(loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES)));
     return () => {};
   }
 }
@@ -1033,9 +1206,7 @@ export async function submitSurvivalScore(entry: Omit<SurvivalScoreEntry, 'id' |
   } catch (err) {
     console.error('Failed to submit survival score to Firestore:', err);
     const current = loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES);
-    const updated = [...current, { id: docId, ...payload }]
-      .sort((a, b) => b.survivalSeconds - a.survivalSeconds)
-      .slice(0, 10);
+    const updated = consolidateSurvivalScores([...current, { id: docId, ...payload }]);
     saveToLocalCache('survival_scores_v3', updated);
     return false;
   }
