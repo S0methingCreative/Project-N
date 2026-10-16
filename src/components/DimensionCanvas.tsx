@@ -1765,17 +1765,19 @@ export const DimensionCanvas: React.FC<Props> = ({
       screenShakeRef.current = 0;
       playerXRef.current = 240;
 
-      // Register initial 0D Void presence on story scoreboard if pilot has provided initials but is stuck in the void
+      // Register initial 0D Void presence on story scoreboard if pilot has provided initials but has not progressed yet
       const pilotCode = getPlayerCode();
       if (pilotCode && (!gameState.gameMode || gameState.gameMode === 'story')) {
-        saveRunRecord('story', {
-          stageName: '0D Void',
-          stageNum: 0,
-          bit: 0,
-          resolution: 0,
-          completed: false,
-          completions: storyCompletionsRef.current,
-        });
+        if ((storyCompletionsRef.current || 0) === 0 && (bitsRef.current || 0) === 0 && (resolutionRef.current || 0) === 0) {
+          saveRunRecord('story', {
+            stageName: '0D Void',
+            stageNum: 0,
+            bit: 0,
+            resolution: 0,
+            completed: false,
+            completions: 0,
+          });
+        }
       }
     }
 
@@ -2224,15 +2226,17 @@ export const DimensionCanvas: React.FC<Props> = ({
       },
     }));
 
-    // Register current starting progression for Story mode (maintains total completions while resetting level to 0D Void)
-    saveRunRecord('story', {
-      stageName: '0D Void',
-      stageNum: 0,
-      bit: 0,
-      resolution: 0,
-      completed: false,
-      completions: storyCompletionsRef.current,
-    });
+    // Only register 0D Void if pilot has no existing story completions or progress
+    if ((storyCompletionsRef.current || 0) === 0 && (bitsRef.current || 0) === 0 && (resolutionRef.current || 0) === 0) {
+      saveRunRecord('story', {
+        stageName: '0D Void',
+        stageNum: 0,
+        bit: 0,
+        resolution: 0,
+        completed: false,
+        completions: 0,
+      });
+    }
 
     onLogAction("✦ STORY MODE ENGAGED: Relaunching from 0-bit acoustic void! Return-to-menu enabled upon death.");
   };

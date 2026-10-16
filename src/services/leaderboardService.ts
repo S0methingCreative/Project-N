@@ -397,12 +397,17 @@ export function getLocalPlayerStoryProgression(code: string): StoryScoreEntry {
           const rawSubPart = Number(parsed.act1SubPart ?? parsed.subPart ?? 1);
           const rawBits = Number(parsed.act1Bits ?? parsed.bits ?? 0);
 
-          if (rawSubPart === 2 || rawBits >= 10 || rawRes > 0) {
+          if (completed) {
+            resolution = 10;
+            bit = 10;
+            stageNum = 20;
+            stageName = 'Fracture Sovereign Defeated ★';
+          } else if (rawSubPart === 2 || rawBits >= 10 || rawRes > 0) {
             resolution = Math.max(0, Math.min(10, rawRes));
             bit = 10;
             stageNum = 10 + resolution;
             const fps = RESOLUTION_FPS_MAP[resolution] || `${resolution * 15} FPS`;
-            stageName = resolution > 0 ? `Resolution ${resolution} (${fps})` : '1D Line Segment';
+            stageName = resolution > 0 ? `Resolution ${resolution} (${fps})` : 'Bit 10 (Part 2 Unlocked)';
           } else if (parsed.act1PurchasedN || rawBits > 0) {
             bit = Math.max(0, Math.min(10, rawBits));
             resolution = 0;
@@ -607,18 +612,24 @@ export async function fetchStoryLeaderboard(): Promise<StoryScoreEntry[]> {
     const colRef = collection(db, 'leaderboards_story');
     const playersRef = collection(db, 'players');
 
-    // Fetch story entries and registered players in parallel
+    // Fetch all story entries and registered players in parallel
     const [storySnap, playersSnap] = await Promise.all([
-      getDocs(query(colRef, limit(100))),
-      getDocs(query(playersRef, limit(100))).catch(() => null),
+      getDocs(colRef),
+      getDocs(playersRef).catch(() => null),
     ]);
 
     const storyItems = !storySnap.empty ? storySnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
+    const knownInitials = new Set(storyItems.map(s => sanitizeInitials((s as any).initials || s.id)));
+
+    // Only add 0D Void placeholder for registered players who do NOT have any story score entry yet
     const playerItems = playersSnap && !playersSnap.empty
-      ? playersSnap.docs.map(d => {
-          const p = d.data();
-          const code = sanitizeInitials(p.code || d.id);
-          return {
+      ? playersSnap.docs
+          .map(d => {
+            const p = d.data();
+            return sanitizeInitials(p.code || d.id);
+          })
+          .filter(code => !knownInitials.has(code))
+          .map(code => ({
             id: code,
             initials: code,
             completions: 0,
@@ -627,9 +638,8 @@ export async function fetchStoryLeaderboard(): Promise<StoryScoreEntry[]> {
             bit: 0,
             resolution: 0,
             completed: false,
-            createdAt: p.createdAt || new Date().toISOString(),
-          };
-        })
+            createdAt: new Date().toISOString(),
+          }))
       : [];
 
     // Proactively sync current player progression if pending
@@ -638,7 +648,7 @@ export async function fetchStoryLeaderboard(): Promise<StoryScoreEntry[]> {
     const localCode = getPlayerCode();
     const localItem = localCode ? [getLocalPlayerStoryProgression(localCode)] : [];
 
-    const combined = [...playerItems, ...localItem, ...storyItems];
+    const combined = [...storyItems, ...localItem, ...playerItems];
     if (combined.length > 0) {
       const consolidated = consolidateStoryScores(combined);
       saveToLocalCache('story_scores_v3', consolidated);
@@ -661,10 +671,16 @@ export function subscribeStoryLeaderboard(callback: (scores: StoryScoreEntry[]) 
     let latestPlayerDocs: any[] = [];
 
     const notify = () => {
-      const playerVoidEntries = latestPlayerDocs.map(d => {
-        const p = d.data();
-        const code = sanitizeInitials(p.code || d.id);
-        return {
+      const storyEntries = latestStoryDocs.map(d => ({ id: d.id, ...d.data() }));
+      const knownInitials = new Set(storyEntries.map(s => sanitizeInitials((s as any).initials || s.id)));
+
+      const playerVoidEntries = latestPlayerDocs
+        .map(d => {
+          const p = d.data();
+          return sanitizeInitials(p.code || d.id);
+        })
+        .filter(code => !knownInitials.has(code))
+        .map(code => ({
           id: code,
           initials: code,
           completions: 0,
@@ -673,23 +689,20 @@ export function subscribeStoryLeaderboard(callback: (scores: StoryScoreEntry[]) 
           bit: 0,
           resolution: 0,
           completed: false,
-          createdAt: p.createdAt || new Date().toISOString(),
-        };
-      });
-
-      const storyEntries = latestStoryDocs.map(d => ({ id: d.id, ...d.data() }));
+          createdAt: new Date().toISOString(),
+        }));
 
       const localCode = getPlayerCode();
       const localEntries = localCode ? [getLocalPlayerStoryProgression(localCode)] : [];
 
-      const combined = [...playerVoidEntries, ...localEntries, ...storyEntries];
+      const combined = [...storyEntries, ...localEntries, ...playerVoidEntries];
       const consolidated = consolidateStoryScores(combined);
       saveToLocalCache('story_scores_v3', consolidated);
       callback(consolidated);
     };
 
     const unsubStory = onSnapshot(
-      query(colRef, limit(100)),
+      colRef,
       (snap) => {
         latestStoryDocs = snap.docs;
         notify();
@@ -702,7 +715,7 @@ export function subscribeStoryLeaderboard(callback: (scores: StoryScoreEntry[]) 
     );
 
     const unsubPlayers = onSnapshot(
-      query(playersRef, limit(100)),
+      playersRef,
       (snap) => {
         latestPlayerDocs = snap.docs;
         notify();

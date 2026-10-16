@@ -337,11 +337,14 @@ export default function App() {
     syncPlayerStoryProgress().catch(() => {});
   }, []);
 
+  // Auto-sync story progression whenever pilot advances in bits, resolution, or completions
   React.useEffect(() => {
-    if (gameState.act1Resolution && gameState.act1Resolution > 0) {
-      syncPlayerStoryProgress().catch(() => {});
+    if (!gameState.gameMode || gameState.gameMode === 'story') {
+      if (gameState.act1PurchasedN || (gameState.act1Bits && gameState.act1Bits > 0) || (gameState.act1Resolution && gameState.act1Resolution > 0)) {
+        syncPlayerStoryProgress().catch(() => {});
+      }
     }
-  }, [gameState.act1Resolution]);
+  }, [gameState.act1Bits, gameState.act1Resolution, gameState.act1PurchasedN, gameState.storyCompletions]);
 
   // Before unload handler to guarantee current run data is saved before browser closes
   React.useEffect(() => {
