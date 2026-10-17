@@ -37,6 +37,7 @@ class SoundEngine {
   // Harmonic parameters
   private currentMode: HarmonicMode = 'major';
   private fundamentalFreq: number = 261.63; // C4
+  private lastCompileSoundTime: number = 0;
 
   public init(): boolean {
     if (this.ctx && this.ctx.state !== 'closed') {
@@ -1017,6 +1018,78 @@ class SoundEngine {
       });
     } catch (e) {
       console.warn('Cadence resolution failed safely:', e);
+    }
+  }
+
+  /**
+   * Bright ascending major arpeggio chime for level-up / auto-compile events.
+   * Delivers a rewarding, sparkling celebratory chime without dissonant sliding tones.
+   */
+  public playCompileLevelUp(intensity: 'standard' | 'major' = 'standard'): void {
+    if (!this.init() || !this.ctx || this.isMuted) return;
+
+    const now = this.ctx.currentTime;
+    // Throttle rapid consecutive compile triggers within 60ms to prevent distortion
+    if (now - this.lastCompileSoundTime < 0.06) return;
+    this.lastCompileSoundTime = now;
+
+    try {
+      // Ascending C Major Chime Fanfare:
+      // Note 1: C5 (523.25 Hz)
+      // Note 2: E5 (659.25 Hz)
+      // Note 3: G5 (783.99 Hz)
+      // Note 4: C6 (1046.50 Hz) - Peak Bell Chime
+      // If Major milestone (N=1, Bit 10, Res 10): adds high sparkle E6 (1318.51 Hz) + G6 (1567.98 Hz)
+      const notes = [
+        { freq: 523.25, timeOffset: 0.00, duration: 0.22, vol: 0.16 },
+        { freq: 659.25, timeOffset: 0.045, duration: 0.24, vol: 0.18 },
+        { freq: 783.99, timeOffset: 0.090, duration: 0.28, vol: 0.22 },
+        { freq: 1046.50, timeOffset: 0.135, duration: 0.45, vol: 0.28 },
+      ];
+
+      if (intensity === 'major') {
+        notes.push(
+          { freq: 1318.51, timeOffset: 0.180, duration: 0.50, vol: 0.25 },
+          { freq: 1567.98, timeOffset: 0.220, duration: 0.55, vol: 0.18 }
+        );
+      }
+
+      notes.forEach(({ freq, timeOffset, duration, vol }) => {
+        if (!this.ctx) return;
+        const noteStart = now + timeOffset;
+
+        // 1. Warm fundamental body (Triangle wave for pleasant analog warmth)
+        const oscTri = this.ctx.createOscillator();
+        const gainTri = this.ctx.createGain();
+        oscTri.type = 'triangle';
+        oscTri.frequency.setValueAtTime(freq, noteStart);
+
+        gainTri.gain.setValueAtTime(0.0001, noteStart);
+        gainTri.gain.exponentialRampToValueAtTime(vol * 0.75, noteStart + 0.008);
+        gainTri.gain.exponentialRampToValueAtTime(0.0001, noteStart + duration);
+
+        oscTri.connect(gainTri);
+        gainTri.connect(this.getSfxDestination());
+        oscTri.start(noteStart);
+        oscTri.stop(noteStart + duration + 0.02);
+
+        // 2. Crystal chime overtone (Pure sine wave 1 octave up for bright bell sparkle)
+        const oscSine = this.ctx.createOscillator();
+        const gainSine = this.ctx.createGain();
+        oscSine.type = 'sine';
+        oscSine.frequency.setValueAtTime(freq * 2, noteStart);
+
+        gainSine.gain.setValueAtTime(0.0001, noteStart);
+        gainSine.gain.exponentialRampToValueAtTime(vol * 0.35, noteStart + 0.006);
+        gainSine.gain.exponentialRampToValueAtTime(0.0001, noteStart + duration * 0.7);
+
+        oscSine.connect(gainSine);
+        gainSine.connect(this.getSfxDestination());
+        oscSine.start(noteStart);
+        oscSine.stop(noteStart + duration + 0.02);
+      });
+    } catch (e) {
+      console.warn('Compile sound failed safely:', e);
     }
   }
 

@@ -1996,8 +1996,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       act1Phase: 'point',
     }));
 
-    soundEngine.triggerNote('G4');
-    soundEngine.playCadenceResolution();
+    soundEngine.playCompileLevelUp('major');
     addCombatText('✦ N = 1 AUTO-COMPILED!', playerXRef.current, 190, '#33ff66');
     const reasonText = source === 'input' ? 'polarity toggle input' : 'wave impact';
     onLogAction(`✦ AUTO-COMPILED N = 1! Materialized via ${reasonText}. A single stationary white pixel appears in the void.`);
@@ -2047,8 +2046,7 @@ export const DimensionCanvas: React.FC<Props> = ({
               hertz: Math.max(0, prev.resources.hertz - 1),
             },
           }));
-          soundEngine.triggerNote('G4');
-          soundEngine.playCadenceResolution();
+          soundEngine.playCompileLevelUp('major');
           addCombatText('⚡ AUTO-COMPILED N = 1!', playerXRef.current, 190, '#33ff66');
           onLogAction("AUTO-COMPILE: N=1 materialized! (1 Hz)");
         }
@@ -2097,8 +2095,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           },
         }));
 
-        soundEngine.triggerNote('C5');
-        soundEngine.playHitSound('quantum');
+        soundEngine.playCompileLevelUp(newBits === 9 ? 'major' : 'standard');
         addCombatText(`⚡ AUTO: ${upgrade.name}!`, playerXRef.current, 190, '#55ff99');
         onLogAction(`AUTO-COMPILE: Bit ${newBits} compiled (${costHz} Hz, ${costV} V)!`);
 
@@ -2188,8 +2185,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           },
         }));
 
-        soundEngine.triggerNote('C5');
-        soundEngine.playCadenceResolution();
+        soundEngine.playCompileLevelUp(newRes === 9 ? 'major' : 'standard');
         addCombatText(`⚡ AUTO: ${upgrade.fps}!`, playerXRef.current, 190, '#ffe655');
         onLogAction(`AUTO-COMPILE: ${upgrade.name} (${upgrade.fps}) compiled!`);
       }
@@ -2892,8 +2888,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       setAct1Phase('point');
       phaseRef.current = 'point';
 
-      soundEngine.triggerNote('G4');
-      soundEngine.playCadenceResolution();
+      soundEngine.playCompileLevelUp('major');
       onLogAction("COMPILED 1 N! N=1 materialized in the top-left corner. A single stationary white pixel appears in the void.");
 
       // Register N=1 milestone in Story mode
@@ -2934,8 +2929,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           },
         }));
 
-        soundEngine.triggerNote('G4');
-        soundEngine.playCadenceResolution();
+        soundEngine.playCompileLevelUp(nextBits === 9 || nextBits === 10 ? 'major' : 'standard');
         onLogAction(`COMPILED ${upgrade.name}! Graphical engine updated to ${nextBits}-bit (${Math.pow(2, nextBits)} colors): ${upgrade.desc}`);
 
         // Register new Story milestone immediately upon compiling a new Bit
@@ -3008,8 +3002,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           },
         }));
 
-        soundEngine.triggerNote('C5');
-        soundEngine.playCadenceResolution();
+        soundEngine.playCompileLevelUp(nextRes === 9 || nextRes === 10 ? 'major' : 'standard');
         onLogAction(`COMPILED ${upgrade.name} (${upgrade.fps})! ${upgrade.desc}`);
 
         // Register new Story milestone immediately upon compiling a new Resolution
