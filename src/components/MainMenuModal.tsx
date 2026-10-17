@@ -17,12 +17,21 @@ import {
   Lock,
   Unlock,
   Crown,
+  Palette,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { draw6BitBackground } from '../utils/backgroundArt';
 import { UserSettings, DEFAULT_USER_SETTINGS, saveUserSettings } from '../utils/settings';
 import { GlobalLeaderboardModal } from './GlobalLeaderboardModal';
-import { isDevelopmentEnvironment, wipeAllSavedScores } from '../services/leaderboardService';
+import { BeamColorSelectModal } from './BeamColorSelectModal';
+import {
+  isDevelopmentEnvironment,
+  wipeAllSavedScores,
+  getPilotBeamColor,
+  hasChosenBeamColor,
+  BEAM_COLOR_CONFIGS,
+  PilotBeamColor,
+} from '../services/leaderboardService';
 
 export interface StoryProgressSummary {
   hasSave: boolean;
@@ -73,6 +82,18 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   const [lockedNotice, setLockedNotice] = useState<string | null>(null);
   const [isGlobalLeaderboardOpen, setIsGlobalLeaderboardOpen] = useState<boolean>(false);
   const [isWipedToast, setIsWipedToast] = useState<boolean>(false);
+  const [isColorModalOpen, setIsColorModalOpen] = useState<boolean>(false);
+  const [activePilotColor, setActivePilotColor] = useState<PilotBeamColor>(() => getPilotBeamColor());
+  const [pendingLaunchMode, setPendingLaunchMode] = useState<GameMode | null>(null);
+  const [pendingForceNew, setPendingForceNew] = useState<boolean>(false);
+
+  useEffect(() => {
+    const handleColorChange = (e: any) => {
+      setActivePilotColor(e.detail || getPilotBeamColor());
+    };
+    window.addEventListener('pilot_beam_color_changed', handleColorChange);
+    return () => window.removeEventListener('pilot_beam_color_changed', handleColorChange);
+  }, []);
 
   useEffect(() => {
     if (!lockedNotice) return;
@@ -180,9 +201,31 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
       );
       return;
     }
+
+    // If pilot has not selected a color yet, prompt the selection modal before launching
+    if (!hasChosenBeamColor() && (mode === 'story' || mode === 'arcade' || mode === 'speedrun')) {
+      setPendingLaunchMode(mode);
+      setPendingForceNew(forceNew);
+      setIsColorModalOpen(true);
+      return;
+    }
+
     soundEngine.playCadenceResolution();
     onSelectMode(mode, forceNew);
     onClose();
+  };
+
+  const handleBeamColorConfirmed = (chosenColor: PilotBeamColor) => {
+    setActivePilotColor(chosenColor);
+    if (pendingLaunchMode) {
+      const mode = pendingLaunchMode;
+      const forceNew = pendingForceNew;
+      setPendingLaunchMode(null);
+      setPendingForceNew(false);
+      soundEngine.playCadenceResolution();
+      onSelectMode(mode, forceNew);
+      onClose();
+    }
   };
 
   const handleToggleDevUnlockAllModes = (unlock: boolean) => {
@@ -482,11 +525,33 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                         setConfirmFreshStory(true);
                       }}
                       aria-label="Restart fresh story"
+                      title="Reset Story Save"
                       className="p-2.5 rounded-xl text-xs font-mono font-bold bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-rose-400 border border-neutral-700 transition-colors cursor-pointer min-h-[42px] min-w-[42px] flex items-center justify-center"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
                     </button>
                   )}
+
+                  {/* EDIT COLOR BUTTON DIRECTLY NEXT TO RESET SAVE */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsColorModalOpen(true);
+                    }}
+                    title={`Edit Pilot Beam Color (Current: ${BEAM_COLOR_CONFIGS[activePilotColor]?.label || 'Emerald Green'})`}
+                    aria-label="Edit Beam Color"
+                    className="p-2.5 rounded-xl text-xs font-mono font-bold bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white border border-neutral-700 transition-colors cursor-pointer min-h-[42px] flex items-center justify-center gap-1.5"
+                  >
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0 border border-black/50"
+                      style={{
+                        backgroundColor: BEAM_COLOR_CONFIGS[activePilotColor]?.hex || '#00ff88',
+                        boxShadow: `0 0 8px ${BEAM_COLOR_CONFIGS[activePilotColor]?.glow || '#00ffaa'}`,
+                      }}
+                    />
+                    <Palette className="w-3.5 h-3.5 text-neutral-300" />
+                  </button>
 
                   {/* GREEN PLAY BUTTON CHANGED TO AN OPEN BOOK BUTTON */}
                   <button
@@ -1029,6 +1094,27 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
       <GlobalLeaderboardModal
         isOpen={isGlobalLeaderboardOpen}
         onClose={() => setIsGlobalLeaderboardOpen(false)}
+      />
+
+      {/* Pilot Beam Color Select Modal Dialog */}
+      <BeamColorSelectModal
+        isOpen={isColorModalOpen}
+        onClose={() => {
+          setIsColorModalOpen(false);
+          setPendingLaunchMode(null);
+          setPendingForceNew(false);
+        }}
+        onSelectColor={handleBeamColorConfirmed}
+        isFirstLaunchPrompt={Boolean(pendingLaunchMode)}
+        pendingModeName={
+          pendingLaunchMode === 'story'
+            ? 'Story Mode'
+            : pendingLaunchMode === 'arcade'
+            ? 'Arcade Mode'
+            : pendingLaunchMode === 'speedrun'
+            ? 'Speedrun Mode'
+            : undefined
+        }
       />
     </div>
   );

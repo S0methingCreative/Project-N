@@ -25,6 +25,11 @@ service cloud.firestore {
       return id is string && id.size() > 0 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    // Helper function to validate pilot beam color choice
+    function isValidColor(color) {
+      return color in ['green', 'blue', 'amber', 'azure'];
+    }
+
     // Story Mode Leaderboard entry (tracks completions and current story progression stage)
     function isValidStoryEntry(data) {
       return data.keys().hasAll(['initials', 'stageName', 'stageNum', 'completed', 'createdAt'])
@@ -33,6 +38,7 @@ service cloud.firestore {
         && data.stageName is string && data.stageName.size() <= 64
         && data.stageNum is number
         && data.completed is bool
+        && (!('color' in data) || isValidColor(data.color))
         && (!('completions' in data) || (data.completions is number && data.completions >= 0))
         && (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 50))
         && data.createdAt is string && data.createdAt.size() <= 50;
@@ -43,6 +49,7 @@ service cloud.firestore {
       return data.keys().hasAll(['initials', 'timeSeconds', 'completed', 'createdAt'])
         && isValidInitials(data.initials)
         && !isBlockedFromLeaderboard(data.initials)
+        && (!('color' in data) || isValidColor(data.color))
         && data.timeSeconds is number && data.timeSeconds >= 0 && data.timeSeconds <= 86400
         && data.completed is bool
         && data.createdAt is string && data.createdAt.size() <= 50;
@@ -53,6 +60,7 @@ service cloud.firestore {
       return data.keys().hasAll(['initials', 'survivalSeconds', 'totalHz', 'createdAt'])
         && isValidInitials(data.initials)
         && !isBlockedFromLeaderboard(data.initials)
+        && (!('color' in data) || isValidColor(data.color))
         && data.survivalSeconds is number && data.survivalSeconds >= 0 && data.survivalSeconds <= 86400
         && data.totalHz is number && data.totalHz >= 0 && data.totalHz <= 100000000
         && data.createdAt is string && data.createdAt.size() <= 50;
@@ -63,6 +71,7 @@ service cloud.firestore {
       return data.keys().hasAll(['initials', 'stageName', 'stageNum', 'duration', 'totalHz', 'createdAt'])
         && isValidInitials(data.initials)
         && !isBlockedFromLeaderboard(data.initials)
+        && (!('color' in data) || isValidColor(data.color))
         && data.stageName is string && data.stageName.size() <= 64
         && data.stageNum is number
         && data.duration is number && data.duration >= 0 && data.duration <= 86400

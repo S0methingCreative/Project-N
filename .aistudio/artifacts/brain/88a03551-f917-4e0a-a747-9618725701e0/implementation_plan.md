@@ -1,77 +1,111 @@
-# Block Global High Score Recording for Pilot Code GOD [COMPLETED & VERIFIED]
+# Pilot Beam Color Customization System (Revised)
 
-Enforce strict database-level security rules in Firestore to prevent any score submissions, progression tracking, or leaderboard records for pilot code **`GOD`** across all game modes, while allowing local/offline play.
+Implement a unified 4-color selection system based on the Resolution 8 zone spectrum for **Story Mode**, **Arcade Mode**, and **Speedrun Mode**, featuring an **Edit Color button directly next to the Reset Save button**, single unified color across all modes, in-game horizontal line rendering up to Res 6, player particle accenting, and color-coded initials on all leaderboards (with existing scores defaulting to green).
 
-### User Review & Critical Decisions
+---
+
+### User Decisions & Design Parameters
 
 > [!IMPORTANT]
-> The following parameters were confirmed during the Phase 1 clarification interview:
-> - **Play Experience**: Allow local play with code `GOD`, but reject all global database uploads.
-> - **Enforcement Boundary**: **Database security rules only** (`firestore.rules`). Client code remains unchanged, ensuring the restriction is enforced at the network & database authority level.
+> - **Unified Color Across All Modes**: The player selects one color that applies globally to Story Mode, Arcade Mode, and Speedrun Mode.
+> - **Palette Choices (The 4 Res 8 Zone Colors)**:
+>   1. **Emerald Green** (`#00ff88` / Slit Zone) — Default
+>   2. **Cobalt Blue** (`#00d0ff` / Attenuation Zone)
+>   3. **Solar Amber** (`#ff9900` / Emitter Maw Zone)
+>   4. **Azure Violet** (`#88aaff` / Core Corridor Zone)
+> - **UI Placement**:
+>   - **DO NOT** place badges/pips next to individual mode buttons.
+>   - **DO** place a dedicated **Edit Color button** directly next to the **Reset Save button** in the main menu (with a glowing color swatch / palette icon).
+>   - **First Launch**: If the player has not yet chosen a color, the selection modal prompts once on launching Story, Arcade, or Speedrun.
+> - **In-Game Rendering**:
+>   - Replaces green and green shades specifically on the horizontal line the player inhabits through **Bit 1–10**, **Boss 1**, and **Res 0 through Res 5**.
+>   - Player bead particle emitters / trail sparks pick up a subtle accent glow matching the selected color.
+>   - At **Res 6**, the horizontal line returns to the existing multi-colored sector-harmonized beam (`#00d0ff`, `#00ff88`, `#ff9900`, `#88aaff`).
+>   - Arcade mode stops after Boss 1 (Bit 10), maintaining the selected color throughout.
+> - **Leaderboards**:
+>   - Recorded high score initials display in the color chosen by the pilot.
+>   - All current / legacy scores without an explicit color default to **Emerald Green**.
 
 ---
 
-### 1. Overview & Core Concept
-
-- **Objective**: Ensure that any attempt to save high scores, stage completions, survival times, speedrun records, or First-To-Complete (⚡FTC) plaques for pilot code `GOD` is firmly rejected with `PERMISSION_DENIED` by Cloud Firestore rules.
-- **Affected Collections**:
-  1. `leaderboards_story` (Story Mode progression)
-  2. `leaderboards_speedrun` (Speedrun Mode completion times)
-  3. `leaderboards_survival` (Survival Mode duration & Hz)
-  4. `leaderboards_arcade` (Arcade Mode bit progression & duration)
-  5. `leaderboards_meta` (`story_ftc`, `arcade_ftc`, `story_pioneer`)
-  6. `players` (Remote handle registration)
-
----
-
-### 2. Security Architecture & Rule Design
-
-- **Leaderboard Guard Primitive**:
-  Define a dedicated rule helper function in `firestore.rules`:
-  ```javascript
-  function isBlockedInitials(str) {
-    return str == 'GOD' || isBannedInitials(str);
-  }
-  ```
-- **Rule Integration**:
-  - Update `isValidStoryEntry`: enforce `!isBlockedInitials(data.initials)`.
-  - Update `isValidSpeedrunEntry`: enforce `!isBlockedInitials(data.initials)`.
-  - Update `isValidSurvivalEntry`: enforce `!isBlockedInitials(data.initials)`.
-  - Update `isValidArcadeEntry`: enforce `!isBlockedInitials(data.initials)`.
-  - Update `leaderboards_story/{id}`: explicitly disallow `id == 'GOD'` on `create` and `update`.
-  - Update `leaderboards_meta`: disallow `isBlockedInitials(request.resource.data.initials)`.
-  - Update `players/{code}`: disallow `code == 'GOD'` on remote handle registration.
-
----
-
-### 3. Technical Implementation & Deployment Plan
+### Technical Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                 Client Action (Pilot: "GOD")                │
-│             Finishes run / updates progression             │
+│                 Main Menu - Story Mode Row                  │
+│       [Reset Save ↺]  [Edit Color 🎨 (Swatch)]  [LAUNCH ▶]   │
 └──────────────────────────────┬──────────────────────────────┘
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                   Firestore Security Rules                  │
-│       isBlockedInitials(initials) == true ('GOD')           │
+│                 Beam Color Selection Modal                  │
+│   [Cobalt Blue]  [Emerald Green]  [Solar Amber]  [Azure]    │
+│   (Saved to localStorage: 'bit_pilot_beam_color')           │
 └──────────────────────────────┬──────────────────────────────┘
                                │
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    PERMISSION_DENIED                        │
-│   Database write rejected; zero records stored in Cloud DB  │
-└─────────────────────────────────────────────────────────────┘
+               ┌───────────────┴───────────────┐
+               ▼                               ▼
+┌──────────────────────────────┐ ┌──────────────────────────────┐
+│       DimensionCanvas        │ │      Leaderboard System      │
+│  - Horizontal line (0 to 5)  │ │  - Save entry with color     │
+│  - Coordinate hash marks     │ │  - Initials tinted by color  │
+│  - Player particle glow      │ │  - Legacy scores: Green      │
+│  - Res 6+: Return to sectors │ │  - Global & Local views      │
+└──────────────────────────────┘ └──────────────────────────────┘
 ```
 
-1. **Modify `firestore.rules`**:
-   - Add `isBlockedInitials` helper.
-   - Guard entry validators against `isBlockedInitials`.
-   - Explicitly block `id == 'GOD'` and `code == 'GOD'`.
-2. **Deploy Rules**:
-   - Run `deploy_firebase` to deploy the updated `firestore.rules` to the production Firestore database (`ai-studio-projectnthedimen-88a03551-f917-4e0a-a747-9618725701e0`).
-3. **Automated Verification**:
-   - Run integration verification script attempting writes to all leaderboard collections under code `GOD`.
-   - Confirm all writes fail with `PERMISSION_DENIED`.
-   - Confirm valid pilot handles (e.g., `DEV`, `JEF`) continue to write without issue.
+---
+
+### Proposed Implementation Details
+
+#### 1. Color Models & Storage (`src/services/leaderboardService.ts`)
+- Define `PilotBeamColor = 'green' | 'blue' | 'amber' | 'azure'`.
+- Define palette config with primary, neon glow, light core, and subtle particle tints:
+  - `green`: Main `#00ff88`, Glow `#00ffaa`, Light `#55ffbb`, Shadow `rgba(0,255,136,0.5)`, Particle `rgba(0,255,136,0.3)`
+  - `blue`: Main `#00d0ff`, Glow `#33ccff`, Light `#66ddff`, Shadow `rgba(0,208,255,0.5)`, Particle `rgba(0,208,255,0.3)`
+  - `amber`: Main `#ff9900`, Glow `#ffaa33`, Light `#ffcc55`, Shadow `rgba(255,153,0,0.5)`, Particle `rgba(255,153,0,0.3)`
+  - `azure`: Main `#88aaff`, Glow `#aaccff`, Light `#c0d4ff`, Shadow `rgba(136,170,255,0.5)`, Particle `rgba(136,170,255,0.3)`
+- Helper functions: `getPilotBeamColor(): PilotBeamColor` and `setPilotBeamColor(color: PilotBeamColor): void` storing to `localStorage.getItem('bit_pilot_beam_color')`.
+- Helper `hasChosenBeamColor(): boolean` to detect whether first-launch prompt is needed.
+- Update score types (`StoryScoreEntry`, `ArcadeScoreEntry`, etc.) to include `color?: PilotBeamColor`.
+- When scores are rendered on leaderboards, default missing color to `'green'`.
+
+#### 2. Color Selection Modal (`src/components/BeamColorSelectModal.tsx`)
+- Arcade-styled dialog presenting the 4 Res 8 zone colors with live neon laser beam previews, zone origin descriptions (Harmonic Slit, Attenuation, Emitter Maw, Core Corridor), and selection feedback.
+- Accessible on first launch or by clicking the Edit Color button in the main menu.
+
+#### 3. Edit Color Button next to Reset Save (`src/components/MainMenuModal.tsx`)
+- Directly beside the `<RotateCcw>` Reset Save button in the Story progress action group:
+  - Add an **Edit Color button** (`<Palette className="..." />` with an active color pip / border).
+  - Clicking this button opens `BeamColorSelectModal`.
+- On clicking Launch/Start for Story, Arcade, or Speedrun: if `!hasChosenBeamColor()`, automatically open the `BeamColorSelectModal` first before launching.
+
+#### 4. In-Game Line & Particle Rendering (`src/components/DimensionCanvas.tsx`)
+- Read active beam color palette.
+- **Act 1 (Bits 1–10) & Act 2 (Res 0–5)**:
+  - Replace green styles (`#33ff88`, `#00ffaa`, `#55ffaa`, etc.) on the player's horizontal line with the chosen palette.
+  - Coordinate distance hash marks and envelope guide rails take the selected color tint.
+  - Player bead particle emitters / trail sparks pick up the subtle particle glow accent.
+- **Res 6+**:
+  - Horizontal line seamlessly reverts to the existing multi-colored sector-harmonized state.
+- **Arcade Mode**:
+  - Runs through Boss 1 (Bit 10) and maintains the chosen color the entire time.
+
+#### 5. Leaderboards Initials Coloring (`src/components/GlobalLeaderboardModal.tsx`)
+- Format each pilot's initials tag `[XXX]` on the leaderboards with their chosen color (`green`, `blue`, `amber`, `azure`).
+- Any entry without an explicit color is rendered in **Emerald Green**.
+
+---
+
+### Verification Plan
+1. **Menu & Modal**:
+   - Check that the Edit Color button is visible next to Reset Save button in Main Menu.
+   - Click Edit Color, choose a color, and confirm it saves.
+2. **First-Time Launch Check**:
+   - Clear storage and verify first click of Story, Arcade, or Speedrun prompts the color selector.
+3. **Gameplay Line & Particles**:
+   - Play Bit 1–10 and Res 0–5 in Blue, Amber, and Azure: verify horizontal line & player particle glow reflect the color.
+   - Advance past Res 6 in Story Mode: verify line transitions back to the 4 sector colors.
+4. **Leaderboard Color Verification**:
+   - Check that existing entries render in green.
+   - Check that new scores render with their chosen color.

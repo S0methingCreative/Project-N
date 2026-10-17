@@ -14,6 +14,9 @@ import {
   recordStoryFTCIfFirst,
   recordArcadeFTCIfFirst,
   getPlayerCode,
+  getPilotBeamColor,
+  BEAM_COLOR_CONFIGS,
+  PilotBeamColor,
 } from '../services/leaderboardService';
 import { LeaderboardTab } from './GlobalLeaderboardModal';
 
@@ -1379,6 +1382,16 @@ export const DimensionCanvas: React.FC<Props> = ({
   const [isGlobalScoresOpen, setIsGlobalScoresOpen] = useState<boolean>(false);
   const [globalScoresTab, setGlobalScoresTab] = useState<LeaderboardTab>('story');
   const [highlightInitials, setHighlightInitials] = useState<string | undefined>(undefined);
+
+  // Active pilot beam color selection (1 of 4 Res 8 zone colors)
+  const pilotBeamColorRef = useRef<PilotBeamColor>(getPilotBeamColor());
+  useEffect(() => {
+    const handleColorChange = (e: any) => {
+      pilotBeamColorRef.current = e.detail || getPilotBeamColor();
+    };
+    window.addEventListener('pilot_beam_color_changed', handleColorChange);
+    return () => window.removeEventListener('pilot_beam_color_changed', handleColorChange);
+  }, []);
 
 
 
@@ -4005,28 +4018,29 @@ export const DimensionCanvas: React.FC<Props> = ({
             // ------------------------------------------
             // PART 1: BITS 1 TO 10 LINEAR PROGRESSION
             // ------------------------------------------
+            const beamColorCfg = BEAM_COLOR_CONFIGS[pilotBeamColorRef.current] || BEAM_COLOR_CONFIGS.green;
 
-            // Bit 1: Crisp Phosphor Green Scanline Beam
+            // Bit 1: Crisp Phosphor Scanline Beam
             // Bit 2: Dashed Vector Trajectory
             // Bit 3+: Solidifying Phosphor Laser with Neon Glow
             ctx.save();
             if (currentBits === 2) {
               ctx.setLineDash([8, 8]);
-              ctx.strokeStyle = '#44ff88';
+              ctx.strokeStyle = beamColorCfg.light;
               ctx.lineWidth = 2.2;
             } else if (currentBits < 3) {
-              ctx.strokeStyle = '#33ff77';
+              ctx.strokeStyle = beamColorCfg.hex;
               ctx.lineWidth = 2.0;
             } else if (currentBits < 6) {
-              ctx.strokeStyle = '#33ff88';
+              ctx.strokeStyle = beamColorCfg.hex;
               ctx.lineWidth = 2.5;
-              ctx.shadowColor = '#33ff88';
+              ctx.shadowColor = beamColorCfg.shadow;
               ctx.shadowBlur = 6;
             } else {
               // Bit 6+: Multi-layer glowing laser
-              ctx.strokeStyle = currentBits >= 8 ? '#00ffaa' : '#33ff99';
+              ctx.strokeStyle = currentBits >= 8 ? beamColorCfg.glow : beamColorCfg.hex;
               ctx.lineWidth = currentBits >= 8 ? 3.4 : 2.8;
-              ctx.shadowColor = '#00ff88';
+              ctx.shadowColor = beamColorCfg.shadow;
               ctx.shadowBlur = currentBits >= 8 ? 14 : 8;
             }
 
@@ -4040,7 +4054,7 @@ export const DimensionCanvas: React.FC<Props> = ({
             // Inner white-hot core for Bits 6+
             if (currentBits >= 6) {
               ctx.save();
-              ctx.strokeStyle = currentBits >= 8 ? '#ffffff' : '#c0ffea';
+              ctx.strokeStyle = currentBits >= 8 ? '#ffffff' : beamColorCfg.light;
               ctx.lineWidth = 1.2;
               ctx.beginPath();
               ctx.moveTo(TRACE_START, TRACE_Y);
@@ -4051,7 +4065,7 @@ export const DimensionCanvas: React.FC<Props> = ({
 
             // BIT 4+: Coordinate Distance Hash Marks
             if (currentBits >= 4) {
-              ctx.strokeStyle = '#55ffaa';
+              ctx.strokeStyle = beamColorCfg.light;
               ctx.lineWidth = 1.2;
               for (let hx = TRACE_START; hx <= TRACE_END; hx += 60) {
                 ctx.beginPath();
@@ -4064,7 +4078,7 @@ export const DimensionCanvas: React.FC<Props> = ({
             // BIT 5+: Waveform Amplitude Envelope Guide Rails
             if (currentBits >= 5) {
               ctx.save();
-              ctx.strokeStyle = 'rgba(85, 255, 153, 0.45)';
+              ctx.strokeStyle = beamColorCfg.particle;
               ctx.lineWidth = 1;
               ctx.setLineDash([4, 6]);
               // Upper Rail (+V)
@@ -4110,13 +4124,14 @@ export const DimensionCanvas: React.FC<Props> = ({
 
             // Sector boundaries for Res 6+ dynamic harmonized beam
             const hasSectors = currentRes >= 6;
+            const beamColorCfg = BEAM_COLOR_CONFIGS[pilotBeamColorRef.current] || BEAM_COLOR_CONFIGS.green;
 
             if (!hasSectors) {
               // Res 0-5: Radiant Laser Beam with High Brightness
               ctx.save();
-              ctx.strokeStyle = currentRes >= 3 ? '#00ffcc' : '#33ffaa';
+              ctx.strokeStyle = currentRes >= 3 ? beamColorCfg.glow : beamColorCfg.hex;
               ctx.lineWidth = baseLineWidth;
-              ctx.shadowColor = '#00ffaa';
+              ctx.shadowColor = beamColorCfg.shadow;
               ctx.shadowBlur = 8 + currentRes * 1.2;
               ctx.beginPath();
               ctx.moveTo(TRACE_START, TRACE_Y);
@@ -4341,11 +4356,22 @@ export const DimensionCanvas: React.FC<Props> = ({
           // Stationary Point / Square Entity
           // BIT 8+: High-Definition Phosphor Bloom
           const isBloom = currentBits >= 8;
+          const avatarColorCfg = BEAM_COLOR_CONFIGS[pilotBeamColorRef.current] || BEAM_COLOR_CONFIGS.green;
           ctx.fillStyle = '#ffffff';
-          ctx.strokeStyle = '#33ff66';
-          ctx.shadowColor = '#33ff66';
+          ctx.strokeStyle = currentRes < 6 ? avatarColorCfg.hex : '#33ff66';
+          ctx.shadowColor = currentRes < 6 ? avatarColorCfg.hex : '#33ff66';
           ctx.shadowBlur = isBloom ? 24 : currentBits >= 1 ? 10 : 0;
           ctx.lineWidth = isBloom ? 3.5 : 2;
+
+          // Subtle accent particle glow around avatar (until Res 6)
+          if (currentRes < 6 && currentBits >= 1) {
+            ctx.save();
+            ctx.fillStyle = avatarColorCfg.particle;
+            ctx.beginPath();
+            ctx.arc(playerX, TRACE_Y, 13 + (Math.sin(Date.now() / 240) * 2), 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
 
           const sqSize = 14;
           ctx.fillRect(playerX - sqSize / 2, TRACE_Y - sqSize / 2, sqSize, sqSize);
@@ -4763,7 +4789,11 @@ export const DimensionCanvas: React.FC<Props> = ({
               addSparks(TRACE_END, TRACE_Y, '#ffff44', currentBits >= 8 ? 20 : 12);
             } else {
               // Reflected wave safely dissipates off right edge in non-boss phases (white explosion pixels in 0D & N=1)
-              addSparks(TRACE_END, TRACE_Y, (!hasN || currentBits === 0) ? '#ffffff' : '#55ff99', 10);
+              const isPreRes6 = subPartRef.current !== 2 || resolutionRef.current < 6;
+              const sparkColor = (!hasN || currentBits === 0)
+                ? '#ffffff'
+                : (isPreRes6 ? (BEAM_COLOR_CONFIGS[pilotBeamColorRef.current]?.glow || '#55ff99') : '#55ff99');
+              addSparks(TRACE_END, TRACE_Y, sparkColor, 10);
             }
             pulsesRef.current.splice(i, 1);
             continue;
@@ -4796,7 +4826,11 @@ export const DimensionCanvas: React.FC<Props> = ({
                 if (gameModeRef.current === 'arcade') arcadeTotalHzRef.current += currentSectorYield;
                 checkAutoPurchases();
                 bossMissesRef.current = 0;
-                addSparks(playerX, TRACE_Y, (!hasN || currentBits === 0) ? '#ffffff' : '#55ff99', currentBits >= 8 ? 20 : 10);
+                const isPreRes6 = subPartRef.current !== 2 || resolutionRef.current < 6;
+                const hitSparkColor = (!hasN || currentBits === 0)
+                  ? '#ffffff'
+                  : (isPreRes6 ? (BEAM_COLOR_CONFIGS[pilotBeamColorRef.current]?.glow || '#55ff99') : '#55ff99');
+                addSparks(playerX, TRACE_Y, hitSparkColor, currentBits >= 8 ? 20 : 10);
                 p.reflected = true;
                 p.speed = Math.abs(p.speed) * 1.4;
                 p.x = playerX + paddleHalf + 10;

@@ -37,6 +37,8 @@ import {
   SurvivalScoreEntry,
   ArcadeScoreEntry,
   FTCEntry,
+  BEAM_COLOR_CONFIGS,
+  PilotBeamColor,
 } from '../services/leaderboardService';
 import { InitialsRegistrationModal } from './InitialsRegistrationModal';
 import { soundEngine } from '../audio/soundEngine';
@@ -50,6 +52,21 @@ interface GlobalLeaderboardModalProps {
   highlightInitials?: string;
   onCodeChanged?: (newCode: string) => void;
 }
+
+export const renderInitialsBadge = (initials: string, color?: PilotBeamColor) => {
+  const chosenKey: PilotBeamColor =
+    color && (color === 'blue' || color === 'amber' || color === 'azure') ? color : 'green';
+  const cfg = BEAM_COLOR_CONFIGS[chosenKey];
+
+  return (
+    <span
+      className={`inline-flex items-center justify-center px-1.5 py-0.5 rounded font-black tracking-wider text-xs sm:text-sm border shadow-sm transition-transform ${cfg.badgeBg} ${cfg.badgeBorder} ${cfg.badgeText} ${cfg.badgeGlow}`}
+      title={`Pilot Color: ${cfg.label} (${cfg.zoneName})`}
+    >
+      {initials}
+    </span>
+  );
+};
 
 export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
   isOpen,
@@ -240,6 +257,15 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
                     <span>{isLive ? 'LIVE FIRESTORE' : 'OFFLINE CACHE'}</span>
                   </span>
 
+                  {isDevelopmentEnvironment() && (
+                    <span
+                      title="AI Studio Development Environment: score submissions to the live production database are blocked to keep leaderboards pristine."
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-950/80 border border-purple-500/60 text-purple-300 font-mono"
+                    >
+                      <span>DEV: REMOTE WRITES BLOCKED</span>
+                    </span>
+                  )}
+
                   {/* FTC Banner: solid yellow lightning bolt with enlarged FTC winner display */}
                   {showFtcBanner && (
                     <span
@@ -251,7 +277,9 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
                       className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm sm:text-base font-black uppercase tracking-wider bg-amber-950/90 border border-amber-400 text-amber-300 animate-in fade-in duration-150 shadow-md shadow-amber-950/60"
                     >
                       <Zap className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />
-                      <span className="font-black tracking-wide text-amber-200">FTC: {getFtcWinnerCode()}</span>
+                      <span className="font-black tracking-wide text-amber-200 flex items-center gap-1">
+                        FTC: {renderInitialsBadge(getFtcWinnerCode(), activeTab === 'story' ? storyFTC?.color : arcadeFTC?.color)}
+                      </span>
                     </span>
                   )}
 
@@ -399,8 +427,8 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
                       <div className="col-span-2 sm:col-span-1 font-black flex items-center gap-1">
                         {rank === 1 ? <Crown className="w-3.5 h-3.5 text-amber-400" /> : `#${rank}`}
                       </div>
-                      <div className="col-span-2 sm:col-span-2 font-black tracking-widest text-white text-sm">
-                        {entry.initials}
+                      <div className="col-span-2 sm:col-span-2 font-black tracking-widest text-sm flex items-center">
+                        {renderInitialsBadge(entry.initials, entry.color)}
                       </div>
                       <div className="col-span-3 sm:col-span-2 text-center font-bold text-amber-300 tabular-nums">
                         {entry.completions ?? 0}
@@ -451,8 +479,8 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
                       <div className="col-span-2 sm:col-span-1 font-black flex items-center gap-1">
                         {rank === 1 ? <Crown className="w-3.5 h-3.5 text-purple-400" /> : `#${rank}`}
                       </div>
-                      <div className="col-span-3 sm:col-span-2 font-black tracking-widest text-white text-sm">
-                        {entry.initials}
+                      <div className="col-span-3 sm:col-span-2 font-black tracking-widest text-sm flex items-center">
+                        {renderInitialsBadge(entry.initials, entry.color)}
                       </div>
                       <div className="col-span-4 sm:col-span-4 font-semibold text-purple-300 truncate">
                         {entry.stageName} {entry.completed ? '★' : ''}
@@ -505,8 +533,8 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
                       <div className="col-span-2 sm:col-span-1 font-black flex items-center gap-1">
                         {rank === 1 ? <Crown className="w-3.5 h-3.5 text-cyan-400" /> : `#${rank}`}
                       </div>
-                      <div className="col-span-3 sm:col-span-2 font-black tracking-widest text-white text-sm">
-                        {entry.initials}
+                      <div className="col-span-3 sm:col-span-2 font-black tracking-widest text-sm flex items-center">
+                        {renderInitialsBadge(entry.initials, entry.color)}
                       </div>
                       <div className="col-span-4 sm:col-span-5 text-right font-black text-cyan-300 tabular-nums text-sm">
                         {formatSeconds(entry.timeSeconds)}s
@@ -556,8 +584,8 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
                       <div className="col-span-2 sm:col-span-1 font-black flex items-center gap-1">
                         {rank === 1 ? <Crown className="w-3.5 h-3.5 text-rose-400" /> : `#${rank}`}
                       </div>
-                      <div className="col-span-3 sm:col-span-2 font-black tracking-widest text-white text-sm">
-                        {entry.initials}
+                      <div className="col-span-3 sm:col-span-2 font-black tracking-widest text-sm flex items-center">
+                        {renderInitialsBadge(entry.initials, entry.color)}
                       </div>
                       <div className="col-span-4 sm:col-span-4 text-right font-black text-rose-400 tabular-nums text-sm">
                         {formatSeconds(entry.survivalSeconds)}
