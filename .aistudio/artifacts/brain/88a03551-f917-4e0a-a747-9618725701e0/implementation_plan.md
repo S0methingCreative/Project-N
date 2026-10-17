@@ -1,54 +1,77 @@
-# Implementation Plan: True Fullscreen Mode with Top-Right Minimalist Toggle
+# Block Global High Score Recording for Pilot Code GOD [COMPLETED & VERIFIED]
 
-Enable true fullscreen mode across the browser to hide the URL bar and browser chrome, providing an uninterrupted, edge-to-edge gaming canvas. A subtle, nearly transparent grey toggle with no visual effects will be anchored in the top-right corner, supported by the 'F' key hotkey.
+Enforce strict database-level security rules in Firestore to prevent any score submissions, progression tracking, or leaderboard records for pilot code **`GOD`** across all game modes, while allowing local/offline play.
 
----
+### User Review & Critical Decisions
 
-### User Review & Critical Decisions Confirmed
-- **Icon Presentation**: Subtle `Maximize2` and `Minimize2` icons at low opacity (`opacity-30 hover:opacity-75 transition-opacity`).
-- **Aesthetic**: Nearly transparent grey button with no glow, animations, or drop shadows (`bg-neutral-800/20 text-neutral-400 border border-neutral-700/20 rounded`).
-- **Hotkey**: Pressing the `'F'` key (or `'f'`) toggles fullscreen dynamically when not focused on modal input fields.
-- **Persistence**: Remains quietly accessible in the top-right corner at low opacity during both windowed and fullscreen play.
-- **Browser & Mobile Support**: Fullscreen API (`requestFullscreen` / `exitFullscreen`) hides the URL bar and browser chrome on supported browsers (Chrome, Edge, Firefox, Android Chrome, and Safari desktop).
+> [!IMPORTANT]
+> The following parameters were confirmed during the Phase 1 clarification interview:
+> - **Play Experience**: Allow local play with code `GOD`, but reject all global database uploads.
+> - **Enforcement Boundary**: **Database security rules only** (`firestore.rules`). Client code remains unchanged, ensuring the restriction is enforced at the network & database authority level.
 
 ---
 
-### Proposed Changes
+### 1. Overview & Core Concept
 
-#### 1. Fullscreen Hook / Controller (`src/components/DimensionCanvas.tsx` or `src/App.tsx`)
-- Detect active fullscreen state across standard and vendor-prefixed browser APIs (`document.fullscreenElement`, `webkitFullscreenElement`, `mozFullScreenElement`, `msFullscreenElement`).
-- Add `toggleFullscreen()` method:
-  - If in fullscreen: invoke `document.exitFullscreen()` (or vendor prefix).
-  - If not in fullscreen: invoke `document.documentElement.requestFullscreen()` (or vendor prefix).
-- Register `fullscreenchange` and `webkitfullscreenchange` event listeners to keep state synchronized if the user exits via the `Escape` key or browser controls.
-- Register `keydown` listener for `'F'` and `'f'` keys:
-  - Check that the active element is not an `<input>` or `<textarea>` (e.g., pilot initials registration).
-  - Prevent default behavior and toggle fullscreen.
-
-#### 2. Top-Right Corner Minimalist Toggle Button
-- Position: Anchored at `top-3 right-3` (with `env(safe-area-inset-top)` / `env(safe-area-inset-right)` support for notched devices).
-- Styling:
-  - Low opacity (`opacity-30 hover:opacity-80 active:opacity-100 transition-opacity`).
-  - Nearly transparent dark grey background (`bg-neutral-900/30 hover:bg-neutral-800/50`).
-  - Thin unobtrusive border (`border border-neutral-700/20`).
-  - No drop-shadows, no glowing halos, no pulse effects.
-  - Sizing: Compact touch-accessible target (`p-1.5 min-w-[36px] min-h-[36px] flex items-center justify-center`).
-- Icon:
-  - Windowed mode: `Maximize2` (14px).
-  - Fullscreen mode: `Minimize2` (14px).
-  - Accessible `aria-label="Toggle full screen (F)"` and title tooltip.
-
-#### 3. Verification & Safety Checks
-- Verify `npm run build` and `npm run lint` pass cleanly.
-- Ensure dev tools buttons (if enabled) align neatly alongside the fullscreen button without overlap.
-- Ensure modals (Main Menu, Initials Registration, Leaderboards, Death Screen) render above or below cleanly without clipping.
+- **Objective**: Ensure that any attempt to save high scores, stage completions, survival times, speedrun records, or First-To-Complete (⚡FTC) plaques for pilot code `GOD` is firmly rejected with `PERMISSION_DENIED` by Cloud Firestore rules.
+- **Affected Collections**:
+  1. `leaderboards_story` (Story Mode progression)
+  2. `leaderboards_speedrun` (Speedrun Mode completion times)
+  3. `leaderboards_survival` (Survival Mode duration & Hz)
+  4. `leaderboards_arcade` (Arcade Mode bit progression & duration)
+  5. `leaderboards_meta` (`story_ftc`, `arcade_ftc`, `story_pioneer`)
+  6. `players` (Remote handle registration)
 
 ---
 
-### Verification Plan
-1. **Compilation**: Run `compile_applet` and `lint_applet` to verify TypeScript builds without errors.
-2. **Toggle Click**: Click top-right toggle button to trigger `requestFullscreen()` -> verify browser URL bar and window chrome hide.
-3. **Exit Toggle**: Click toggle while in fullscreen to trigger `exitFullscreen()` -> verify windowed mode restores properly.
-4. **Hotkey Test**: Press `F` key to toggle into and out of fullscreen.
-5. **Escape Key Handling**: Enter fullscreen, press `Escape` key -> verify toggle icon flips back to `Maximize2`.
-6. **Input Shielding**: Open initials registration or menu input -> verify typing `F` enters the letter without triggering fullscreen toggle.
+### 2. Security Architecture & Rule Design
+
+- **Leaderboard Guard Primitive**:
+  Define a dedicated rule helper function in `firestore.rules`:
+  ```javascript
+  function isBlockedInitials(str) {
+    return str == 'GOD' || isBannedInitials(str);
+  }
+  ```
+- **Rule Integration**:
+  - Update `isValidStoryEntry`: enforce `!isBlockedInitials(data.initials)`.
+  - Update `isValidSpeedrunEntry`: enforce `!isBlockedInitials(data.initials)`.
+  - Update `isValidSurvivalEntry`: enforce `!isBlockedInitials(data.initials)`.
+  - Update `isValidArcadeEntry`: enforce `!isBlockedInitials(data.initials)`.
+  - Update `leaderboards_story/{id}`: explicitly disallow `id == 'GOD'` on `create` and `update`.
+  - Update `leaderboards_meta`: disallow `isBlockedInitials(request.resource.data.initials)`.
+  - Update `players/{code}`: disallow `code == 'GOD'` on remote handle registration.
+
+---
+
+### 3. Technical Implementation & Deployment Plan
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                 Client Action (Pilot: "GOD")                │
+│             Finishes run / updates progression             │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   Firestore Security Rules                  │
+│       isBlockedInitials(initials) == true ('GOD')           │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    PERMISSION_DENIED                        │
+│   Database write rejected; zero records stored in Cloud DB  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+1. **Modify `firestore.rules`**:
+   - Add `isBlockedInitials` helper.
+   - Guard entry validators against `isBlockedInitials`.
+   - Explicitly block `id == 'GOD'` and `code == 'GOD'`.
+2. **Deploy Rules**:
+   - Run `deploy_firebase` to deploy the updated `firestore.rules` to the production Firestore database (`ai-studio-projectnthedimen-88a03551-f917-4e0a-a747-9618725701e0`).
+3. **Automated Verification**:
+   - Run integration verification script attempting writes to all leaderboard collections under code `GOD`.
+   - Confirm all writes fail with `PERMISSION_DENIED`.
+   - Confirm valid pilot handles (e.g., `DEV`, `JEF`) continue to write without issue.

@@ -1966,6 +1966,43 @@ export const DimensionCanvas: React.FC<Props> = ({
     }
   };
 
+  // Auto-Compile N=1 for Story & Speedrun Modes (Free of charge, triggered on first polarity toggle or wave impact)
+  const triggerAutoCompileN1 = (source: 'input' | 'impact') => {
+    if (hasNRef.current || stateRef.current.act1PurchasedN) return;
+    if (gameModeRef.current !== 'story' && gameModeRef.current !== 'speedrun' && Boolean(gameModeRef.current)) return;
+
+    setHasN(true);
+    hasNRef.current = true;
+    setAct1Phase('point');
+    phaseRef.current = 'point';
+
+    onUpdateState(prev => ({
+      ...prev,
+      currentN: 1,
+      act1PurchasedN: true,
+      act1Phase: 'point',
+    }));
+
+    soundEngine.triggerNote('G4');
+    soundEngine.playCadenceResolution();
+    addCombatText('✦ N = 1 AUTO-COMPILED!', playerXRef.current, 190, '#33ff66');
+    const reasonText = source === 'input' ? 'polarity toggle input' : 'wave impact';
+    onLogAction(`✦ AUTO-COMPILED N = 1! Materialized via ${reasonText}. A single stationary white pixel appears in the void.`);
+
+    // Register N=1 milestone in Story mode
+    if (!gameModeRef.current || gameModeRef.current === 'story') {
+      saveRunRecord('story', {
+        stageName: '1D Point (N=1)',
+        stageNum: 0.5,
+        bit: 0,
+        resolution: 0,
+        completed: false,
+        completions: storyCompletionsRef.current,
+      });
+      onLogAction("✦ MILESTONE REACHED: 1D POINT (N=1) REGISTERED TO GLOBAL STORY RANKINGS");
+    }
+  };
+
   // Auto-Purchase System for Speed Run & Arcade Modes ONLY (Story mode requires death screen to compile)
   const checkAutoPurchases = () => {
     if (gameModeRef.current !== 'speedrun' && gameModeRef.current !== 'arcade') return;
@@ -1976,30 +2013,32 @@ export const DimensionCanvas: React.FC<Props> = ({
 
     // 1. Auto-purchase N=1 in speedrun & arcade
     if (!hasNRef.current && !stateRef.current.act1PurchasedN) {
-      if (gameModeRef.current === 'speedrun' || gameModeRef.current === 'arcade') {
+      if (gameModeRef.current === 'speedrun') {
+        triggerAutoCompileN1('impact');
+      } else if (gameModeRef.current === 'arcade') {
         if (totalHz >= 1) {
-        runHzRef.current = Math.max(0, runHzRef.current - 1);
-        setRunHz(runHzRef.current);
-        setHasN(true);
-        hasNRef.current = true;
-        setAct1Phase('point');
-        phaseRef.current = 'point';
+          runHzRef.current = Math.max(0, runHzRef.current - 1);
+          setRunHz(runHzRef.current);
+          setHasN(true);
+          hasNRef.current = true;
+          setAct1Phase('point');
+          phaseRef.current = 'point';
 
-        onUpdateState(prev => ({
-          ...prev,
-          currentN: 1,
-          act1PurchasedN: true,
-          act1Phase: 'point',
-          resources: {
-            ...prev.resources,
-            hertz: Math.max(0, prev.resources.hertz - 1),
-          },
-        }));
-        soundEngine.triggerNote('G4');
-        soundEngine.playCadenceResolution();
-        addCombatText('⚡ AUTO-COMPILED N = 1!', playerXRef.current, 190, '#33ff66');
-        onLogAction("AUTO-COMPILE: N=1 materialized! (1 Hz)");
-      }
+          onUpdateState(prev => ({
+            ...prev,
+            currentN: 1,
+            act1PurchasedN: true,
+            act1Phase: 'point',
+            resources: {
+              ...prev.resources,
+              hertz: Math.max(0, prev.resources.hertz - 1),
+            },
+          }));
+          soundEngine.triggerNote('G4');
+          soundEngine.playCadenceResolution();
+          addCombatText('⚡ AUTO-COMPILED N = 1!', playerXRef.current, 190, '#33ff66');
+          onLogAction("AUTO-COMPILE: N=1 materialized! (1 Hz)");
+        }
       }
       return;
     }
@@ -2711,22 +2750,22 @@ export const DimensionCanvas: React.FC<Props> = ({
           : `Resolution perimeter collapsed. Collected +${hzGained} Hz, +${vGained} V, +${baudGained} Flux. Banked: ${currentTotalHz} Hz, ${currentTotalV} V, ${currentTotalBaud} Flux. Compile ${upgrade.name}?`
       );
     } else if (!isAct1PurchasedN) {
-      // Phase 0: Asking to buy N (Equal cost: 1 Hz and 1 V)
+      // Phase 0: Compile N (Free of charge)
       const screen: DeathScreenState = {
         active: true,
         collectedHz: hzGained,
         collectedV: vGained,
         collectedBaud: baudGained,
-        costHz: 1,
-        costV: 1,
+        costHz: 0,
+        costV: 0,
         target: 'N',
         upgradeName: 'N = 1: The Stationary Pixel',
         upgradeDesc: 'Compiles the single stationary white pixel in the void and displays N = 1 in the top left corner.',
-        message: `OH NO YOU DIED.\nYOU COLLECTED ${hzGained} HZ AND ${vGained} V.\nYOU NOW HAVE ${currentTotalHz} HZ AND ${currentTotalV} V.\nSPEND 1 HZ AND 1 V FOR 1 N?`,
+        message: `PERIMETER DISSOLVED.\nCOLLECTED: +${hzGained} HZ, +${vGained} V.\nBANKED: ${currentTotalHz} HZ, ${currentTotalV} V.\nCOMPILE N = 1 (FREE)?`,
       };
       deathScreenRef.current = screen;
       setDeathScreen(screen);
-      onLogAction(`Entity dissolved in 0-bit void. Collected ${hzGained} HZ, ${vGained} V. Spend 1 HZ & 1 V for 1 N?`);
+      onLogAction(`Entity dissolved in 0-bit void. Collected ${hzGained} HZ, ${vGained} V. Compile 1 N (Free)?`);
     } else {
       // Phase 1: Asking to buy next Bit (Equal cost: X Hz and X V)
       const curBits = Math.max(0, bitsRef.current || 0);
@@ -2829,42 +2868,36 @@ export const DimensionCanvas: React.FC<Props> = ({
     const availBaud = Math.max(gameState.resources.baud, stateRef.current.resources.baud);
 
     if (deathScreen.target === 'N') {
-      if (availHz >= deathScreen.costHz && availV >= deathScreen.costV) {
-        onUpdateState(prev => ({
-          ...prev,
-          currentN: 1,
-          act1PurchasedN: true,
-          act1Phase: 'point',
-          resources: {
-            ...prev.resources,
-            hertz: prev.resources.hertz - deathScreen.costHz,
-            volts: prev.resources.volts - deathScreen.costV,
-          },
-        }));
-        setHasN(true);
-        hasNRef.current = true;
-        setAct1Phase('point');
-        phaseRef.current = 'point';
+      onUpdateState(prev => ({
+        ...prev,
+        currentN: 1,
+        act1PurchasedN: true,
+        act1Phase: 'point',
+      }));
+      setHasN(true);
+      hasNRef.current = true;
+      setAct1Phase('point');
+      phaseRef.current = 'point';
 
-        soundEngine.triggerNote('G4');
-        soundEngine.playCadenceResolution();
-        onLogAction("BOUGHT 1 N! N=1 materialized in the top-left corner. A single stationary white pixel appears in the void.");
+      soundEngine.triggerNote('G4');
+      soundEngine.playCadenceResolution();
+      onLogAction("COMPILED 1 N! N=1 materialized in the top-left corner. A single stationary white pixel appears in the void.");
 
-        // Register N=1 milestone in Story mode
-        if (!gameModeRef.current || gameModeRef.current === 'story') {
-          saveRunRecord('story', {
-            stageName: '1D Point (N=1)',
-            stageNum: 0.5,
-            bit: 0,
-            resolution: 0,
-            completed: false,
-            completions: storyCompletionsRef.current,
-          });
-          onLogAction("✦ MILESTONE REACHED: 1D POINT (N=1) REGISTERED TO GLOBAL STORY RANKINGS");
-        }
-
-        handleContinueAfterDeath();
+      // Register N=1 milestone in Story mode
+      if (!gameModeRef.current || gameModeRef.current === 'story') {
+        saveRunRecord('story', {
+          stageName: '1D Point (N=1)',
+          stageNum: 0.5,
+          bit: 0,
+          resolution: 0,
+          completed: false,
+          completions: storyCompletionsRef.current,
+        });
+        onLogAction("✦ MILESTONE REACHED: 1D POINT (N=1) REGISTERED TO GLOBAL STORY RANKINGS");
       }
+
+      handleContinueAfterDeath();
+      return;
     } else if (deathScreen.target === 'bit') {
       const curBits = Math.max(0, bitsRef.current || 0);
       if (curBits >= 9) {
@@ -3012,6 +3045,11 @@ export const DimensionCanvas: React.FC<Props> = ({
     // Start carrier audio if not yet engaged
     if (!stateRef.current.carrierActive) {
       handleStartAudio();
+    }
+
+    // Auto-compile N=1 if in 0D in Story or Speedrun mode upon first polarity toggle input
+    if (!hasNRef.current && (!gameModeRef.current || gameModeRef.current === 'story' || gameModeRef.current === 'speedrun')) {
+      triggerAutoCompileN1('input');
     }
 
     soundEngine.playBassDrum(); // Kick drum sound effect on every change of polarizer
@@ -4733,6 +4771,13 @@ export const DimensionCanvas: React.FC<Props> = ({
 
           // Pulse reaches Player's Point (Interception guarantee)
           if (!p.reflected && p.x <= playerX + paddleHalf + 8) {
+            // Auto-compile N=1 on wave impact (crest or trough) in Story or Speedrun mode
+            if (!hasNRef.current && (!gameModeRef.current || gameModeRef.current === 'story' || gameModeRef.current === 'speedrun')) {
+              if (p.kind === 'top' || p.kind === 'bottom') {
+                triggerAutoCompileN1('impact');
+              }
+            }
+
             const currentPol = polarityRef.current;
             let currentSectorYield = 1;
             if (subPartRef.current === 2) {
@@ -5399,7 +5444,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                     <span className="text-cyan-300 font-mono">SPEEDRUN RUN #{speedrunRunsRef.current} · RESUME THE CLOCK TO CONTINUE</span>
                   )
                 ) : deathScreen.target === 'N' ? (
-                  <span>SPEND {deathScreen.costHz} HZ AND {deathScreen.costV} V TO COMPILE N=1?</span>
+                  <span>COMPILE N = 1 (FREE)?</span>
                 ) : deathScreen.target === 'resolution' ? (
                   resolution >= 9 ? (
                     <span className="text-amber-300 font-mono">BOSS 2 ENCOUNTER: DEFEAT FRACTURE SOVEREIGN TO UNLOCK RESOLUTION 10 (240 FPS)</span>
@@ -5441,16 +5486,19 @@ export const DimensionCanvas: React.FC<Props> = ({
                       onClick={handlePurchaseUpgrade}
                       disabled={
                         deathBufferSeconds > 0 ||
-                        (deathScreen.target === 'resolution' && Math.max(gameState.resources.baud, stateRef.current.resources.baud) < (deathScreen.costBaud || 0)) ||
-                        (Math.max(gameState.resources.hertz, stateRef.current.resources.hertz) < deathScreen.costHz) ||
-                        (Math.max(gameState.resources.volts, stateRef.current.resources.volts) < deathScreen.costV)
+                        (deathScreen.target !== 'N' && (
+                          (deathScreen.target === 'resolution' && Math.max(gameState.resources.baud, stateRef.current.resources.baud) < (deathScreen.costBaud || 0)) ||
+                          (Math.max(gameState.resources.hertz, stateRef.current.resources.hertz) < deathScreen.costHz) ||
+                          (Math.max(gameState.resources.volts, stateRef.current.resources.volts) < deathScreen.costV)
+                        ))
                       }
                       className={`w-full sm:w-auto px-5 py-3 font-bold rounded-lg text-xs transition-all shadow-lg flex items-center justify-center gap-1.5 font-mono ${
                         deathBufferSeconds > 0
                           ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-50'
-                          : ((deathScreen.target === 'resolution' && Math.max(gameState.resources.baud, stateRef.current.resources.baud) < (deathScreen.costBaud || 0)) ||
+                          : (deathScreen.target !== 'N' && (
+                             (deathScreen.target === 'resolution' && Math.max(gameState.resources.baud, stateRef.current.resources.baud) < (deathScreen.costBaud || 0)) ||
                              (Math.max(gameState.resources.hertz, stateRef.current.resources.hertz) < deathScreen.costHz) ||
-                             (Math.max(gameState.resources.volts, stateRef.current.resources.volts) < deathScreen.costV))
+                             (Math.max(gameState.resources.volts, stateRef.current.resources.volts) < deathScreen.costV)))
                           ? 'bg-neutral-800/80 text-neutral-500 border border-neutral-700/60 cursor-not-allowed opacity-60'
                           : 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white active:scale-95 cursor-pointer shadow-blue-950/60 border border-blue-400/30'
                       }`}
@@ -5458,7 +5506,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                       <Sparkles className="w-4 h-4 text-blue-200" />
                       <span>
                         {deathScreen.target === 'N'
-                          ? 'COMPILE 1 N'
+                          ? 'COMPILE 1 N (FREE)'
                           : deathScreen.target === 'resolution'
                           ? `COMPILE RES ${resolution + 1}`
                           : `COMPILE BIT ${bits + 1}`}

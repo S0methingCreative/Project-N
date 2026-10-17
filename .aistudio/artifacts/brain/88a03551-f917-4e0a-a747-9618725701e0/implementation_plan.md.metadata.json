@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan for True Fullscreen mode with a nearly transparent grey toggle in the top-right corner, URL bar hiding via the Fullscreen API, and keyboard shortcut 'F' support.",
-  "updatedAt": "2026-10-15T01:48:17.236960654Z",
+  "summary": "Implementation plan to enforce database security rules blocking all global high score recordings for pilot code GOD across all Firestore leaderboard collections while permitting offline/local play.",
+  "updatedAt": "2026-10-17T00:56:45.542105990Z",
   "requestFeedback": true,
   "userFacing": true
 }
