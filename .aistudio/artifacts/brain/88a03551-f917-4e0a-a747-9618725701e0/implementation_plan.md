@@ -1,61 +1,66 @@
-# Compile & Level-Up Sound Engine Redesign
+# 4-Player Co-Op Knockout & Team Wipe Mechanics Plan (Beta Story Mode)
 
-Replace the current dissonant frequency-sliding and clashing chord compile audio with a crisp, triumphant **Bright Ascending Major Arpeggio Chime** for all auto-compiles (Speedrun & Arcade) and manual compiles (Story mode death screen).
-
----
-
-### Root Cause Analysis
-
-> [!WARNING]
-> - **The Current "Gross" Dissonance**:
->   - In `DimensionCanvas.tsx` (`checkAutoPurchases`), compiling a bit upgrade executes:
->     `soundEngine.triggerNote('C5')` + `soundEngine.playHitSound('quantum')`.
->   - `triggerNote('C5')` fires a full multi-oscillator chord mapped to packet hits.
->   - Simultaneously, `playHitSound('quantum')` sweeps a single raw sine oscillator from 440 Hz (A4) to 880 Hz (A5).
->   - The sweeping microtonal frequency physically clashes against the background music chords and the packet chord, creating an uncoordinated sliding sound.
->   - In other places (`triggerAutoCompileN1` and Resolution compile), `playCadenceResolution()` fires a 0.95-second slow 4-step sequence (C4 → F4 → G4 → C5) that drags on and conflicts with high-tempo tracks.
+This design specification outlines the **Knockout & Team Wipe Mechanics** for 4-player co-op in the Beta storyline, based on the **Fast 4 to 5 Second High-Pressure Timer** with automatic passive countdown.
 
 ---
 
-### Proposed Solution
+## 1. Timing Rationale & Rhythm Wave Metrics
 
-#### 1. Implement `playCompileLevelUp` in `src/audio/soundEngine.ts`
-Create a dedicated `playCompileLevelUp(intensity: 'standard' | 'major' = 'standard')`:
-- **Harmonic Architecture**:
-  - Crisp ascending arpeggio in C Major / Pentatonic:
-    - Note 1: **C5** (523.25 Hz) at $t = 0.00\text{s}$
-    - Note 2: **E5** (659.25 Hz) at $t = 0.045\text{s}$
-    - Note 3: **G5** (783.99 Hz) at $t = 0.090\text{s}$
-    - Note 4: **C6** (1046.50 Hz) at $t = 0.135\text{s}$ (Apex bell chime with smooth exponential decay)
-  - For **Major Milestones** (intensity = `'major'`, such as N=1, Bit 10, or Resolution 10):
-    - Note 5: **E6** (1318.51 Hz) at $t = 0.180\text{s}$ + subtle crystalline octave shimmer (G6 at 1567.98 Hz).
-- **Oscillator & Envelope Voicing**:
-  - Dual-layer voicing: warm rounded triangle wave fundamental + high-sparkle sine harmonic.
-  - Crisp 8ms attack, vibrant release curve (decay over 0.25s for lower notes, 0.45s for the apex chime).
-  - Routes through the main SFX limiter/destination to avoid clipping or mud.
-- **Audio Throttling**:
-  - Incorporate a 60ms debounce window so that rapid simultaneous resource transactions in Speedrun mode don't stack into distorted volume spikes.
-
-#### 2. Update Auto-Compile Call Sites in `src/components/DimensionCanvas.tsx`
-- **N=1 Auto-Compile** (`triggerAutoCompileN1` & Arcade N=1 purchase):
-  - Replace `triggerNote('G4')` + `playCadenceResolution()` with `soundEngine.playCompileLevelUp('major')`.
-- **Bit Auto-Compile** (`checkAutoPurchases`):
-  - Replace `triggerNote('C5')` + `playHitSound('quantum')` with `soundEngine.playCompileLevelUp('standard')`.
-- **Resolution Auto-Compile** (`checkAutoPurchases`):
-  - Replace `triggerNote('C5')` + `playCadenceResolution()` with `soundEngine.playCompileLevelUp('standard')`.
-
-#### 3. Update Manual Compiles on Death Screen (`DimensionCanvas.tsx`)
-- In `handleCompile` (lines 2890–3050):
-  - For compiling N=1, Bits 1–9, Bit 10, and Resolutions 1–10:
-  - Trigger `soundEngine.playCompileLevelUp(isMilestone ? 'major' : 'standard')` so that all upgrades across every game mode share this level-up sound.
+| Game Phase / Tempo | Beat Interval | 4.5s Knockout Window | Rhythm Impact & Gameplay Feel |
+| :---: | :---: | :---: | :---: |
+| **Bit 1–2 (Slow Waltz)**<br>78 BPM (3/4 time) | $\sim 0.77\text{s}$ per beat | $\sim 6$ beats / $3\text{–}4$ waves | A single mistake knocks out a player; the remaining 3 pilots must cover the line for 4 wave cycles. |
+| **Bit 3–4 (Math Rock)**<br>128–156 BPM (odd-meter) | $\sim 0.40\text{s}$ per beat | $\sim 11$ beats / $6\text{–}8$ waves | Intense pressure. If 2 or 3 pilots go down in a wave cluster, the lone survivor has to execute a high-speed clutch dodge. |
+| **Bit 5 (Corrupted Sovereign)**<br>168 BPM (Boss Battle) | $\sim 0.35\text{s}$ per beat | $\sim 13$ beats / $8\text{–}10$ waves | Maximum adrenaline. Boss sinusoidal barrages require at least 1 conscious pilot deflecting projectiles to prevent a wipe. |
 
 ---
 
-### Verification & Testing Plan
-1. **Speedrun / Arcade Auto-Compile**:
-   - Start Speedrun mode, toggle polarity to trigger N=1 auto-compile: verify the bright ascending chime fires crisply.
-   - Collect resources to trigger Bit 1, Bit 2, Bit 3 auto-compiles: verify smooth, bright level-up chime with zero dissonance or sine pitch-bending.
-2. **Story Mode Death Screen**:
-   - Die and click "Compile Bit" or "Compile Res" on the death screen: verify the level-up chime plays clearly upon confirmation.
-3. **Audio Consistency**:
-   - Verify compile sounds harmonize cleanly over all music genres (Slow Waltz, Math Rock, Arcade Rave, Dramatic Boss).
+## 2. Downed Player State Machine & Visuals
+
+```
+[ Active Pilot ] (100% HP)
+       │
+       ▼ (Integrity reaches 0)
+[ Unconscious / Rebooting ]
+       ├── Holographic countdown ring: 4.5s -> 0.0s
+       ├── Pilot bead dims to 30% ghost wireframe
+       ├── Cannot deflect waves or switch polarity
+       │
+       ├── IF All 4 Players Unconscious:
+       │       └── TRIGGER TEAM WIPE (Bit Restarts)
+       │
+       ▼ (Countdown reaches 0.0s)
+[ Reboot & Re-entry ]
+       ├── Auto-revives with 50% HP
+       ├── 1.5s Invulnerability / Phasing shield (translucent cyan ring)
+       └── Ascending reboot audio chirp
+```
+
+### Player HUD & Feedback during Knockout:
+1. **Reboot Circular Gauge**: A circular progress ring over the downed pilot's avatar winding down from $4.5\text{s}$ to $0\text{s}$.
+2. **Team Status Readout**: Top-left player indicators showing live state for each of the 4 pilots:
+   - `P1 (Emerald): ACTIVE`
+   - `P2 (Cobalt): DOWN (3.2s)`
+   - `P3 (Amber): ACTIVE`
+   - `P4 (Azure): DOWN (1.8s)`
+3. **Clutch Warning**: If 3 players are down simultaneously, a high-priority banner pulses:
+   `⚠️ LAST PILOT STANDING — HOLD THE LINE!`
+
+---
+
+## 3. Team Wipe Condition & Bit Restart Flow
+
+- **Trigger Condition**:
+  ```ts
+  const isTeamWiped = teamPilots.every(pilot => pilot.state === 'unconscious');
+  ```
+- **Consequences & Execution**:
+  1. The audio drops into a visceral fracture drone (`soundEngine.playBossDamageChord` + tape-stop effect).
+  2. Red vector warning flashes across the screen: `✦ HARMONIC DESYNCHRONIZATION — TEAM WIPED ✦`.
+  3. The team restarts the current Bit attempt from the beginning of that Bit's wave cycle with 100% integrity restored.
+  4. Previously compiled Bits and banked upgrades remain permanently saved.
+
+---
+
+## 4. Integration into Beta Bootstrap Package
+
+Add this 4-player co-op specification into `BETA_STORY_BOOTSTRAP.md` under **Multiplayer Architecture** so the new project AI has exact rules for handling player states, synchronization, and revival timers.

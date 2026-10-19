@@ -1209,14 +1209,18 @@ export const DimensionCanvas: React.FC<Props> = ({
 
   // Main menu tracking ref & soundtrack coordination
   const isMainMenuOpenRef = useRef<boolean>(isMainMenuOpen);
+  const prevIsMainMenuOpenRef = useRef<boolean>(isMainMenuOpen);
   useEffect(() => {
+    const wasOpen = prevIsMainMenuOpenRef.current;
+    prevIsMainMenuOpenRef.current = isMainMenuOpen;
     isMainMenuOpenRef.current = isMainMenuOpen;
+
     if (isMainMenuOpen) {
       currentGenreRef.current = 'slow_waltz';
       currentZoneRef.current = 'easy';
       soundEngine.setMusicPacing('slow_waltz', 'easy');
       soundEngine.startBackgroundMusic();
-    } else {
+    } else if (wasOpen) {
       // Exiting main menu to begin or resume gameplay:
       // Guarantee player starts with full 100 integrity and clear stale modals/flags
       isRoundEndedRef.current = false;
@@ -1237,7 +1241,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       runPulsesRef.current = 0;
 
       // Ensure boss health resets to full at start of boss fights on bit 9 and res 9 even when resuming from menu
-      if ((subPartRef.current === 1 || (gameState.act1SubPart || 1) === 1) && (bitsRef.current >= 9 || (gameState.act1Bits || 0) >= 9)) {
+      if ((subPartRef.current === 1 || (stateRef.current.act1SubPart || 1) === 1) && (bitsRef.current >= 9 || (stateRef.current.act1Bits || 0) >= 9)) {
         setAct1Phase('boss');
         phaseRef.current = 'boss';
         setBossHp(MAX_BOSS_1_HP);
@@ -1245,7 +1249,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         bossMissesRef.current = 0;
         bossHitFlashRef.current = 0;
       }
-      if ((subPartRef.current === 2 || gameState.act1SubPart === 2) && (resolutionRef.current >= 9 || (gameState.act1Resolution || 0) >= 9)) {
+      if ((subPartRef.current === 2 || stateRef.current.act1SubPart === 2) && (resolutionRef.current >= 9 || (stateRef.current.act1Resolution || 0) >= 9)) {
         setBoss2Hp(MAX_BOSS_2_HP);
         boss2HpRef.current = MAX_BOSS_2_HP;
         bossTargetTimerRef.current = 0;
@@ -1253,7 +1257,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         bossHitFlashRef.current = 0;
       }
     }
-  }, [isMainMenuOpen, gameState.act1Bits, gameState.act1Resolution, gameState.act1SubPart]);
+  }, [isMainMenuOpen]);
 
   // Act 1 Deep Progression States
   // Phases: 'void' (0D) -> 'point' (N=1, collecting 9 bits) -> 'boss' (line segment) -> 'ray' (rift to 2D)
@@ -1371,6 +1375,7 @@ export const DimensionCanvas: React.FC<Props> = ({
 
   // Track previous game mode to prevent redundant modal resets on state sync
   const prevGameModeRef = useRef<GameMode | undefined>(gameState.gameMode);
+  const prevHpPropRef = useRef<number | undefined>(gameState.hp);
 
   // In-Game Options Modal (Accessible from any death / kill screen)
   const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState<boolean>(false);
@@ -1755,9 +1760,12 @@ export const DimensionCanvas: React.FC<Props> = ({
         }
       }
     }
-    if (gameState.hp !== undefined && gameState.hp >= 100 && (integrityRef.current <= 0 || (!isRoundEndedRef.current && !deathScreenRef.current && integrityRef.current < 100))) {
-      setIntegrity(100);
-      integrityRef.current = 100;
+    if (gameState.hp !== undefined && gameState.hp !== prevHpPropRef.current) {
+      prevHpPropRef.current = gameState.hp;
+      if (gameState.hp >= 100) {
+        setIntegrity(100);
+        integrityRef.current = 100;
+      }
     }
     // If resetting back to 0D Void (fresh Story or Speedrun start), clear active run state & entities
     if (!gameState.act1PurchasedN && nextBits === 0 && nextSubPart === 1) {
@@ -2046,9 +2054,11 @@ export const DimensionCanvas: React.FC<Props> = ({
               hertz: Math.max(0, prev.resources.hertz - 1),
             },
           }));
+          setIntegrity(100);
+          integrityRef.current = 100;
           soundEngine.playCompileLevelUp('major');
-          addCombatText('⚡ AUTO-COMPILED N = 1!', playerXRef.current, 190, '#33ff66');
-          onLogAction("AUTO-COMPILE: N=1 materialized! (1 Hz)");
+          addCombatText('⚡ AUTO-COMPILED N = 1! [INTEGRITY 100%]', playerXRef.current, 190, '#33ff66');
+          onLogAction("AUTO-COMPILE: N=1 materialized! (1 Hz) · Pilot integrity restored to 100%!");
         }
       }
       return;
@@ -2099,8 +2109,15 @@ export const DimensionCanvas: React.FC<Props> = ({
         addCombatText(`⚡ AUTO: ${upgrade.name}!`, playerXRef.current, 190, '#55ff99');
         onLogAction(`AUTO-COMPILE: Bit ${newBits} compiled (${costHz} Hz, ${costV} V)!`);
 
-        // In arcade mode, immediately apply new pacing from progression table
+        // In arcade mode, restore player integrity to 100% on every auto-compile and apply new pacing
         if (gameModeRef.current === 'arcade') {
+          // Dedicated Arcade Mode Feature: full health restoration on auto-compile
+          setIntegrity(100);
+          integrityRef.current = 100;
+          addCombatText('💚 INTEGRITY RESTORED 100%!', playerXRef.current, 160, '#33ff66');
+          onLogAction(`💚 ARCADE AUTO-COMPILE REPAIR: Pilot integrity restored back to 100% upon compiling Bit ${newBits}!`);
+          soundEngine.playHitSound('shield');
+
           const pacing = getArcadePacing(1, newBits, resolutionRef.current, runPulsesRef.current);
           currentGenreRef.current = pacing.genre;
           currentZoneRef.current = pacing.zone;
@@ -3647,6 +3664,22 @@ export const DimensionCanvas: React.FC<Props> = ({
           } else if (phase === 'boss' && subPartRef.current === 1) {
             // First Boss Encounter (Corrupted Sovereign, Bit 9):
             // "make the first boss fight even harder. Start us at the hard difficulty setting and increase as per usual."
+            if (currentPulses <= 12) {
+              targetZone = 'hard';
+              targetGenre = 'slow_waltz';
+            } else if (currentPulses <= 28) {
+              targetZone = 'hard';
+              targetGenre = 'math_rock';
+            } else if (currentPulses <= 44) {
+              targetZone = 'hard';
+              targetGenre = 'arcade_techno';
+            } else {
+              targetZone = 'crazy';
+              targetGenre = ((currentPulses - 44) % 32 < 16) ? 'math_rock' : 'arcade_techno';
+            }
+          } else if (subPartRef.current === 2 && resolutionRef.current >= 9) {
+            // Second Boss Encounter (Fracture Sovereign, Resolution 9):
+            // Starts at Hard difficulty and increases dynamically identical to Boss 1
             if (currentPulses <= 12) {
               targetZone = 'hard';
               targetGenre = 'slow_waltz';

@@ -96,6 +96,9 @@ A structured 9-stage challenge emphasizing resource efficiency and strict single
 - **Lives Pool**:
   - Begins and remains with strictly **1 Life** (`lives = 1`).
   - No extra lives are awarded at any point during the run.
+- **Auto-Compile Full Repair Mechanic**:
+  - To balance the strict 1-life permadeath constraint, **every Bit auto-compilation automatically restores pilot integrity back to 100% full health**.
+  - Collecting the required $\text{Hz}$ and $\text{V}$ to advance to the next bit provides an instant tactical repair, rewarding consistent rhythm and proactive harvesting.
 - **Permadeath**: Depleting your 1 life triggers a permanent **GAME OVER** screen displaying:
   - Stage Reached (e.g., `Stage 09: Bit 9 - The Precipice`)
   - Survival Duration (`mm:ss.sss`)
