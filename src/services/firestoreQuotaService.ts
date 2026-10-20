@@ -1,50 +1,35 @@
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const QUOTA_EXHAUSTED_KEY = 'firestore_quota_exhausted';
+const QUOTA_BACKOFF_MS = 5 * 60 * 1000; // 5-minute temporary backoff if a real quota error occurs
 
-// Since the Firestore free-tier daily write quota is currently exhausted for this project today,
-// start with true if stored in localStorage or default to true to immediately halt failing write retry streams
-let isQuotaExhaustedMemory = true;
+// Start with false so Firestore is enabled by default; clear any legacy sticky flag from localStorage
+let isQuotaExhaustedMemory = false;
+let quotaExhaustedAt = 0;
 
 if (typeof window !== 'undefined') {
   try {
-    const stored = localStorage.getItem(QUOTA_EXHAUSTED_KEY) ?? sessionStorage.getItem(QUOTA_EXHAUSTED_KEY);
-    if (stored !== null) {
-      isQuotaExhaustedMemory = stored === 'true';
-    } else {
-      // Mark stored as true to protect against unhandled backoff storms
-      localStorage.setItem(QUOTA_EXHAUSTED_KEY, 'true');
-      sessionStorage.setItem(QUOTA_EXHAUSTED_KEY, 'true');
-      isQuotaExhaustedMemory = true;
-    }
-  } catch {
-    isQuotaExhaustedMemory = true;
-  }
+    localStorage.removeItem(QUOTA_EXHAUSTED_KEY);
+    sessionStorage.removeItem(QUOTA_EXHAUSTED_KEY);
+  } catch {}
 }
 
 const listeners = new Set<(exhausted: boolean) => void>();
 
 export function isFirestoreQuotaExhausted(): boolean {
-  if (isQuotaExhaustedMemory) return true;
-  if (typeof window === 'undefined') return false;
-  try {
-    if (localStorage.getItem(QUOTA_EXHAUSTED_KEY) === 'true' || sessionStorage.getItem(QUOTA_EXHAUSTED_KEY) === 'true') {
-      isQuotaExhaustedMemory = true;
-      return true;
-    }
-  } catch {}
-  return false;
+  if (!isQuotaExhaustedMemory) return false;
+  if (Date.now() - quotaExhaustedAt > QUOTA_BACKOFF_MS) {
+    isQuotaExhaustedMemory = false;
+    quotaExhaustedAt = 0;
+    return false;
+  }
+  return true;
 }
 
 export function markFirestoreQuotaExhausted(): void {
   if (isQuotaExhaustedMemory) return;
   isQuotaExhaustedMemory = true;
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem(QUOTA_EXHAUSTED_KEY, 'true');
-      sessionStorage.setItem(QUOTA_EXHAUSTED_KEY, 'true');
-    } catch {}
-  }
+  quotaExhaustedAt = Date.now();
   listeners.forEach(cb => {
     try { cb(true); } catch {}
   });
@@ -52,6 +37,7 @@ export function markFirestoreQuotaExhausted(): void {
 
 export function resetQuotaExhaustedForTesting(): void {
   isQuotaExhaustedMemory = false;
+  quotaExhaustedAt = 0;
   if (typeof window !== 'undefined') {
     try {
       localStorage.removeItem(QUOTA_EXHAUSTED_KEY);

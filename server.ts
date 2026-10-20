@@ -1,21 +1,39 @@
 import express from "express";
 import http from "http";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { WebSocketServer, WebSocket } from "ws";
 import dotenv from "dotenv";
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Initialize server-side Firestore client so Squad Co-Op rooms persist across Cloud Run instances & restarts
+let serverDb: ReturnType<typeof getFirestore> | null = null;
+try {
+  const configPath = path.join(__dirname, "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    const fbApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    serverDb = firebaseConfig.firestoreDatabaseId
+      ? getFirestore(fbApp, firebaseConfig.firestoreDatabaseId)
+      : getFirestore(fbApp);
+  }
+} catch (err) {
+  console.warn("[Squad Server] Firestore initialization warning:", err);
+}
+
 const app = express();
 const port = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
 
-// --- SQUAD CO-OP IN-MEMORY SERVER ENGINE (24-HOUR RETENTION, ZERO FIRESTORE QUOTA) ---
+// --- SQUAD CO-OP SERVER ENGINE (HYBRID IN-MEMORY + FIRESTORE MULTI-INSTANCE PERSISTENCE) ---
 
 interface ServerTeamPilot {
   id: string;
@@ -67,9 +85,87 @@ interface ServerSpeedrunRoom {
   updatedAt: string;
 }
 
-const ROOM_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours retention in server memory
+const ROOM_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours retention
 const squadRooms = new Map<string, ServerSpeedrunRoom>();
 const roomSubscriptions = new Map<string, Set<WebSocket>>();
+const lastFirestorePersistByRoom = new Map<string, number>();
+
+function sanitizeRoom<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+async function persistRoomToFirestore(room: ServerSpeedrunRoom, immediate = true): Promise<void> {
+  if (!serverDb || !room?.code) return;
+  const code = room.code.toUpperCase();
+  const now = Date.now();
+  if (!immediate) {
+    const lastWrite = lastFirestorePersistByRoom.get(code) || 0;
+    if (now - lastWrite < 1500) return;
+  }
+  lastFirestorePersistByRoom.set(code, now);
+  try {
+    const cleanRoom = sanitizeRoom(room);
+    await setDoc(doc(serverDb, "speedrun_rooms", code), cleanRoom, { merge: true });
+  } catch {}
+}
+
+async function loadRoomWithFirestoreFallback(
+  codeInput: string,
+  fallbackRoom?: any
+): Promise<ServerSpeedrunRoom | undefined> {
+  const code = String(codeInput || "").trim().toUpperCase();
+  if (!code) return undefined;
+
+  let room = squadRooms.get(code);
+
+  // Always check Firestore if room is not in local instance memory, or if in lobby so multi-instance joins are never missed
+  if ((!room || room.status === "lobby") && serverDb) {
+    try {
+      const snap = await getDoc(doc(serverDb, "speedrun_rooms", code));
+      if (snap.exists()) {
+        const fsRoom = snap.data() as ServerSpeedrunRoom;
+        if (!room) {
+          room = fsRoom;
+          squadRooms.set(code, room);
+        } else {
+          // Merge any pilots that joined on another Cloud Run instance via Firestore
+          room.pilots = {
+            ...(fsRoom.pilots || {}),
+            ...(room.pilots || {}),
+          };
+          for (const [pid, fsPilot] of Object.entries(fsRoom.pilots || {})) {
+            const memPilot = room.pilots[pid];
+            if (!memPilot || (fsPilot.lastHeartbeat || 0) >= (memPilot.lastHeartbeat || 0)) {
+              room.pilots[pid] = fsPilot;
+            }
+          }
+          if ((new Date(fsRoom.updatedAt || 0).getTime() || 0) > (new Date(room.updatedAt || 0).getTime() || 0)) {
+            room.status = fsRoom.status;
+            room.sharedState = { ...room.sharedState, ...(fsRoom.sharedState || {}) };
+            if (fsRoom.lastContinueAt) room.lastContinueAt = fsRoom.lastContinueAt;
+            if (fsRoom.lastWipeAt) room.lastWipeAt = fsRoom.lastWipeAt;
+          }
+          squadRooms.set(code, room);
+        }
+      }
+    } catch {}
+  }
+
+  if (!room && fallbackRoom && typeof fallbackRoom === "object" && String(fallbackRoom.code || "").toUpperCase() === code) {
+    room = sanitizeRoom(fallbackRoom) as ServerSpeedrunRoom;
+    squadRooms.set(code, room);
+    void persistRoomToFirestore(room, true);
+  } else if (room && fallbackRoom && typeof fallbackRoom === "object" && fallbackRoom.pilots) {
+    // Ensure any pilot present in fallbackRoom is preserved
+    for (const [pid, fbPilot] of Object.entries(fallbackRoom.pilots as Record<string, ServerTeamPilot>)) {
+      if (!room.pilots[pid]) {
+        room.pilots[pid] = fbPilot;
+      }
+    }
+  }
+
+  return room;
+}
 
 function getTeamBossMaxHp(pilotCount: number): number {
   const clamped = Math.min(4, Math.max(1, pilotCount));
@@ -112,6 +208,7 @@ setInterval(() => {
     if (now - updatedTime > ROOM_TTL_MS) {
       squadRooms.delete(code);
       roomSubscriptions.delete(code);
+      lastFirestorePersistByRoom.delete(code);
     }
   }
 }, 15 * 60 * 1000);
@@ -472,7 +569,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 // Create a new Squad Co-Op Room
-app.post("/api/squad/rooms", (req, res) => {
+app.post("/api/squad/rooms", async (req, res) => {
   const { pilotId, initials, color, preferredCode } = req.body || {};
   const hostId = String(pilotId || "pilot_host");
   const hostInitials = String(initials || "PIL").toUpperCase().slice(0, 3);
@@ -530,14 +627,15 @@ app.post("/api/squad/rooms", (req, res) => {
   };
 
   squadRooms.set(roomCode, roomData);
+  await persistRoomToFirestore(roomData, true);
   broadcastToRoom(roomCode, { type: "ROOM_UPDATE", room: roomData });
   res.json({ success: true, room: roomData });
 });
 
 // Fetch an existing Squad Co-Op Room by 4-char code
-app.get("/api/squad/rooms/:code", (req, res) => {
+app.get("/api/squad/rooms/:code", async (req, res) => {
   const code = String(req.params.code || "").trim().toUpperCase();
-  const room = squadRooms.get(code);
+  const room = await loadRoomWithFirestoreFallback(code);
   if (!room) {
     res.status(404).json({
       success: false,
@@ -549,9 +647,9 @@ app.get("/api/squad/rooms/:code", (req, res) => {
 });
 
 // Join an existing Squad Co-Op Room
-app.post("/api/squad/rooms/:code/join", (req, res) => {
+app.post("/api/squad/rooms/:code/join", async (req, res) => {
   const code = String(req.params.code || "").trim().toUpperCase();
-  const { pilotId, initials, color } = req.body || {};
+  const { pilotId, initials, color, fallbackRoom } = req.body || {};
 
   if (code.length < 3 || code.length > 6) {
     res.status(400).json({
@@ -561,7 +659,7 @@ app.post("/api/squad/rooms/:code/join", (req, res) => {
     return;
   }
 
-  const room = squadRooms.get(code);
+  const room = await loadRoomWithFirestoreFallback(code, fallbackRoom);
   if (!room) {
     res.status(404).json({
       success: false,
@@ -591,6 +689,7 @@ app.post("/api/squad/rooms/:code/join", (req, res) => {
       joinedAt: existing.joinedAt || now,
     };
     room.updatedAt = nowIso;
+    await persistRoomToFirestore(room, true);
     broadcastToRoom(code, { type: "ROOM_UPDATE", room });
     res.json({ success: true, room });
     return;
@@ -650,21 +749,17 @@ app.post("/api/squad/rooms/:code/join", (req, res) => {
   }
   room.updatedAt = nowIso;
 
+  await persistRoomToFirestore(room, true);
   broadcastToRoom(code, { type: "ROOM_UPDATE", room });
   res.json({ success: true, room });
 });
 
 // Perform an atomic Squad Co-Op room action
-app.post("/api/squad/rooms/:code/action", (req, res) => {
+app.post("/api/squad/rooms/:code/action", async (req, res) => {
   const code = String(req.params.code || "").trim().toUpperCase();
   const { type, pilotId, payload, fallbackRoom } = req.body || {};
 
-  let room = squadRooms.get(code);
-  // If server restarted while squad had an active session cached, seamlessly re-hydrate room
-  if (!room && fallbackRoom && typeof fallbackRoom === "object" && fallbackRoom.code === code) {
-    room = fallbackRoom as ServerSpeedrunRoom;
-    squadRooms.set(code, room);
-  }
+  const room = await loadRoomWithFirestoreFallback(code, fallbackRoom);
 
   if (!room) {
     res.status(404).json({
@@ -674,10 +769,13 @@ app.post("/api/squad/rooms/:code/action", (req, res) => {
     return;
   }
 
-  const result = applyRoomAction(room, String(type || ""), String(pilotId || ""), payload);
+  const actionType = String(type || "");
+  const result = applyRoomAction(room, actionType, String(pilotId || ""), payload);
   if (result.broadcastType === "ROOM_UPDATE") {
+    await persistRoomToFirestore(room, true);
     broadcastToRoom(code, { type: "ROOM_UPDATE", room });
   } else if (result.broadcastType === "TELEMETRY" && result.extra) {
+    void persistRoomToFirestore(room, false);
     broadcastToRoom(code, result.extra);
   }
 
@@ -710,7 +808,7 @@ async function startServer() {
   wss.on("connection", (ws, request) => {
     let subscribedRoomCode: string | null = null;
 
-    const subscribeSocketToRoom = (codeInput: string) => {
+    const subscribeSocketToRoom = async (codeInput: string, fallbackRoom?: any) => {
       const code = codeInput.trim().toUpperCase();
       if (!code) return;
       if (subscribedRoomCode && subscribedRoomCode !== code) {
@@ -722,7 +820,7 @@ async function startServer() {
       }
       roomSubscriptions.get(code)!.add(ws);
 
-      const existingRoom = squadRooms.get(code);
+      const existingRoom = await loadRoomWithFirestoreFallback(code, fallbackRoom);
       if (existingRoom && ws.readyState === WebSocket.OPEN) {
         try {
           ws.send(JSON.stringify({ type: "ROOM_UPDATE", room: existingRoom }));
@@ -735,22 +833,18 @@ async function startServer() {
       const parsedUrl = new URL(request.url || "/", `http://${host}`);
       const initialRoom = parsedUrl.searchParams.get("room");
       if (initialRoom) {
-        subscribeSocketToRoom(initialRoom);
+        void subscribeSocketToRoom(initialRoom);
       }
     } catch {}
 
-    ws.on("message", (raw) => {
+    ws.on("message", async (raw) => {
       try {
         const msg = JSON.parse(String(raw));
         if (!msg || typeof msg !== "object") return;
 
         if (msg.type === "SUBSCRIBE" && typeof msg.roomCode === "string") {
           const code = msg.roomCode.trim().toUpperCase();
-          // Rehydrate server room if client provides a cached room after server restart
-          if (!squadRooms.has(code) && msg.fallbackRoom && msg.fallbackRoom.code === code) {
-            squadRooms.set(code, msg.fallbackRoom);
-          }
-          subscribeSocketToRoom(code);
+          await subscribeSocketToRoom(code, msg.fallbackRoom);
           return;
         }
 
@@ -768,6 +862,7 @@ async function startServer() {
               room.sharedState.runPulses = Math.max(room.sharedState.runPulses || 0, data.runPulses);
             }
             room.updatedAt = new Date().toISOString();
+            void persistRoomToFirestore(room, false);
           }
           broadcastToRoom(
             code,
@@ -786,11 +881,7 @@ async function startServer() {
 
         if (msg.type === "ACTION" && typeof msg.roomCode === "string") {
           const code = msg.roomCode.trim().toUpperCase();
-          let room = squadRooms.get(code);
-          if (!room && msg.fallbackRoom && msg.fallbackRoom.code === code) {
-            room = msg.fallbackRoom as ServerSpeedrunRoom;
-            squadRooms.set(code, room);
-          }
+          const room = await loadRoomWithFirestoreFallback(code, msg.fallbackRoom);
           if (!room) return;
           const result = applyRoomAction(
             room,
@@ -799,8 +890,10 @@ async function startServer() {
             msg.payload || {}
           );
           if (result.broadcastType === "ROOM_UPDATE") {
+            await persistRoomToFirestore(room, true);
             broadcastToRoom(code, { type: "ROOM_UPDATE", room });
           } else if (result.broadcastType === "TELEMETRY" && result.extra) {
+            void persistRoomToFirestore(room, false);
             broadcastToRoom(code, result.extra, ws);
           }
         }

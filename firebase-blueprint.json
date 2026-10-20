@@ -189,6 +189,41 @@
         }
       },
       "required": ["initials", "completedAt"]
+    },
+    "SpeedrunRoom": {
+      "title": "Squad Co-Op Room",
+      "description": "Multiplayer Squad Co-Op room state synchronized across mobile and desktop clients",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "4-character room code"
+        },
+        "code": {
+          "type": "string",
+          "description": "4-character uppercase room code"
+        },
+        "hostPilotId": {
+          "type": "string",
+          "description": "Pilot ID of the room host"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["lobby", "active", "completed", "wiped", "paused"],
+          "description": "Current room lifecycle state"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when room was created"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO timestamp when room was last updated"
+        }
+      },
+      "required": ["id", "code", "hostPilotId", "status", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -219,6 +254,10 @@
     "/leaderboards_meta/arcade_ftc": {
       "schema": "FTCMetaRecord",
       "description": "First player to complete Arcade Mode"
+    },
+    "/speedrun_rooms/{roomId}": {
+      "schema": "SpeedrunRoom",
+      "description": "Multiplayer Squad Co-Op lobby and active session rooms"
     }
   }
 }

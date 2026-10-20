@@ -63,6 +63,96 @@ export interface SpeedrunRoom {
   updatedAt: string;
 }
 
+// Lazy-loaded Firestore SDK singleton so Main Menu boot stays instant while Squad Co-Op gets full Cloud Firestore sync
+let firestoreSdkPromise: Promise<{
+  db: any;
+  doc: typeof import('firebase/firestore').doc;
+  getDoc: typeof import('firebase/firestore').getDoc;
+  getDocFromServer: typeof import('firebase/firestore').getDocFromServer;
+  setDoc: typeof import('firebase/firestore').setDoc;
+  updateDoc: typeof import('firebase/firestore').updateDoc;
+  onSnapshot: typeof import('firebase/firestore').onSnapshot;
+  increment: typeof import('firebase/firestore').increment;
+  deleteField: typeof import('firebase/firestore').deleteField;
+}> | null = null;
+
+function getFirestoreSdk() {
+  if (!firestoreSdkPromise) {
+    firestoreSdkPromise = Promise.all([
+      import('../firebase'),
+      import('firebase/firestore'),
+    ]).then(([fb, fs]) => ({
+      db: fb.db,
+      doc: fs.doc,
+      getDoc: fs.getDoc,
+      getDocFromServer: fs.getDocFromServer,
+      setDoc: fs.setDoc,
+      updateDoc: fs.updateDoc,
+      onSnapshot: fs.onSnapshot,
+      increment: fs.increment,
+      deleteField: fs.deleteField,
+    }));
+  }
+  return firestoreSdkPromise;
+}
+
+function sanitizeForFirestore<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+async function fetchRoomFromFirestore(codeInput: string): Promise<SpeedrunRoom | null> {
+  const code = codeInput.trim().toUpperCase();
+  if (!code) return null;
+  try {
+    const { db, doc, getDoc, getDocFromServer } = await getFirestoreSdk();
+    const roomRef = doc(db, 'speedrun_rooms', code);
+    try {
+      const serverSnap = await getDocFromServer(roomRef);
+      if (serverSnap.exists()) {
+        return serverSnap.data() as SpeedrunRoom;
+      }
+    } catch {
+      const snap = await getDoc(roomRef);
+      if (snap.exists()) {
+        return snap.data() as SpeedrunRoom;
+      }
+    }
+  } catch (err) {
+    if (isQuotaError(err)) markFirestoreQuotaExhausted();
+  }
+  return null;
+}
+
+async function saveRoomToFirestore(room: SpeedrunRoom, merge = true): Promise<boolean> {
+  if (!room?.code) return false;
+  const code = room.code.toUpperCase();
+  try {
+    const { db, doc, setDoc } = await getFirestoreSdk();
+    const clean = sanitizeForFirestore(room);
+    await setDoc(doc(db, 'speedrun_rooms', code), clean, { merge });
+    return true;
+  } catch (err) {
+    if (isQuotaError(err)) markFirestoreQuotaExhausted();
+    return false;
+  }
+}
+
+async function updateRoomFieldsInFirestore(
+  codeInput: string,
+  fields: Record<string, any>
+): Promise<boolean> {
+  const code = codeInput.trim().toUpperCase();
+  if (!code) return false;
+  try {
+    const { db, doc, updateDoc } = await getFirestoreSdk();
+    await updateDoc(doc(db, 'speedrun_rooms', code), fields);
+    return true;
+  } catch (err) {
+    if (isQuotaError(err)) markFirestoreQuotaExhausted();
+    return false;
+  }
+}
+
 // LocalStorage optimistic cache + BroadcastChannel for instant zero-latency local sync
 const LOCAL_ROOMS_KEY = 'speedrun_local_rooms_cache';
 
@@ -131,25 +221,158 @@ function broadcastRoomUpdate(room: SpeedrunRoom): void {
   } catch {}
 }
 
+/**
+ * Intelligently merges an incoming room snapshot (from Firestore or Server) with local state
+ * so remote pilot joins, ready states, resource contributions, and wipe/continue transitions
+ * are applied immediately without regressing active local telemetry or upgrades.
+ */
+function mergeRoomSnapshot(
+  current: SpeedrunRoom | null,
+  incoming: SpeedrunRoom,
+  localPilotId: string
+): SpeedrunRoom {
+  if (!current) return incoming;
+
+  const incomingContinueAt = incoming.lastContinueAt || 0;
+  const currentContinueAt = current.lastContinueAt || 0;
+  const incomingWipeAt = incoming.lastWipeAt || 0;
+  const currentWipeAt = current.lastWipeAt || 0;
+
+  const isNewLifecycleTransition =
+    incomingContinueAt > currentContinueAt ||
+    incomingWipeAt > currentWipeAt ||
+    incoming.status !== current.status ||
+    (incoming.sharedState?.runNumber || 1) > (current.sharedState?.runNumber || 1);
+
+  if (isNewLifecycleTransition) {
+    return incoming;
+  }
+
+  // Merge pilots: take all incoming pilots; if room is actively playing, preserve fresher local pilot telemetry
+  const mergedPilots: Record<string, TeamPilot> = {
+    ...(incoming.pilots || {}),
+  };
+
+  if (
+    incoming.status === 'active' &&
+    current.status === 'active' &&
+    current.pilots?.[localPilotId] &&
+    mergedPilots[localPilotId]
+  ) {
+    const localP = current.pilots[localPilotId];
+    const incP = mergedPilots[localPilotId];
+    if ((localP.lastHeartbeat || 0) >= (incP.lastHeartbeat || 0)) {
+      mergedPilots[localPilotId] = {
+        ...incP,
+        x: localP.x,
+        polarity: localP.polarity,
+        integrity: localP.integrity,
+        isKnocked: localP.isKnocked,
+        knockedAt: localP.knockedAt,
+        knockedUntil: localP.knockedUntil,
+        runPulses: localP.runPulses,
+        lastHeartbeat: localP.lastHeartbeat,
+      };
+    }
+  }
+
+  const sameRun =
+    (incoming.sharedState?.runNumber || 1) === (current.sharedState?.runNumber || 1) &&
+    incoming.status === 'active' &&
+    current.status === 'active';
+
+  const mergedShared: SharedSpeedrunState = sameRun
+    ? {
+        ...current.sharedState,
+        ...incoming.sharedState,
+        act1SubPart: Math.max(
+          current.sharedState?.act1SubPart || 1,
+          incoming.sharedState?.act1SubPart || 1
+        ) as 1 | 2,
+        act1Bits:
+          (incoming.sharedState?.act1SubPart || 1) > (current.sharedState?.act1SubPart || 1)
+            ? incoming.sharedState.act1Bits
+            : Math.max(
+                current.sharedState?.act1Bits || 0,
+                incoming.sharedState?.act1Bits || 0
+              ),
+        act1Resolution:
+          (incoming.sharedState?.act1SubPart || 1) === 2
+            ? Math.max(
+                current.sharedState?.act1Resolution || 0,
+                incoming.sharedState?.act1Resolution || 0
+              )
+            : current.sharedState?.act1Resolution || 0,
+        runPulses: Math.max(
+          current.sharedState?.runPulses || 0,
+          incoming.sharedState?.runPulses || 0
+        ),
+      }
+    : incoming.sharedState;
+
+  return {
+    ...current,
+    ...incoming,
+    pilots: mergedPilots,
+    sharedState: mergedShared,
+  };
+}
+
+let lastFirestoreTelemetryWrite = 0;
+let lastFirestoreKnockedState: boolean | undefined = undefined;
+
 export function broadcastTelemetry(
   roomCode: string,
   pilotId: string,
   data: Partial<TeamPilot>
 ): void {
   const code = roomCode.toUpperCase();
+  const now = Date.now();
   const telemetryEvent = {
     type: 'TELEMETRY',
     roomCode: code,
     pilotId,
     data,
-    time: Date.now(),
+    time: now,
   };
   notifyInTabListeners(code, telemetryEvent);
   try {
     squadChannel?.postMessage(telemetryEvent);
   } catch {}
 
-  // Send over live WebSocket if open for cross-device real-time sync
+  // Throttled Firestore telemetry sync (every 1200ms, or immediately when knocked status changes)
+  // Ensures cross-instance mobile devices see live pilot position, health, ghost state, and pulse pacing
+  const knockedChanged =
+    data.isKnocked !== undefined && data.isKnocked !== lastFirestoreKnockedState;
+  if (knockedChanged || now - lastFirestoreTelemetryWrite > 1200) {
+    lastFirestoreTelemetryWrite = now;
+    if (data.isKnocked !== undefined) {
+      lastFirestoreKnockedState = data.isKnocked;
+    }
+    const local = getLocalRoom(code);
+    const pilotObj = local?.pilots?.[pilotId];
+    if (pilotObj) {
+      const updatedPilot: TeamPilot = sanitizeForFirestore({
+        ...pilotObj,
+        ...data,
+        lastHeartbeat: now,
+      });
+      const fsFields: Record<string, any> = {
+        [`pilots.${pilotId}`]: updatedPilot,
+        updatedAt: new Date(now).toISOString(),
+      };
+      if (
+        local?.status === 'active' &&
+        typeof data.runPulses === 'number' &&
+        data.runPulses > (local.sharedState?.runPulses || 0)
+      ) {
+        fsFields['sharedState.runPulses'] = data.runPulses;
+      }
+      void updateRoomFieldsInFirestore(code, fsFields);
+    }
+  }
+
+  // Send over live WebSocket if open for sub-50ms same-instance sync
   if (activeSocket && activeSocket.readyState === WebSocket.OPEN) {
     try {
       activeSocket.send(
@@ -343,7 +566,8 @@ export function clearUrlRoomParam(): void {
 }
 
 /**
- * Create a new Squad Co-Op Room on the Express + WebSocket Server (zero Firestore usage)
+ * Create a new Squad Co-Op Room persisted in BOTH Cloud Firestore (speedrun_rooms/{code})
+ * and the Express + WebSocket Server so any mobile phone on any network or Cloud Run instance can join.
  */
 export async function createSpeedrunRoom(
   initials?: string,
@@ -353,29 +577,9 @@ export async function createSpeedrunRoom(
   const pilotInitials = (initials || getPlayerCode() || 'PIL').toUpperCase();
   const pilotColor = color || getPilotBeamColor();
   const preferredCode = generateRoomCode();
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
 
-  try {
-    const res = await fetch('/api/squad/rooms', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        pilotId,
-        initials: pilotInitials,
-        color: pilotColor,
-        preferredCode,
-      }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && data.room) {
-        saveLastSpeedrunRoomCode(data.room.code);
-        broadcastRoomUpdate(data.room);
-        return data.room as SpeedrunRoom;
-      }
-    }
-  } catch {}
-
-  // Offline/local fallback if server is temporarily unreachable
   const hostPilot: TeamPilot = {
     id: pilotId,
     initials: pilotInitials,
@@ -386,12 +590,12 @@ export async function createSpeedrunRoom(
     isKnocked: false,
     x: 0.5,
     polarity: 0,
-    lastHeartbeat: Date.now(),
+    lastHeartbeat: now,
     slotIndex: 0,
-    joinedAt: Date.now(),
+    joinedAt: now,
   };
 
-  const roomData: SpeedrunRoom = {
+  let roomData: SpeedrunRoom = {
     id: preferredCode,
     code: preferredCode,
     hostPilotId: pilotId,
@@ -415,17 +619,40 @@ export async function createSpeedrunRoom(
       isBossActive: false,
       lastAction: 'Room initialized by host ' + pilotInitials,
     },
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: nowIso,
+    updatedAt: nowIso,
   };
 
-  saveLastSpeedrunRoomCode(preferredCode);
+  // 1. Register on Express server if available
+  try {
+    const res = await fetch('/api/squad/rooms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pilotId,
+        initials: pilotInitials,
+        color: pilotColor,
+        preferredCode,
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.room) {
+        roomData = data.room as SpeedrunRoom;
+      }
+    }
+  } catch {}
+
+  // 2. Always persist to Cloud Firestore so other phones on live / other Cloud Run instances find it immediately
+  await saveRoomToFirestore(roomData, false);
+
+  saveLastSpeedrunRoomCode(roomData.code);
   broadcastRoomUpdate(roomData);
   return roomData;
 }
 
 /**
- * Join an existing Squad Co-Op Room via Express + WebSocket Server (zero Firestore usage)
+ * Join an existing Squad Co-Op Room via Cloud Firestore + Express/WebSocket Server
  */
 export async function joinSpeedrunRoom(
   roomCodeInput: string,
@@ -444,6 +671,13 @@ export async function joinSpeedrunRoom(
   const pilotInitials = (initials || getPlayerCode() || 'PIL').toUpperCase();
   const pilotColor = color || getPilotBeamColor();
 
+  // 1. Fetch room from Cloud Firestore first so we have the authoritative cross-instance room state
+  const firestoreRoom = await fetchRoomFromFirestore(code);
+  const fallbackCandidate = firestoreRoom || getLocalRoom(code);
+
+  // 2. Attempt Express server join (passing fallbackCandidate so any Cloud Run instance is immediately hydrated)
+  let serverJoinedRoom: SpeedrunRoom | null = null;
+  let serverError: string | undefined;
   try {
     const res = await fetch(`/api/squad/rooms/${encodeURIComponent(code)}/join`, {
       method: 'POST',
@@ -452,61 +686,33 @@ export async function joinSpeedrunRoom(
         pilotId,
         initials: pilotInitials,
         color: pilotColor,
+        fallbackRoom: fallbackCandidate,
       }),
     });
-
     const data = await res.json();
     if (res.ok && data.success && data.room) {
-      saveLastSpeedrunRoomCode(code);
-      broadcastRoomUpdate(data.room);
-      return { success: true, room: data.room as SpeedrunRoom };
-    }
-
-    // If server doesn't have the room yet (e.g. after server restart), check if local storage has it
-    const localFallback = getLocalRoom(code);
-    if (!res.ok && res.status === 404 && localFallback) {
-      // Rehydrate on server and join
-      await sendServerRoomAction(code, 'syncProgress', pilotId, {
-        updates: localFallback.sharedState,
-      });
-      const retryRes = await fetch(
-        `/api/squad/rooms/${encodeURIComponent(code)}/join`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            pilotId,
-            initials: pilotInitials,
-            color: pilotColor,
-          }),
-        }
-      );
-      if (retryRes.ok) {
-        const retryData = await retryRes.json();
-        if (retryData.success && retryData.room) {
-          saveLastSpeedrunRoomCode(code);
-          broadcastRoomUpdate(retryData.room);
-          return { success: true, room: retryData.room as SpeedrunRoom };
-        }
-      }
-    }
-
-    if (data?.error && !localFallback) {
-      return { success: false, error: data.error };
+      serverJoinedRoom = data.room as SpeedrunRoom;
+    } else if (data?.error) {
+      serverError = data.error;
     }
   } catch {}
 
-  // Fallback to local room cache if available
-  const room = getLocalRoom(code);
-  if (!room) {
+  const baseRoom = serverJoinedRoom || firestoreRoom || getLocalRoom(code);
+  if (!baseRoom) {
     return {
       success: false,
-      error: `Squad Room [${code}] not found. Check code or create a new room.`,
+      error: serverError || `Squad Room [${code}] not found. Check code or create a new room.`,
     };
   }
 
-  const currentPilots = room.pilots || {};
+  // Merge any pilots from firestoreRoom so no pilot is ever lost across instances
+  const currentPilots: Record<string, TeamPilot> = {
+    ...(firestoreRoom?.pilots || {}),
+    ...(baseRoom.pilots || {}),
+  };
   const pilotKeys = Object.keys(currentPilots);
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
 
   if (currentPilots[pilotId]) {
     const existing = currentPilots[pilotId];
@@ -514,15 +720,31 @@ export async function joinSpeedrunRoom(
       ...existing,
       initials: pilotInitials,
       color: pilotColor,
-      lastHeartbeat: Date.now(),
-      slotIndex: typeof existing.slotIndex === 'number' ? existing.slotIndex : 1,
-      joinedAt: existing.joinedAt || Date.now(),
+      lastHeartbeat: now,
+      slotIndex: typeof existing.slotIndex === 'number' ? existing.slotIndex : existing.isHost ? 0 : 1,
+      joinedAt: existing.joinedAt || now,
     };
+    const nextCount = Object.keys(currentPilots).length;
+    const maxBoss1Hp = getTeamBossMaxHp(nextCount);
+    const maxBoss2Hp = getTeamBossMaxHp(nextCount);
+
     const updatedRoom: SpeedrunRoom = {
-      ...room,
+      ...baseRoom,
       pilots: { ...currentPilots, [pilotId]: updatedPilot },
-      updatedAt: new Date().toISOString(),
+      sharedState: {
+        ...baseRoom.sharedState,
+        maxBoss1Hp,
+        maxBoss2Hp,
+      },
+      updatedAt: nowIso,
     };
+
+    await updateRoomFieldsInFirestore(code, {
+      [`pilots.${pilotId}`]: sanitizeForFirestore(updatedPilot),
+      'sharedState.maxBoss1Hp': maxBoss1Hp,
+      'sharedState.maxBoss2Hp': maxBoss2Hp,
+      updatedAt: nowIso,
+    });
     saveLastSpeedrunRoomCode(code);
     broadcastRoomUpdate(updatedRoom);
     return { success: true, room: updatedRoom };
@@ -558,9 +780,9 @@ export async function joinSpeedrunRoom(
     isKnocked: false,
     x: 0.5,
     polarity: 0,
-    lastHeartbeat: Date.now(),
+    lastHeartbeat: now,
     slotIndex: assignedSlot,
-    joinedAt: Date.now(),
+    joinedAt: now,
   };
 
   const nextCount = pilotKeys.length + 1;
@@ -568,11 +790,33 @@ export async function joinSpeedrunRoom(
   const maxBoss2Hp = getTeamBossMaxHp(nextCount);
 
   const updatedRoom: SpeedrunRoom = {
-    ...room,
+    ...baseRoom,
     pilots: { ...currentPilots, [pilotId]: newPilot },
-    sharedState: { ...room.sharedState, maxBoss1Hp, maxBoss2Hp },
-    updatedAt: new Date().toISOString(),
+    sharedState: {
+      ...baseRoom.sharedState,
+      maxBoss1Hp,
+      maxBoss2Hp,
+      ...(baseRoom.sharedState?.isBossActive
+        ? {}
+        : { boss1Hp: maxBoss1Hp, boss2Hp: maxBoss2Hp }),
+    },
+    updatedAt: nowIso,
   };
+
+  // Persist pilot join directly to Cloud Firestore so host phone receives real-time onSnapshot update
+  const updatedOk = await updateRoomFieldsInFirestore(code, {
+    [`pilots.${pilotId}`]: sanitizeForFirestore(newPilot),
+    'sharedState.maxBoss1Hp': maxBoss1Hp,
+    'sharedState.maxBoss2Hp': maxBoss2Hp,
+    ...(baseRoom.sharedState?.isBossActive
+      ? {}
+      : { 'sharedState.boss1Hp': maxBoss1Hp, 'sharedState.boss2Hp': maxBoss2Hp }),
+    updatedAt: nowIso,
+  });
+  if (!updatedOk) {
+    await saveRoomToFirestore(updatedRoom, true);
+  }
+
   saveLastSpeedrunRoomCode(code);
   broadcastRoomUpdate(updatedRoom);
   return { success: true, room: updatedRoom };
@@ -603,6 +847,20 @@ export async function leaveSpeedrunRoom(
     broadcastRoomUpdate(local);
   }
 
+  try {
+    const { deleteField } = await getFirestoreSdk();
+    const fsUpdates: Record<string, any> = {
+      [`pilots.${pilotId}`]: deleteField(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (local && local.hostPilotId && local.pilots?.[local.hostPilotId]) {
+      fsUpdates.hostPilotId = local.hostPilotId;
+      fsUpdates[`pilots.${local.hostPilotId}.isHost`] = true;
+      fsUpdates[`pilots.${local.hostPilotId}.slotIndex`] = 0;
+    }
+    await updateRoomFieldsInFirestore(code, fsUpdates);
+  } catch {}
+
   await sendServerRoomAction(code, 'leave', pilotId, {});
 }
 
@@ -615,13 +873,21 @@ export async function setPilotReady(
   isReady: boolean
 ): Promise<void> {
   const code = roomCode.toUpperCase();
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
   const local = getLocalRoom(code);
   if (local && local.pilots && local.pilots[pilotId]) {
     local.pilots[pilotId].isReady = isReady;
-    local.pilots[pilotId].lastHeartbeat = Date.now();
-    local.updatedAt = new Date().toISOString();
+    local.pilots[pilotId].lastHeartbeat = now;
+    local.updatedAt = nowIso;
     broadcastRoomUpdate(local);
   }
+
+  void updateRoomFieldsInFirestore(code, {
+    [`pilots.${pilotId}.isReady`]: isReady,
+    [`pilots.${pilotId}.lastHeartbeat`]: now,
+    updatedAt: nowIso,
+  });
 
   await sendServerRoomAction(code, 'ready', pilotId, { isReady });
 }
@@ -631,15 +897,32 @@ export async function setPilotReady(
  */
 export async function launchTeamRun(roomCode: string): Promise<SpeedrunRoom | null> {
   const code = roomCode.toUpperCase();
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
   const local = getLocalRoom(code);
   let optimisticRoom: SpeedrunRoom | null = null;
   if (local) {
     const pilotCount = Math.max(1, Object.keys(local.pilots || {}).length);
     const maxHp = getTeamBossMaxHp(pilotCount);
+    const resetPilots: Record<string, TeamPilot> = {};
+    for (const [pid, p] of Object.entries(local.pilots || {})) {
+      const copy: TeamPilot = {
+        ...p,
+        integrity: 100,
+        isKnocked: false,
+        readyToContinue: false,
+        runPulses: 0,
+      };
+      delete copy.knockedAt;
+      delete copy.knockedUntil;
+      resetPilots[pid] = copy;
+    }
+
     optimisticRoom = {
       ...local,
       status: 'active',
-      lastContinueAt: Date.now(),
+      lastContinueAt: now,
+      pilots: resetPilots,
       sharedState: {
         ...local.sharedState,
         speedrunTime: 0,
@@ -656,33 +939,65 @@ export async function launchTeamRun(roomCode: string): Promise<SpeedrunRoom | nu
         maxBoss2Hp: maxHp,
         isBossActive: false,
         runPulses: 0,
+        lastAction: 'Squad run launched!',
       },
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIso,
     };
     broadcastRoomUpdate(optimisticRoom);
+    void saveRoomToFirestore(optimisticRoom, true);
   }
 
   const res = await sendServerRoomAction(code, 'launch', getLocalPilotId(), {});
+  if (res.room) {
+    void saveRoomToFirestore(res.room, true);
+  }
   return res.room || optimisticRoom || getLocalRoom(code);
 }
 
 /**
- * Subscribe to real-time room updates via Express WebSocket (/ws/squad) + BroadcastChannel + 1s HTTP sync
+ * Subscribe to real-time room updates via:
+ * 1. Cloud Firestore onSnapshot (cross-phone, cross-network, multi-instance live sync)
+ * 2. Express WebSocket (/ws/squad) + 1.5s HTTP sync
+ * 3. Mobile Page Visibility resume handler (instant re-sync after switching apps to text room code)
  */
 export function subscribeToSpeedrunRoom(
   roomCode: string,
   callback: (room: SpeedrunRoom | null) => void
 ): () => void {
   const code = roomCode.toUpperCase();
+  const localPilotId = getLocalPilotId();
   let isDisposed = false;
   let ws: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let firestoreUnsub: (() => void) | null = null;
 
   const initialRoom = getLocalRoom(code);
   if (initialRoom) {
     callback(initialRoom);
   }
+
+  // 1. Attach real-time Cloud Firestore onSnapshot listener
+  getFirestoreSdk()
+    .then(({ db, doc, onSnapshot }) => {
+      if (isDisposed) return;
+      const roomRef = doc(db, 'speedrun_rooms', code);
+      firestoreUnsub = onSnapshot(
+        roomRef,
+        (snap) => {
+          if (isDisposed || !snap.exists()) return;
+          const fsRoom = snap.data() as SpeedrunRoom;
+          if (!fsRoom?.code) return;
+          const merged = mergeRoomSnapshot(getLocalRoom(code), fsRoom, localPilotId);
+          saveLocalRoom(merged);
+          callback(merged);
+        },
+        (err) => {
+          if (isQuotaError(err)) markFirestoreQuotaExhausted();
+        }
+      );
+    })
+    .catch(() => {});
 
   const fetchLatestRoom = () => {
     if (isDisposed || typeof window === 'undefined') return;
@@ -690,17 +1005,18 @@ export function subscribeToSpeedrunRoom(
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!isDisposed && data?.success && data.room) {
-          saveLocalRoom(data.room);
-          callback(data.room);
+          const merged = mergeRoomSnapshot(getLocalRoom(code), data.room, localPilotId);
+          saveLocalRoom(merged);
+          callback(merged);
         }
       })
       .catch(() => {});
   };
 
-  // Initial fetch + periodic 1s sync poll to guarantee zero missed state transitions across devices
+  // Initial fetch + periodic 1.5s sync poll
   fetchLatestRoom();
   if (typeof window !== 'undefined') {
-    pollTimer = setInterval(fetchLatestRoom, 1000);
+    pollTimer = setInterval(fetchLatestRoom, 1500);
   }
 
   let lastTelemetryDiskSave = 0;
@@ -708,8 +1024,9 @@ export function subscribeToSpeedrunRoom(
   const handleIncomingEvent = (msg: any) => {
     if (!msg || isDisposed) return;
     if (msg.type === 'ROOM_UPDATE' && msg.room?.code === code) {
-      saveLocalRoom(msg.room);
-      callback(msg.room);
+      const merged = mergeRoomSnapshot(getLocalRoom(code), msg.room, localPilotId);
+      saveLocalRoom(merged);
+      callback(merged);
     } else if (msg.type === 'TELEMETRY' && msg.roomCode === code) {
       const currentRoom = getLocalRoom(code);
       if (currentRoom && currentRoom.pilots && currentRoom.pilots[msg.pilotId]) {
@@ -727,7 +1044,6 @@ export function subscribeToSpeedrunRoom(
                 ...currentRoom.sharedState,
                 ...msg.sharedState,
                 runPulses: isRoomActive ? (msg.sharedState.runPulses ?? 0) : 0,
-                // Never regress progression fields on out-of-order telemetry packets
                 act1SubPart: Math.max(
                   currentRoom.sharedState?.act1SubPart || 1,
                   msg.sharedState.act1SubPart || 1
@@ -794,7 +1110,7 @@ export function subscribeToSpeedrunRoom(
             JSON.stringify({
               type: 'SUBSCRIBE',
               roomCode: code,
-              pilotId: getLocalPilotId(),
+              pilotId: localPilotId,
               fallbackRoom: getLocalRoom(code),
             })
           );
@@ -832,6 +1148,27 @@ export function subscribeToSpeedrunRoom(
 
   connectWebSocket();
 
+  // Re-sync immediately when returning to mobile browser after switching apps to share room code
+  const handleVisibilityChange = () => {
+    if (isDisposed || typeof document === 'undefined') return;
+    if (document.visibilityState === 'visible') {
+      fetchLatestRoom();
+      fetchRoomFromFirestore(code).then((fsRoom) => {
+        if (!isDisposed && fsRoom) {
+          const merged = mergeRoomSnapshot(getLocalRoom(code), fsRoom, localPilotId);
+          saveLocalRoom(merged);
+          callback(merged);
+        }
+      });
+      if (!ws || ws.readyState === WebSocket.CLOSED) {
+        connectWebSocket();
+      }
+    }
+  };
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+  }
+
   const handleBroadcast = (event: MessageEvent) => {
     handleIncomingEvent(event.data);
   };
@@ -854,6 +1191,11 @@ export function subscribeToSpeedrunRoom(
   return () => {
     isDisposed = true;
     inTabListeners.get(code)?.delete(handleIncomingEvent);
+    if (firestoreUnsub) {
+      try {
+        firestoreUnsub();
+      } catch {}
+    }
     if (reconnectTimer) clearTimeout(reconnectTimer);
     if (pollTimer) clearInterval(pollTimer);
     if (ws) {
@@ -865,6 +1207,9 @@ export function subscribeToSpeedrunRoom(
         ws.close();
       } catch {}
     }
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }
     squadChannel?.removeEventListener('message', handleBroadcast);
     if (typeof window !== 'undefined') {
       window.removeEventListener('storage', handleStorage);
@@ -873,7 +1218,7 @@ export function subscribeToSpeedrunRoom(
 }
 
 /**
- * Update real-time pilot telemetry (WebSocket + BroadcastChannel for zero quota high-frequency position)
+ * Update real-time pilot telemetry (WebSocket + BroadcastChannel + Throttled Firestore Sync)
  */
 export async function updatePilotTelemetry(
   roomCode: string,
@@ -881,8 +1226,6 @@ export async function updatePilotTelemetry(
   data: Partial<TeamPilot> & { runNumber?: number; continueAt?: number }
 ): Promise<void> {
   const code = roomCode.toUpperCase();
-  broadcastTelemetry(code, pilotId, data);
-
   const local = getLocalRoom(code);
   if (local && local.pilots && local.pilots[pilotId]) {
     local.pilots[pilotId] = {
@@ -892,6 +1235,7 @@ export async function updatePilotTelemetry(
     };
     latestRoomByCode.set(code, local);
   }
+  broadcastTelemetry(code, pilotId, data);
 }
 
 /**
@@ -927,7 +1271,7 @@ export async function reportPilotRevived(
 }
 
 /**
- * Deal damage to shared Boss health (WebSocket + Server-Authoritative state)
+ * Deal damage to shared Boss health (Firestore + WebSocket + Server-Authoritative state)
  */
 export async function damageTeamBoss(
   roomCode: string,
@@ -935,16 +1279,24 @@ export async function damageTeamBoss(
   damage: number
 ): Promise<void> {
   const code = roomCode.toUpperCase();
+  const nowIso = new Date().toISOString();
+  const hpKey = bossNum === 1 ? 'boss1Hp' : 'boss2Hp';
   const local = getLocalRoom(code);
+  let nextHp = 0;
   if (local) {
-    const hpKey = bossNum === 1 ? 'boss1Hp' : 'boss2Hp';
     const currentHp =
       local.sharedState[hpKey] ??
       (bossNum === 1 ? local.sharedState.maxBoss1Hp : local.sharedState.maxBoss2Hp);
-    local.sharedState[hpKey] = Math.max(0, currentHp - damage);
-    local.updatedAt = new Date().toISOString();
+    nextHp = Math.max(0, currentHp - damage);
+    local.sharedState[hpKey] = nextHp;
+    local.updatedAt = nowIso;
     broadcastRoomUpdate(local);
   }
+
+  void updateRoomFieldsInFirestore(code, {
+    [`sharedState.${hpKey}`]: nextHp,
+    updatedAt: nowIso,
+  });
 
   void sendServerRoomAction(code, 'damageBoss', getLocalPilotId(), {
     bossNum,
@@ -978,15 +1330,27 @@ export async function contributeTeamResources(
   res: { hz?: number; volts?: number; baud?: number }
 ): Promise<void> {
   const code = roomCode.toUpperCase();
+  const nowIso = new Date().toISOString();
   const local = getLocalRoom(code);
   if (local) {
     local.sharedState.totalHz = (local.sharedState.totalHz || 0) + (res.hz || 0);
     local.sharedState.totalV = (local.sharedState.totalV || 0) + (res.volts || 0);
     local.sharedState.totalBaud =
       (local.sharedState.totalBaud || 0) + (res.baud || 0);
-    local.updatedAt = new Date().toISOString();
+    local.updatedAt = nowIso;
     broadcastRoomUpdate(local);
   }
+
+  // Atomic server-side increment in Firestore so concurrent hits from multiple phones never drop resources
+  getFirestoreSdk()
+    .then(({ increment }) => {
+      const fields: Record<string, any> = { updatedAt: nowIso };
+      if (res.hz) fields['sharedState.totalHz'] = increment(res.hz);
+      if (res.volts) fields['sharedState.totalV'] = increment(res.volts);
+      if (res.baud) fields['sharedState.totalBaud'] = increment(res.baud);
+      void updateRoomFieldsInFirestore(code, fields);
+    })
+    .catch(() => {});
 
   void sendServerRoomAction(code, 'contribute', getLocalPilotId(), { res });
 }
@@ -1008,6 +1372,7 @@ export async function compileTeamProgression(
   }
 ): Promise<void> {
   const code = roomCode.toUpperCase();
+  const nowIso = new Date().toISOString();
   const local = getLocalRoom(code);
   if (local) {
     const currentHz = local.sharedState?.totalHz || 0;
@@ -1022,17 +1387,57 @@ export async function compileTeamProgression(
 
     if (data.newBits !== undefined) {
       local.sharedState.act1Bits = data.newBits;
-      if (data.newBits >= 9) local.sharedState.isBossActive = true;
+      if (data.newBits >= 9) {
+        local.sharedState.isBossActive = true;
+        local.sharedState.runPulses = 0;
+      }
     }
     if (data.newResolution !== undefined) {
       local.sharedState.act1Resolution = data.newResolution;
-      if (data.newResolution >= 9) local.sharedState.isBossActive = true;
+      if (data.newResolution >= 9) {
+        local.sharedState.isBossActive = true;
+        local.sharedState.runPulses = 0;
+      }
     }
     if (data.newSubPart !== undefined) {
       local.sharedState.act1SubPart = data.newSubPart;
+      if (data.newSubPart === 2) {
+        local.sharedState.isBossActive = false;
+        local.sharedState.runPulses = 0;
+      }
     }
-    local.updatedAt = new Date().toISOString();
+    local.updatedAt = nowIso;
     broadcastRoomUpdate(local);
+
+    const fsFields: Record<string, any> = {
+      'sharedState.totalHz': local.sharedState.totalHz,
+      'sharedState.totalV': local.sharedState.totalV,
+      'sharedState.totalBaud': local.sharedState.totalBaud,
+      'sharedState.lastAction': local.sharedState.lastAction,
+      updatedAt: nowIso,
+    };
+    if (data.newBits !== undefined) {
+      fsFields['sharedState.act1Bits'] = data.newBits;
+      if (data.newBits >= 9) {
+        fsFields['sharedState.isBossActive'] = true;
+        fsFields['sharedState.runPulses'] = 0;
+      }
+    }
+    if (data.newResolution !== undefined) {
+      fsFields['sharedState.act1Resolution'] = data.newResolution;
+      if (data.newResolution >= 9) {
+        fsFields['sharedState.isBossActive'] = true;
+        fsFields['sharedState.runPulses'] = 0;
+      }
+    }
+    if (data.newSubPart !== undefined) {
+      fsFields['sharedState.act1SubPart'] = data.newSubPart;
+      if (data.newSubPart === 2) {
+        fsFields['sharedState.isBossActive'] = false;
+        fsFields['sharedState.runPulses'] = 0;
+      }
+    }
+    void updateRoomFieldsInFirestore(code, fsFields);
   }
 
   await sendServerRoomAction(code, 'compile', getLocalPilotId(), {
@@ -1049,12 +1454,21 @@ export async function syncSharedProgress(
   updates: Partial<SharedSpeedrunState>
 ): Promise<void> {
   const code = roomCode.toUpperCase();
+  const nowIso = new Date().toISOString();
   const local = getLocalRoom(code);
   if (local) {
     Object.assign(local.sharedState, updates);
-    local.updatedAt = new Date().toISOString();
+    local.updatedAt = nowIso;
     broadcastRoomUpdate(local);
   }
+
+  const fsFields: Record<string, any> = { updatedAt: nowIso };
+  for (const [k, v] of Object.entries(updates)) {
+    if (v !== undefined) {
+      fsFields[`sharedState.${k}`] = v;
+    }
+  }
+  void updateRoomFieldsInFirestore(code, fsFields);
 
   void sendServerRoomAction(code, 'syncProgress', getLocalPilotId(), {
     updates,
@@ -1072,6 +1486,7 @@ export async function triggerTeamWipe(
   const code = roomCode.toUpperCase();
   saveLastSpeedrunRoomCode(code);
   const now = Date.now();
+  const nowIso = new Date(now).toISOString();
 
   const local = getLocalRoom(code);
   if (local) {
@@ -1097,8 +1512,9 @@ export async function triggerTeamWipe(
         p.runPulses = 0;
       }
     }
-    local.updatedAt = new Date().toISOString();
+    local.updatedAt = nowIso;
     broadcastRoomUpdate(local);
+    void saveRoomToFirestore(local, true);
   }
 
   await sendServerRoomAction(code, 'wipe', getLocalPilotId(), {
@@ -1114,6 +1530,7 @@ export async function continueTeamRun(roomCode: string): Promise<void> {
   const code = roomCode.toUpperCase();
   saveLastSpeedrunRoomCode(code);
   const now = Date.now();
+  const nowIso = new Date(now).toISOString();
 
   const local = getLocalRoom(code);
   if (local) {
@@ -1137,8 +1554,9 @@ export async function continueTeamRun(roomCode: string): Promise<void> {
         delete p.knockedUntil;
       }
     }
-    local.updatedAt = new Date().toISOString();
+    local.updatedAt = nowIso;
     broadcastRoomUpdate(local);
+    void saveRoomToFirestore(local, true);
   }
 
   await sendServerRoomAction(code, 'continue', getLocalPilotId(), {});
@@ -1154,19 +1572,29 @@ export async function voteToContinueRun(
   ready: boolean = true
 ): Promise<{ allReady: boolean; readyCount: number; totalCount: number }> {
   const code = roomCode.toUpperCase();
+  const nowIso = new Date().toISOString();
+
+  // 1. Update pilot's vote in Cloud Firestore immediately
+  await updateRoomFieldsInFirestore(code, {
+    [`pilots.${pilotId}.readyToContinue`]: ready,
+    updatedAt: nowIso,
+  });
+
+  // 2. Also send to Express server
   const res = await sendServerRoomAction(code, 'voteContinue', pilotId, {
     ready,
   });
-  if (res.success && res.extra) {
+  if (res.success && res.extra?.allReady) {
     return res.extra;
   }
 
-  const room = getLocalRoom(code);
-  if (!room) {
+  // 3. Check latest room state from Firestore (or local cache) across all pilots
+  const latestRoom = (await fetchRoomFromFirestore(code)) || getLocalRoom(code);
+  if (!latestRoom) {
     return { allReady: false, readyCount: 0, totalCount: 1 };
   }
 
-  const pilots = room.pilots || {};
+  const pilots = latestRoom.pilots || {};
   const pilotIds = Object.keys(pilots);
   const totalCount = Math.max(1, pilotIds.length);
 
@@ -1178,10 +1606,10 @@ export async function voteToContinueRun(
 
   const allReady = readyCount >= totalCount;
 
-  if (room.pilots && room.pilots[pilotId]) {
-    room.pilots[pilotId].readyToContinue = ready;
-    room.updatedAt = new Date().toISOString();
-    broadcastRoomUpdate(room);
+  if (latestRoom.pilots && latestRoom.pilots[pilotId]) {
+    latestRoom.pilots[pilotId].readyToContinue = ready;
+    latestRoom.updatedAt = nowIso;
+    broadcastRoomUpdate(latestRoom);
   }
 
   if (allReady) {
@@ -1192,7 +1620,7 @@ export async function voteToContinueRun(
 }
 
 /**
- * Pause and Save Squad Run: Progress is preserved on the Express server (24h TTL) & local storage
+ * Pause and Save Squad Run: Progress is preserved in Cloud Firestore, Express server, & local storage
  */
 export async function pauseAndSaveTeamRun(
   roomCode: string,
@@ -1200,6 +1628,7 @@ export async function pauseAndSaveTeamRun(
 ): Promise<void> {
   const code = roomCode.toUpperCase();
   saveLastSpeedrunRoomCode(code);
+  const nowIso = new Date().toISOString();
 
   const local = getLocalRoom(code);
   if (local) {
@@ -1215,8 +1644,9 @@ export async function pauseAndSaveTeamRun(
         p.runPulses = 0;
       }
     }
-    local.updatedAt = new Date().toISOString();
+    local.updatedAt = nowIso;
     broadcastRoomUpdate(local);
+    void saveRoomToFirestore(local, true);
   }
 
   await sendServerRoomAction(code, 'pause', getLocalPilotId(), { checkpoint });
@@ -1229,6 +1659,7 @@ export async function resumeTeamRun(roomCode: string): Promise<SpeedrunRoom | nu
   const code = roomCode.toUpperCase();
   saveLastSpeedrunRoomCode(code);
   const now = Date.now();
+  const nowIso = new Date(now).toISOString();
 
   const local = getLocalRoom(code);
   let optimisticRoom: SpeedrunRoom | null = null;
@@ -1238,15 +1669,16 @@ export async function resumeTeamRun(roomCode: string): Promise<SpeedrunRoom | nu
     const resetPilots: Record<string, TeamPilot> = {};
     if (local.pilots) {
       for (const [k, p] of Object.entries(local.pilots)) {
-        resetPilots[k] = {
+        const copy: TeamPilot = {
           ...p,
           integrity: 100,
           isKnocked: false,
           readyToContinue: false,
           runPulses: 0,
-          knockedAt: undefined,
-          knockedUntil: undefined,
         };
+        delete copy.knockedAt;
+        delete copy.knockedUntil;
+        resetPilots[k] = copy;
       }
     }
     optimisticRoom = {
@@ -1263,9 +1695,10 @@ export async function resumeTeamRun(roomCode: string): Promise<SpeedrunRoom | nu
         lastAction: 'Squad resumed run from saved checkpoint.',
       },
       pilots: resetPilots,
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIso,
     };
     broadcastRoomUpdate(optimisticRoom);
+    void saveRoomToFirestore(optimisticRoom, true);
   }
 
   const res = await sendServerRoomAction(code, 'resume', getLocalPilotId(), {});
@@ -1281,6 +1714,7 @@ export async function returnToPilotRoom(
 ): Promise<void> {
   const code = roomCode.toUpperCase();
   saveLastSpeedrunRoomCode(code);
+  const nowIso = new Date().toISOString();
 
   const local = getLocalRoom(code);
   if (local) {
@@ -1301,8 +1735,9 @@ export async function returnToPilotRoom(
         delete p.knockedUntil;
       }
     }
-    local.updatedAt = new Date().toISOString();
+    local.updatedAt = nowIso;
     broadcastRoomUpdate(local);
+    void saveRoomToFirestore(local, true);
   }
 
   await sendServerRoomAction(code, 'returnToLobby', getLocalPilotId(), {
