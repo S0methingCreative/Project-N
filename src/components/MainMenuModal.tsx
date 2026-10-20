@@ -332,7 +332,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   };
 
   const handleVerifyDevCode = () => {
-    if (devCodeInput.trim() === '1111') {
+    if (devCodeInput.trim() === '9376') {
       handleToggleDevTools(true);
       setIsDevCodePromptOpen(false);
       setDevCodeInput('');
@@ -589,7 +589,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
               </div>
             )}
 
-            {/* DEV TOOL MODE LOCK OVERRIDE PILL (Only visible when Dev Tools enabled via 1111) */}
+            {/* DEV TOOL MODE LOCK OVERRIDE PILL (Only visible when Dev Tools enabled via 9376) */}
             {userSettings.controls.devToolsEnabled && (
               <div className="flex items-center justify-between px-1 py-0.5 rounded bg-amber-950/30 border border-amber-500/30 text-[10px] font-mono text-amber-300">
                 <span className="font-bold flex items-center gap-1">
@@ -1007,7 +1007,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                   </div>
                 </div>
 
-                {/* Developer Tools Toggle (Requires passcode 1111) */}
+                {/* Developer Tools Toggle (Requires passcode 9376) */}
                 <div className="p-2.5 rounded-lg bg-neutral-900/80 border border-neutral-800 space-y-2">
                   <div className="flex items-center justify-between">
                     <div>

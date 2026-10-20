@@ -200,7 +200,12 @@ function broadcastToRoom(roomCode: string, payload: unknown, excludeWs?: WebSock
   }
 }
 
-// Periodic 24-hour TTL garbage collection (runs every 15 minutes)
+// Rate limiting for Squad Co-Op room creation: max 10 rooms per 5 minutes per IP address
+const roomCreationRateMap = new Map<string, number[]>();
+const ROOM_CREATION_RATE_WINDOW_MS = 5 * 60 * 1000;
+const MAX_ROOM_CREATIONS_PER_WINDOW = 10;
+
+// Periodic 24-hour TTL garbage collection & rate limiter cleanup (runs every 15 minutes)
 setInterval(() => {
   const now = Date.now();
   for (const [code, room] of squadRooms.entries()) {
@@ -209,6 +214,16 @@ setInterval(() => {
       squadRooms.delete(code);
       roomSubscriptions.delete(code);
       lastFirestorePersistByRoom.delete(code);
+    }
+  }
+
+  // Cleanup stale IP rate limiting entries
+  for (const [ip, timestamps] of roomCreationRateMap.entries()) {
+    const active = timestamps.filter(t => now - t < ROOM_CREATION_RATE_WINDOW_MS);
+    if (active.length === 0) {
+      roomCreationRateMap.delete(ip);
+    } else {
+      roomCreationRateMap.set(ip, active);
     }
   }
 }, 15 * 60 * 1000);
@@ -233,6 +248,15 @@ function applyRoomAction(
     }
 
     case "launch": {
+      // Security check: Only the designated room host may launch the squad run
+      if (room.hostPilotId && pilotId !== room.hostPilotId) {
+        console.warn(`[Squad Room ${room.code}] Unauthorized launch attempt by pilot '${pilotId}' (Host is '${room.hostPilotId}').`);
+        return {
+          broadcastType: "NONE",
+          extra: { error: "Only the squad host can launch the run." },
+        };
+      }
+
       const pilotCount = Math.max(1, Object.keys(room.pilots).length);
       const maxHp = getTeamBossMaxHp(pilotCount);
       room.status = "active";
@@ -570,6 +594,24 @@ app.get("/api/health", (_req, res) => {
 
 // Create a new Squad Co-Op Room
 app.post("/api/squad/rooms", async (req, res) => {
+  // IP-based sliding-window rate limiting to prevent spam and room flooding
+  const rawIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown";
+  const clientIp = (Array.isArray(rawIp) ? rawIp[0] : String(rawIp)).split(",")[0].trim();
+  const now = Date.now();
+  const recentCreations = (roomCreationRateMap.get(clientIp) || []).filter(
+    (timestamp) => now - timestamp < ROOM_CREATION_RATE_WINDOW_MS
+  );
+
+  if (recentCreations.length >= MAX_ROOM_CREATIONS_PER_WINDOW) {
+    res.status(429).json({
+      success: false,
+      error: "Too many squad rooms created recently. Please wait a few minutes before creating a new one.",
+    });
+    return;
+  }
+  recentCreations.push(now);
+  roomCreationRateMap.set(clientIp, recentCreations);
+
   const { pilotId, initials, color, preferredCode } = req.body || {};
   const hostId = String(pilotId || "pilot_host");
   const hostInitials = String(initials || "PIL").toUpperCase().slice(0, 3);
@@ -580,7 +622,6 @@ app.post("/api/squad/rooms", async (req, res) => {
       ? preferredCode.toUpperCase()
       : generateUniqueRoomCode();
 
-  const now = Date.now();
   const nowIso = new Date(now).toISOString();
 
   const hostPilot: ServerTeamPilot = {
@@ -771,6 +812,14 @@ app.post("/api/squad/rooms/:code/action", async (req, res) => {
 
   const actionType = String(type || "");
   const result = applyRoomAction(room, actionType, String(pilotId || ""), payload);
+  if (result.broadcastType === "NONE" && result.extra?.error) {
+    res.status(403).json({
+      success: false,
+      error: result.extra.error,
+      room,
+    });
+    return;
+  }
   if (result.broadcastType === "ROOM_UPDATE") {
     await persistRoomToFirestore(room, true);
     broadcastToRoom(code, { type: "ROOM_UPDATE", room });

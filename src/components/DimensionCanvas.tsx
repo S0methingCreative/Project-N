@@ -1815,6 +1815,12 @@ export const DimensionCanvas: React.FC<Props> = ({
     // Never submit leaderboard records during Squad Co-Op mode
     if (gameModeRef.current === 'squad' || teamRoomRef.current) return;
 
+    // Anti-cheat: Never submit global leaderboard records if Dev Tools are active
+    if (userSettingsRef.current?.controls?.devToolsEnabled) {
+      console.info('[Leaderboard] Global record submission bypassed: Developer Tools active.');
+      return;
+    }
+
     const now = Date.now();
     const payloadHash = JSON.stringify({ mode, ...data });
     if (
@@ -1963,7 +1969,7 @@ export const DimensionCanvas: React.FC<Props> = ({
   };
 
   const handleVerifyDevCode = () => {
-    if (devCodeInput.trim() === '1111') {
+    if (devCodeInput.trim() === '9376') {
       handleToggleDevTools(true);
       setIsDevCodePromptOpen(false);
       setDevCodeInput('');
@@ -6820,6 +6826,12 @@ export const DimensionCanvas: React.FC<Props> = ({
                 </div>
               </div>
 
+              {Boolean(userSettingsRef.current?.controls?.devToolsEnabled) && (
+                <div className="mb-4 text-[10px] font-mono text-amber-400 bg-amber-950/50 border border-amber-600/40 rounded p-2 text-center font-bold">
+                  ⚠️ DEV MODE ACTIVE: Speed Run time saved locally only (Global Leaderboard bypassed)
+                </div>
+              )}
+
               <div className="text-xs text-neutral-400 font-mono mb-4">
                 Select your next challenge mode:
               </div>
@@ -6925,6 +6937,12 @@ export const DimensionCanvas: React.FC<Props> = ({
                 </div>
               </div>
 
+              {Boolean(userSettingsRef.current?.controls?.devToolsEnabled) && (
+                <div className="mb-3 text-[10px] font-mono text-amber-400 bg-amber-950/50 border border-amber-600/40 rounded p-1.5 text-center font-bold">
+                  ⚠️ DEV MODE ACTIVE: Survival telemetry saved locally only (Global Leaderboard bypassed)
+                </div>
+              )}
+
               {/* 1-SECOND ACCIDENTAL CLICK BUFFER: subtle small indicator while buttons are greyed out */}
               {deathBufferSeconds > 0 && (
                 <div className="flex items-center justify-center gap-1.5 text-[10px] font-mono text-neutral-400 py-0.5 mb-3">
@@ -7009,7 +7027,13 @@ export const DimensionCanvas: React.FC<Props> = ({
                   <span className="text-sm font-bold text-amber-300">{formatTime(arcadeKillModal.time)}</span>
                 </div>
                 <div className="text-[10px] text-purple-400/90 italic pt-1 border-t border-neutral-800">
-                  ✓ Recorded into the High Scores Records Vault.
+                  {userSettingsRef.current?.controls?.devToolsEnabled ? (
+                    <span className="text-amber-400 font-bold not-italic">
+                      ⚠️ DEV MODE ACTIVE: Saved locally only (Global Leaderboard submission disabled)
+                    </span>
+                  ) : (
+                    '✓ Recorded into the High Scores Records Vault.'
+                  )}
                 </div>
               </div>
 
@@ -7099,6 +7123,11 @@ export const DimensionCanvas: React.FC<Props> = ({
                 <div className="pt-2 border-t border-neutral-800 text-[11px] text-emerald-400 font-bold">
                   Corrupted Sovereign conquered across escalating difficulty (Easy → Hard at Bit 9 with Cycling 2)!
                 </div>
+                {Boolean(userSettingsRef.current?.controls?.devToolsEnabled) && (
+                  <div className="text-[10px] font-mono text-amber-400 bg-amber-950/50 border border-amber-600/40 rounded p-1.5 text-center font-bold">
+                    ⚠️ DEV MODE ACTIVE: Global Leaderboard &amp; First-To-Complete bypassed
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-col sm:flex-row gap-3 pt-2">
@@ -7296,7 +7325,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                     </div>
                   </div>
 
-                  {/* Developer Tools Toggle (Requires passcode 1111) */}
+                  {/* Developer Tools Toggle (Requires passcode 9376) */}
                   <div className="p-3 rounded-xl bg-neutral-900/80 border border-neutral-800 space-y-2">
                     <div className="flex items-center justify-between">
                       <div>

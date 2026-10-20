@@ -36,6 +36,15 @@ import {
   getPlayerCode,
   setPlayerCode,
 } from '../utils/pilotProfile';
+import { loadUserSettings } from '../utils/settings';
+
+export function isDevModeActive(): boolean {
+  try {
+    return Boolean(loadUserSettings()?.controls?.devToolsEnabled);
+  } catch {
+    return false;
+  }
+}
 
 export type { PilotBeamColor, BeamColorConfig };
 export {
@@ -339,7 +348,7 @@ export function getLocalPlayerStoryProgression(code: string): StoryScoreEntry {
 
 export async function syncPlayerStoryProgress(): Promise<boolean> {
   if (typeof window === 'undefined') return false;
-  if (isDevelopmentEnvironment()) return false;
+  if (isDevModeActive() || isDevelopmentEnvironment()) return false;
   const playerCode = getPlayerCode();
   if (!playerCode || isBlockedFromLeaderboard(playerCode)) return false;
 
@@ -681,7 +690,7 @@ export async function submitStoryScore(entry: Omit<StoryScoreEntry, 'id' | 'crea
 
   // 1. Check previous local best before updating cache to prevent redundant Firestore writes
   const curCached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
-  const prevEntry = curCached.find(e => e.initials === cleanInitials);
+  const prevEntry = curCached.find((e: any) => e.initials === cleanInitials);
   const isNewStoryBest =
     !prevEntry ||
     incomingCompletions > (prevEntry.completions || 0) ||
@@ -696,8 +705,8 @@ export async function submitStoryScore(entry: Omit<StoryScoreEntry, 'id' | 'crea
     return true;
   }
 
-  // If pilot is blocked from global leaderboard, running in development console, or Firestore quota reached, keep local only and return cleanly
-  if (isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
+  // If pilot is blocked from global leaderboard, running in development console, dev mode is active, or Firestore quota reached, keep local only and return cleanly
+  if (isDevModeActive() || isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
     console.info(`[Leaderboard] Story score for '${cleanInitials}' saved to local storage.`);
     return true;
   }
@@ -892,7 +901,7 @@ export async function submitArcadeScore(entry: Omit<ArcadeScoreEntry, 'id' | 'cr
   };
 
   const current = loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES);
-  const prevBest = current.find(e => e.initials === cleanInitials);
+  const prevBest = current.find((e: any) => e.initials === cleanInitials);
   const isNewBest =
     !prevBest ||
     payload.stageNum > prevBest.stageNum ||
@@ -906,8 +915,8 @@ export async function submitArcadeScore(entry: Omit<ArcadeScoreEntry, 'id' | 'cr
     return true;
   }
 
-  // If pilot is blocked from global leaderboard, running in development console, or Firestore quota reached, save locally and return cleanly
-  if (isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
+  // If pilot is blocked from global leaderboard, running in development console, dev mode is active, or Firestore quota reached, save locally and return cleanly
+  if (isDevModeActive() || isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
     console.info(`[Leaderboard] Arcade score for '${cleanInitials}' saved to local storage.`);
     return true;
   }
@@ -1055,7 +1064,7 @@ export async function submitSpeedrunScore(entry: Omit<SpeedrunScoreEntry, 'id' |
   };
 
   const current = loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES);
-  const prevBest = current.find(e => e.initials === cleanInitials);
+  const prevBest = current.find((e: any) => e.initials === cleanInitials);
   const isNewBest = !prevBest || payload.timeSeconds < prevBest.timeSeconds;
 
   const updated = consolidateSpeedrunScores([...current, { id: docId, ...payload }]);
@@ -1065,8 +1074,8 @@ export async function submitSpeedrunScore(entry: Omit<SpeedrunScoreEntry, 'id' |
     return true;
   }
 
-  // If pilot is blocked from global leaderboard, running in development console, or Firestore quota reached, save locally and return cleanly
-  if (isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
+  // If pilot is blocked from global leaderboard, running in development console, dev mode is active, or Firestore quota reached, save locally and return cleanly
+  if (isDevModeActive() || isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
     console.info(`[Leaderboard] Speedrun score for '${cleanInitials}' saved to local storage.`);
     return true;
   }
@@ -1217,7 +1226,7 @@ export async function submitSurvivalScore(entry: Omit<SurvivalScoreEntry, 'id' |
   };
 
   const current = loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES);
-  const prevBest = current.find(e => e.initials === cleanInitials);
+  const prevBest = current.find((e: any) => e.initials === cleanInitials);
   const isNewBest =
     !prevBest ||
     payload.survivalSeconds > prevBest.survivalSeconds ||
@@ -1230,8 +1239,8 @@ export async function submitSurvivalScore(entry: Omit<SurvivalScoreEntry, 'id' |
     return true;
   }
 
-  // If pilot is blocked from global leaderboard, running in development console, or Firestore quota reached, save locally and return cleanly
-  if (isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
+  // If pilot is blocked from global leaderboard, running in development console, dev mode is active, or Firestore quota reached, save locally and return cleanly
+  if (isDevModeActive() || isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
     console.info(`[Leaderboard] Survival score for '${cleanInitials}' saved to local storage.`);
     return true;
   }
@@ -1306,7 +1315,7 @@ export function subscribeStoryFTC(callback: (ftc: FTCEntry | null) => void): Uns
 
 export async function recordStoryFTCIfFirst(initials: string): Promise<{ isFTC: boolean; ftc: FTCEntry }> {
   const cleanInitials = sanitizeInitials(initials);
-  if (isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
+  if (isDevModeActive() || isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
     console.info(`[Leaderboard] Story FTC for '${cleanInitials}' saved to local storage.`);
     const existing = loadFromLocalCache(LOCAL_STORY_FTC_CACHE_KEY, null);
     return {
@@ -1415,7 +1424,7 @@ export async function recordArcadeFTCIfFirst(
   totalHz: number
 ): Promise<{ isFTC: boolean; ftc: FTCEntry }> {
   const cleanInitials = sanitizeInitials(initials);
-  if (isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
+  if (isDevModeActive() || isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
     console.info(`[Leaderboard] Arcade FTC for '${cleanInitials}' saved to local storage.`);
     const existing = loadFromLocalCache(LOCAL_ARCADE_FTC_CACHE_KEY, null);
     return {

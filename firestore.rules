@@ -145,7 +145,7 @@ service cloud.firestore {
     // Speedrun Team Rooms (Multiplayer Co-op Lobby & Synchronization)
     match /speedrun_rooms/{roomId} {
       allow read: if true;
-      allow write: if true;
+      allow write: if isValidId(roomId) && roomId.size() <= 16;
     }
 
     // First To Complete Story Mode (⚡FTC)
