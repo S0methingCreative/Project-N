@@ -18,11 +18,11 @@ import {
   Unlock,
   Crown,
   Palette,
+  Users,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { draw6BitBackground } from '../utils/backgroundArt';
 import { UserSettings, DEFAULT_USER_SETTINGS, saveUserSettings } from '../utils/settings';
-import { GlobalLeaderboardModal } from './GlobalLeaderboardModal';
 import { BeamColorSelectModal } from './BeamColorSelectModal';
 import {
   isDevelopmentEnvironment,
@@ -31,7 +31,11 @@ import {
   hasChosenBeamColor,
   BEAM_COLOR_CONFIGS,
   PilotBeamColor,
-} from '../services/leaderboardService';
+} from '../utils/pilotProfile';
+
+const GlobalLeaderboardModal = React.lazy(() =>
+  import('./GlobalLeaderboardModal').then(m => ({ default: m.GlobalLeaderboardModal }))
+);
 
 export interface StoryProgressSummary {
   hasSave: boolean;
@@ -56,6 +60,7 @@ interface MainMenuModalProps {
   userSettings?: UserSettings;
   onUpdateSettings?: (settings: UserSettings) => void;
   isMobile?: boolean;
+  onOpenTeamModal?: () => void;
 }
 
 export const MainMenuModal: React.FC<MainMenuModalProps> = ({
@@ -70,6 +75,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   userSettings = DEFAULT_USER_SETTINGS,
   onUpdateSettings,
   isMobile = false,
+  onOpenTeamModal,
 }) => {
   const [activeTab, setActiveTab] = useState<'modes' | 'highscores' | 'options'>('modes');
   const [optionsSubTab, setOptionsSubTab] = useState<'audio' | 'control'>('audio');
@@ -187,7 +193,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   };
 
   const isModeUnlocked = (mode: GameMode): boolean => {
-    if (mode === 'story' || mode === 'arcade') return true;
+    if (mode === 'story' || mode === 'arcade' || mode === 'squad') return true;
     return Boolean(hasCompletedStory || userSettings.controls.unlockAllModesDev);
   };
 
@@ -203,7 +209,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
     }
 
     // If pilot has not selected a color yet, prompt the selection modal before launching
-    if (!hasChosenBeamColor() && (mode === 'story' || mode === 'arcade' || mode === 'speedrun')) {
+    if (!hasChosenBeamColor() && (mode === 'story' || mode === 'arcade' || mode === 'speedrun' || mode === 'squad')) {
       setPendingLaunchMode(mode);
       setPendingForceNew(forceNew);
       setIsColorModalOpen(true);
@@ -606,9 +612,9 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
               </div>
             )}
 
-            {/* MINIMALIST 3 GAME MODES */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {/* 1. ARCADE (First from the left) */}
+            {/* 4 DISTINCT GAME MODES (2x2 GRID) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* 1. ARCADE */}
               <div
                 onClick={() => handleModeClick('arcade')}
                 className="group p-2.5 rounded-xl bg-neutral-900/80 border border-purple-500/40 hover:border-purple-400 transition-all cursor-pointer flex flex-col justify-between"
@@ -623,17 +629,17 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                       1 LIFE
                     </span>
                   </div>
-                  <p className="text-[10px] text-neutral-300">
-                    Starts at Bit 1 with 1 Life. Scales to Medium at Bit 6, gets hard at 9 (Boss 1). Completes at First Boss.
+                  <p className="text-[10px] text-neutral-300 font-mono">
+                    Starts at Bit 1 with 1 Life. Health refills to 100% on each Bit completion. Completes at First Boss.
                   </p>
                 </div>
                 <div className="mt-2 pt-1.5 border-t border-neutral-800 flex items-center justify-between text-[10px] text-purple-400 font-bold">
-                  <span className="truncate max-w-[110px]">Best: {highScores.arcadeBestStage ? `${highScores.arcadeBestStage}` : 'Bit 1'}</span>
-                  <ArrowRight className="w-3 h-3" />
+                  <span className="truncate max-w-[140px]">Best: {highScores.arcadeBestStage ? `${highScores.arcadeBestStage}` : 'Bit 1'}</span>
+                  <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
                 </div>
               </div>
 
-              {/* 2. SPEED RUN (Middle) */}
+              {/* 2. SPEED RUN (Pure Solo Time Attack) */}
               {(() => {
                 const isUnlocked = isModeUnlocked('speedrun');
                 return (
@@ -649,7 +655,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                       <div className="flex items-center justify-between mb-1">
                         <div className={`flex items-center gap-1 font-bold text-xs ${isUnlocked ? 'text-cyan-400' : 'text-neutral-400'}`}>
                           {isUnlocked ? <Zap className="w-3.5 h-3.5 text-cyan-400" /> : <Lock className="w-3.5 h-3.5 text-amber-400" />}
-                          <span>SPEED RUN</span>
+                          <span>SPEED RUN (SOLO)</span>
                         </div>
                         {isUnlocked ? (
                           <span className="text-[9px] text-cyan-300 px-1 py-0.5 rounded bg-cyan-950 border border-cyan-800/80 font-bold">
@@ -661,9 +667,9 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                           </span>
                         )}
                       </div>
-                      <p className="text-[10px] text-neutral-300">
+                      <p className="text-[10px] text-neutral-300 font-mono">
                         {isUnlocked
-                          ? 'Auto-compiler rush. Defeat sovereigns at maximum speed.'
+                          ? 'Solo auto-compiler rush. Defeat sovereigns at maximum speed.'
                           : 'Locked. Beat Story Mode (10/10 Res final boss) to unlock.'}
                       </p>
                     </div>
@@ -671,7 +677,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                       {isUnlocked ? (
                         <>
                           <span className="text-cyan-400 font-bold">Best: {highScores.speedrunBestTime ? formatTime(highScores.speedrunBestTime) : '--'}</span>
-                          <ArrowRight className="w-3 h-3 text-cyan-400" />
+                          <ArrowRight className="w-3 h-3 text-cyan-400 group-hover:translate-x-0.5 transition-transform" />
                         </>
                       ) : (
                         <>
@@ -684,7 +690,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                 );
               })()}
 
-              {/* 3. SURVIVAL (Far Right) */}
+              {/* 3. SURVIVAL */}
               {(() => {
                 const isUnlocked = isModeUnlocked('survival');
                 return (
@@ -712,7 +718,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                           </span>
                         )}
                       </div>
-                      <p className="text-[10px] text-neutral-300">
+                      <p className="text-[10px] text-neutral-300 font-mono">
                         {isUnlocked
                           ? '240 FPS. Endless bosses, rhythm surges, and error spikes.'
                           : 'Locked. Beat Story Mode (10/10 Res final boss) to unlock.'}
@@ -722,7 +728,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                       {isUnlocked ? (
                         <>
                           <span className="text-rose-400 font-bold">Best: {highScores.survivalBestTime ? formatTime(highScores.survivalBestTime) : '--'}</span>
-                          <ArrowRight className="w-3 h-3 text-rose-400" />
+                          <ArrowRight className="w-3 h-3 text-rose-400 group-hover:translate-x-0.5 transition-transform" />
                         </>
                       ) : (
                         <>
@@ -734,6 +740,41 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                   </div>
                 );
               })()}
+
+              {/* 4. SQUAD CO-OP (Dedicated Multiplayer Mode) */}
+              <div
+                onClick={() => {
+                  soundEngine.playCadenceResolution();
+                  if (onOpenTeamModal) {
+                    onOpenTeamModal();
+                  } else {
+                    handleModeClick('squad');
+                  }
+                }}
+                className="group p-2.5 rounded-xl bg-gradient-to-br from-indigo-950/60 via-neutral-900/90 to-cyan-950/40 border border-cyan-500/60 hover:border-cyan-400 hover:shadow-[0_0_20px_rgba(6,182,212,0.25)] transition-all cursor-pointer flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-1.5 font-bold text-xs text-cyan-300">
+                      <Users className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+                      <span>SQUAD CO-OP</span>
+                    </div>
+                    <span className="text-[9px] text-cyan-300 px-1.5 py-0.5 rounded-full bg-cyan-950/90 border border-cyan-500/60 font-bold uppercase tracking-wider">
+                      1–4 PILOTS
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-neutral-300 font-mono">
+                    Multiplayer room. Link beams with squadmates, coordinate polarities &amp; defeat sovereigns together.
+                  </p>
+                </div>
+                <div className="mt-2 pt-1.5 border-t border-neutral-800 flex items-center justify-between text-[10px]">
+                  <span className="text-cyan-400 font-bold font-mono flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block" />
+                    PILOT ROOM LOBBY
+                  </span>
+                  <ArrowRight className="w-3 h-3 text-cyan-400 group-hover:translate-x-0.5 transition-transform" />
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -749,7 +790,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                 </div>
                 <div>
                   <div className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
-                    <span>GLOBAL FIRESTORE LEADERBOARD</span>
+                    <span>GLOBAL HIGH SCORES LEADERBOARD</span>
                     <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-400 text-black font-black">ALL MODES</span>
                   </div>
                   <p className="text-[10px] text-neutral-400 font-mono mt-0.5">
@@ -1090,11 +1131,15 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
         </div>
       </div>
 
-      {/* Global Leaderboard Modal Dialog */}
-      <GlobalLeaderboardModal
-        isOpen={isGlobalLeaderboardOpen}
-        onClose={() => setIsGlobalLeaderboardOpen(false)}
-      />
+      {/* Global Leaderboard Modal Dialog (Lazy Loaded) */}
+      {isGlobalLeaderboardOpen && (
+        <React.Suspense fallback={null}>
+          <GlobalLeaderboardModal
+            isOpen={isGlobalLeaderboardOpen}
+            onClose={() => setIsGlobalLeaderboardOpen(false)}
+          />
+        </React.Suspense>
+      )}
 
       {/* Pilot Beam Color Select Modal Dialog */}
       <BeamColorSelectModal

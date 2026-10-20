@@ -142,6 +142,12 @@ service cloud.firestore {
       allow delete: if isAdmin() || isBannedInitials(resource.data.initials) || resource.data.initials == 'GOD';
     }
 
+    // Speedrun Team Rooms (Multiplayer Co-op Lobby & Synchronization)
+    match /speedrun_rooms/{roomId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
     // First To Complete Story Mode (⚡FTC)
     match /leaderboards_meta/story_ftc {
       allow read: if true;

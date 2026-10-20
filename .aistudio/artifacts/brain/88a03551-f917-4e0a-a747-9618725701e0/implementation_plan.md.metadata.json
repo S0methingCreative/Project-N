@@ -1,6 +1,6 @@
 {
-  "summary": "Design and architecture plan for the 4-Player Co-op Knockout (4.5s High-Pressure Timer) and Team Wipe mechanics for Beta Story Mode.",
-  "updatedAt": "2026-10-18T22:43:46.679143736Z",
+  "summary": "Implementation plan to migrate Squad Co-Op room linking, lobby management, and real-time multiplayer state synchronization from Firestore to the built-in Express server and WebSockets with 24-hour room retention and zero Firestore quota consumption.",
+  "updatedAt": "2026-10-19T19:34:19.719758611Z",
   "requestFeedback": true,
   "userFacing": true
 }

@@ -105,21 +105,17 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
 
     setIsLoading(true);
 
-    // Initial sync and fetch
-    syncPlayerStoryProgress()
-      .catch(() => {})
-      .finally(() => {
-        Promise.all([
-          fetchStoryLeaderboard().then(setStoryScores),
-          fetchArcadeLeaderboard().then(setArcadeScores),
-          fetchSpeedrunLeaderboard().then(setSpeedrunScores),
-          fetchSurvivalLeaderboard().then(setSurvivalScores),
-          fetchStoryFTC().then(setStoryFTC),
-          fetchArcadeFTC().then(setArcadeFTC),
-        ]).finally(() => {
-          setIsLoading(false);
-        });
-      });
+    // Initial read-only fetch (local story progression is merged in fetchStoryLeaderboard without Firestore writes)
+    Promise.all([
+      fetchStoryLeaderboard().then(setStoryScores),
+      fetchArcadeLeaderboard().then(setArcadeScores),
+      fetchSpeedrunLeaderboard().then(setSpeedrunScores),
+      fetchSurvivalLeaderboard().then(setSurvivalScores),
+      fetchStoryFTC().then(setStoryFTC),
+      fetchArcadeFTC().then(setArcadeFTC),
+    ]).finally(() => {
+      setIsLoading(false);
+    });
 
     // Real-time Firestore subscriptions
     const unsubStory = subscribeStoryLeaderboard((scores) => {
@@ -168,7 +164,6 @@ export const GlobalLeaderboardModal: React.FC<GlobalLeaderboardModalProps> = ({
   const handleRefresh = async () => {
     soundEngine.playCadenceResolution();
     setIsLoading(true);
-    await syncPlayerStoryProgress().catch(() => {});
     await Promise.all([
       fetchStoryLeaderboard().then(setStoryScores),
       fetchArcadeLeaderboard().then(setArcadeScores),

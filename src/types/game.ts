@@ -34,7 +34,7 @@ export interface DeathScreenState {
   upgradeDesc?: string;
 }
 
-export type GameMode = 'normal' | 'story' | 'speedrun' | 'survival' | 'arcade';
+export type GameMode = 'normal' | 'story' | 'speedrun' | 'survival' | 'arcade' | 'squad';
 
 export interface HighScores {
   speedrunBestTime?: number; // Lowest time in seconds

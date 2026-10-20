@@ -4,7 +4,7 @@ import {
   BEAM_COLOR_CONFIGS,
   getPilotBeamColor,
   setPilotBeamColor,
-} from '../services/leaderboardService';
+} from '../utils/pilotProfile';
 import { soundEngine } from '../audio/soundEngine';
 import { X, Check, Sparkles, Activity } from 'lucide-react';
 

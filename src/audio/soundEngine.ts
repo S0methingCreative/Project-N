@@ -32,7 +32,7 @@ class SoundEngine {
   private isBossMode: boolean = false;
 
   // Active audio nodes tracking for clean stop
-  private activeMusicOscs: OscillatorNode[] = [];
+  private activeMusicOscs: Set<OscillatorNode> = new Set();
 
   // Harmonic parameters
   private currentMode: HarmonicMode = 'major';
@@ -155,10 +155,10 @@ class SoundEngine {
     if (active) {
       this.bpm = 168; // Driving, pounding dramatic boss pace with key change
     } else {
-      this.bpm = SoundEngine.BPM_MATRIX[this.musicGenre][this.speedZone] || 74;
+      this.bpm = SoundEngine.BPM_MATRIX[this.musicGenre]?.[this.speedZone] || 78;
     }
     if (this.ctx) {
-      this.nextNoteTime = Math.max(this.nextNoteTime, this.ctx.currentTime + 0.05);
+      this.nextNoteTime = this.ctx.currentTime + 0.03;
     }
   }
 
@@ -167,18 +167,19 @@ class SoundEngine {
   }
 
   public setMusicPacing(genre: MusicGenre, zone: SpeedZone = 'easy'): void {
-    if (this.musicGenre === genre && this.speedZone === zone && !this.isBossMode) return;
+    const targetBpm = SoundEngine.BPM_MATRIX[genre]?.[zone] || 78;
+    if (this.musicGenre === genre && this.speedZone === zone && !this.isBossMode && this.bpm === targetBpm) return;
     this.musicGenre = genre;
     this.speedZone = zone;
 
     if (!this.isBossMode) {
-      this.bpm = SoundEngine.BPM_MATRIX[genre][zone] || 74;
+      this.bpm = targetBpm;
     }
 
-    // Smooth reset of step pointer and timestamp
+    // Immediate reset of step pointer and timestamp so genre/zone transitions never lag behind lookahead
     this.currentStep = 0;
     if (this.ctx) {
-      this.nextNoteTime = Math.max(this.nextNoteTime, this.ctx.currentTime + 0.05);
+      this.nextNoteTime = this.ctx.currentTime + 0.03;
     }
   }
 
@@ -254,7 +255,7 @@ class SoundEngine {
         osc.disconnect();
       } catch {}
     }
-    this.activeMusicOscs = [];
+    this.activeMusicOscs.clear();
   }
 
   public stopCarrierDrone(): void {
@@ -268,6 +269,7 @@ class SoundEngine {
   // Core Sequencer Step Scheduler
   private scheduleMusicSteps(): void {
     if (!this.ctx || !this.isMusicActive || !this.musicGain) return;
+    if (this.ctx.state !== 'running') return;
 
     // Guard against desync or suspended context jumping ahead
     const now = this.ctx.currentTime;
@@ -275,7 +277,7 @@ class SoundEngine {
       this.nextNoteTime = now + 0.02;
     }
 
-    const lookahead = 0.16; // 160ms lookahead
+    const lookahead = 0.10; // 100ms tight lookahead for responsive transitions
 
     // Calculate step interval based on current rhythm stage
     let stepDuration: number;
@@ -336,25 +338,21 @@ class SoundEngine {
 
       const chord = waltzChords[bar] || waltzChords[0];
       const duration = (60 / this.bpm) * 2.8; // Long lush decay
+      const chordGain = this.ctx.createGain();
+      chordGain.gain.setValueAtTime(0.0001, time);
+      chordGain.gain.linearRampToValueAtTime(0.065, time + 0.15);
+      chordGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+      chordGain.connect(this.musicGain);
 
       chord.forEach((freq, idx) => {
-        if (!this.ctx || !this.musicGain) return;
+        if (!this.ctx) return;
         const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-
         osc.type = idx === 0 ? 'triangle' : 'sine';
         osc.frequency.setValueAtTime(freq, time);
-
-        gain.gain.setValueAtTime(0.0001, time);
-        gain.gain.linearRampToValueAtTime(0.065, time + 0.15);
-        gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
-
-        osc.connect(gain);
-        gain.connect(this.musicGain);
-
+        osc.connect(chordGain);
         osc.start(time);
         osc.stop(time + duration + 0.05);
-        this.trackActiveOsc(osc, time + duration + 0.05);
+        this.trackActiveOsc(osc, time + duration + 0.05, idx === chord.length - 1 ? chordGain : undefined);
       });
     }
 
@@ -383,7 +381,7 @@ class SoundEngine {
 
       osc.start(time);
       osc.stop(time + 0.55);
-      this.trackActiveOsc(osc, time + 0.55);
+      this.trackActiveOsc(osc, time + 0.55, gain);
     }
 
     // 3. Gentle Sparkling Music-Box Bells (Steps 1, 3, 5)
@@ -411,7 +409,7 @@ class SoundEngine {
 
       osc.start(time);
       osc.stop(time + 0.4);
-      this.trackActiveOsc(osc, time + 0.4);
+      this.trackActiveOsc(osc, time + 0.4, gain);
     }
 
     // 4. Soft brush sway tick on beats 2 and 4 (step 2, 4)
@@ -431,7 +429,7 @@ class SoundEngine {
 
       osc.start(time);
       osc.stop(time + 0.05);
-      this.trackActiveOsc(osc, time + 0.05);
+      this.trackActiveOsc(osc, time + 0.05, gain);
     }
   }
 
@@ -463,7 +461,7 @@ class SoundEngine {
 
       kickOsc.start(time);
       kickOsc.stop(time + 0.13);
-      this.trackActiveOsc(kickOsc, time + 0.13);
+      this.trackActiveOsc(kickOsc, time + 0.13, kickGain);
     }
 
     // 2. Galloping 16th-Note Saw Bassline (C2-C3-C2-C3 jumping octaves)
@@ -490,32 +488,29 @@ class SoundEngine {
 
     bassOsc.start(time);
     bassOsc.stop(time + 0.11);
-    this.trackActiveOsc(bassOsc, time + 0.11);
+    this.trackActiveOsc(bassOsc, time + 0.11, bassGain);
 
-    // 3. Syncopated Rave Stabs on Offbeats (steps 2, 6, 10, 14)
+    // 3. Syncopated Rave Stabs on Offbeats (steps 2, 6, 10, 14) - Shared single GainNode
     if (stepInBar === 2 || stepInBar === 6 || stepInBar === 10 || stepInBar === 14) {
       const stabPitches = bar === 0
         ? [261.63, 329.63, 392.00, 523.25] // C Major stab
         : [220.00, 261.63, 329.63, 440.00]; // A Minor stab
 
-      stabPitches.forEach((freq) => {
-        if (!this.ctx || !this.musicGain) return;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
+      const stabGain = this.ctx.createGain();
+      stabGain.gain.setValueAtTime(0.0001, time);
+      stabGain.gain.linearRampToValueAtTime(0.06, time + 0.01);
+      stabGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.12);
+      stabGain.connect(this.musicGain);
 
+      stabPitches.forEach((freq, idx) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
         osc.type = 'sawtooth';
         osc.frequency.setValueAtTime(freq, time);
-
-        gain.gain.setValueAtTime(0.0001, time);
-        gain.gain.linearRampToValueAtTime(0.06, time + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.12);
-
-        osc.connect(gain);
-        gain.connect(this.musicGain);
-
+        osc.connect(stabGain);
         osc.start(time);
         osc.stop(time + 0.13);
-        this.trackActiveOsc(osc, time + 0.13);
+        this.trackActiveOsc(osc, time + 0.13, idx === stabPitches.length - 1 ? stabGain : undefined);
       });
     }
 
@@ -536,7 +531,7 @@ class SoundEngine {
 
       osc.start(time);
       osc.stop(time + 0.1);
-      this.trackActiveOsc(osc, time + 0.1);
+      this.trackActiveOsc(osc, time + 0.1, gain);
     } else if (stepInBar % 2 === 1) {
       // Crisp 16th Hi-Hat tick
       const osc = this.ctx.createOscillator();
@@ -553,7 +548,7 @@ class SoundEngine {
 
       osc.start(time);
       osc.stop(time + 0.035);
-      this.trackActiveOsc(osc, time + 0.035);
+      this.trackActiveOsc(osc, time + 0.035, gain);
     }
   }
 
@@ -617,7 +612,7 @@ class SoundEngine {
 
       osc.start(time);
       osc.stop(time + 0.13);
-      this.trackActiveOsc(osc, time + 0.13);
+      this.trackActiveOsc(osc, time + 0.13, gain);
     }
 
     // 2. Staccato Math-Rock Bass Pounding on the Odd Meter Accents
@@ -646,7 +641,7 @@ class SoundEngine {
 
       osc.start(time);
       osc.stop(time + 0.2);
-      this.trackActiveOsc(osc, time + 0.2);
+      this.trackActiveOsc(osc, time + 0.2, gain);
     }
 
     // 3. Angular Math Rimshot / Woodblock Ticks marking 2+2+3 and 3+2
@@ -666,7 +661,7 @@ class SoundEngine {
 
       osc.start(time);
       osc.stop(time + 0.04);
-      this.trackActiveOsc(osc, time + 0.04);
+      this.trackActiveOsc(osc, time + 0.04, gain);
     }
   }
 
@@ -706,7 +701,7 @@ class SoundEngine {
 
       osc.start(time);
       osc.stop(time + 0.13);
-      this.trackActiveOsc(osc, time + 0.13);
+      this.trackActiveOsc(osc, time + 0.13, gain);
     }
 
     // 2. Dramatic Stabbing Chords on beats 0 and 4 (and syncopated beat 6 on bar 3)
@@ -720,24 +715,22 @@ class SoundEngine {
 
       const chord = dramaticChords[bar];
       if (chord) {
-        chord.forEach(freq => {
-          if (!this.ctx || !this.musicGain) return;
+        const dur = beat16 === 0 ? 0.35 : 0.22;
+        const chordGain = this.ctx.createGain();
+        chordGain.gain.setValueAtTime(0.001, time);
+        chordGain.gain.linearRampToValueAtTime(0.075, time + 0.02);
+        chordGain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
+        chordGain.connect(this.musicGain);
+
+        chord.forEach((freq, idx) => {
+          if (!this.ctx) return;
           const osc = this.ctx.createOscillator();
-          const gain = this.ctx.createGain();
           osc.type = 'triangle';
           osc.frequency.setValueAtTime(freq, time);
-
-          const dur = beat16 === 0 ? 0.35 : 0.22;
-          gain.gain.setValueAtTime(0.001, time);
-          gain.gain.linearRampToValueAtTime(0.075, time + 0.02);
-          gain.gain.exponentialRampToValueAtTime(0.0001, time + dur);
-
-          osc.connect(gain);
-          gain.connect(this.musicGain);
-
+          osc.connect(chordGain);
           osc.start(time);
           osc.stop(time + dur + 0.02);
-          this.trackActiveOsc(osc, time + dur + 0.02);
+          this.trackActiveOsc(osc, time + dur + 0.02, idx === chord.length - 1 ? chordGain : undefined);
         });
       }
     }
@@ -766,7 +759,7 @@ class SoundEngine {
 
       osc.start(time);
       osc.stop(time + 0.12);
-      this.trackActiveOsc(osc, time + 0.12);
+      this.trackActiveOsc(osc, time + 0.12, gain);
     }
 
     // 4. Punchy Electronic Kick on Beats 0 & 4
@@ -785,19 +778,23 @@ class SoundEngine {
 
       kickOsc.start(time);
       kickOsc.stop(time + 0.1);
-      this.trackActiveOsc(kickOsc, time + 0.1);
+      this.trackActiveOsc(kickOsc, time + 0.1, kickGain);
     }
   }
 
-  private trackActiveOsc(osc: OscillatorNode, stopTime: number): void {
-    this.activeMusicOscs.push(osc);
-    const msUntilStop = Math.max(10, (stopTime - (this.ctx?.currentTime || 0)) * 1000);
-    setTimeout(() => {
-      const idx = this.activeMusicOscs.indexOf(osc);
-      if (idx !== -1) {
-        this.activeMusicOscs.splice(idx, 1);
+  private trackActiveOsc(osc: OscillatorNode, _stopTime?: number, gain?: GainNode): void {
+    this.activeMusicOscs.add(osc);
+    osc.onended = () => {
+      this.activeMusicOscs.delete(osc);
+      try {
+        osc.disconnect();
+      } catch {}
+      if (gain) {
+        try {
+          gain.disconnect();
+        } catch {}
       }
-    }, msUntilStop + 50);
+    };
   }
 
   // =========================================================================

@@ -12,116 +12,48 @@ import {
   Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import {
+  isFirestoreQuotaExhausted,
+  markFirestoreQuotaExhausted,
+  isQuotaError,
+} from './firestoreQuotaService';
 
-export type PilotBeamColor = 'green' | 'blue' | 'amber' | 'azure';
+import {
+  PilotBeamColor,
+  BeamColorConfig,
+  BEAM_COLOR_CONFIGS,
+  PILOT_BEAM_COLOR_STORAGE_KEY,
+  getPilotBeamColor,
+  hasChosenBeamColor,
+  setPilotBeamColor,
+  isDevelopmentEnvironment,
+  BANNED_INITIALS,
+  isBannedInitials,
+  isBlockedFromLeaderboard,
+  PLAYER_CODE_STORAGE_KEY,
+  SCORES_PURGE_FLAG,
+  wipeAllSavedScores,
+  getPlayerCode,
+  setPlayerCode,
+} from '../utils/pilotProfile';
 
-export interface BeamColorConfig {
-  id: PilotBeamColor;
-  label: string;
-  zoneName: string;
-  zoneSub: string;
-  hex: string;
-  glow: string;
-  light: string;
-  shadow: string;
-  particle: string;
-  badgeBg: string;
-  badgeBorder: string;
-  badgeText: string;
-  badgeGlow: string;
-}
-
-export const BEAM_COLOR_CONFIGS: Record<PilotBeamColor, BeamColorConfig> = {
-  green: {
-    id: 'green',
-    label: 'Emerald Green',
-    zoneName: 'Harmonic Slit',
-    zoneSub: 'Res 8 Slit Zone (Default)',
-    hex: '#00ff88',
-    glow: '#00ffaa',
-    light: '#55ffbb',
-    shadow: 'rgba(0, 255, 136, 0.55)',
-    particle: 'rgba(0, 255, 136, 0.40)',
-    badgeBg: 'bg-emerald-950/80',
-    badgeBorder: 'border-emerald-500/60',
-    badgeText: 'text-emerald-300',
-    badgeGlow: 'shadow-[0_0_10px_rgba(0,255,136,0.25)]',
-  },
-  blue: {
-    id: 'blue',
-    label: 'Cobalt Blue',
-    zoneName: 'Attenuation Zone',
-    zoneSub: 'Res 8 Attenuation Spectrum',
-    hex: '#00d0ff',
-    glow: '#33ccff',
-    light: '#66ddff',
-    shadow: 'rgba(0, 208, 255, 0.55)',
-    particle: 'rgba(0, 208, 255, 0.40)',
-    badgeBg: 'bg-cyan-950/80',
-    badgeBorder: 'border-cyan-500/60',
-    badgeText: 'text-cyan-300',
-    badgeGlow: 'shadow-[0_0_10px_rgba(0,208,255,0.25)]',
-  },
-  amber: {
-    id: 'amber',
-    label: 'Solar Amber',
-    zoneName: 'Emitter Maw',
-    zoneSub: 'Res 8 High-Yield Plasma',
-    hex: '#ff9900',
-    glow: '#ffaa33',
-    light: '#ffcc55',
-    shadow: 'rgba(255, 153, 0, 0.55)',
-    particle: 'rgba(255, 153, 0, 0.40)',
-    badgeBg: 'bg-amber-950/80',
-    badgeBorder: 'border-amber-500/60',
-    badgeText: 'text-amber-300',
-    badgeGlow: 'shadow-[0_0_10px_rgba(255,153,0,0.25)]',
-  },
-  azure: {
-    id: 'azure',
-    label: 'Azure Violet',
-    zoneName: 'Core Corridor',
-    zoneSub: 'Res 8 Nucleon Interface',
-    hex: '#88aaff',
-    glow: '#aaccff',
-    light: '#c0d4ff',
-    shadow: 'rgba(136, 170, 255, 0.55)',
-    particle: 'rgba(136, 170, 255, 0.40)',
-    badgeBg: 'bg-indigo-950/80',
-    badgeBorder: 'border-indigo-500/60',
-    badgeText: 'text-indigo-300',
-    badgeGlow: 'shadow-[0_0_10px_rgba(136,170,255,0.25)]',
-  },
+export type { PilotBeamColor, BeamColorConfig };
+export {
+  BEAM_COLOR_CONFIGS,
+  PILOT_BEAM_COLOR_STORAGE_KEY,
+  getPilotBeamColor,
+  hasChosenBeamColor,
+  setPilotBeamColor,
+  isDevelopmentEnvironment,
+  BANNED_INITIALS,
+  isBannedInitials,
+  isBlockedFromLeaderboard,
+  PLAYER_CODE_STORAGE_KEY,
+  SCORES_PURGE_FLAG,
+  wipeAllSavedScores,
+  getPlayerCode,
+  setPlayerCode,
 };
-
-export const PILOT_BEAM_COLOR_STORAGE_KEY = 'bit_pilot_beam_color';
-
-export function getPilotBeamColor(): PilotBeamColor {
-  if (typeof window === 'undefined') return 'green';
-  try {
-    const raw = localStorage.getItem(PILOT_BEAM_COLOR_STORAGE_KEY);
-    if (raw && (raw === 'green' || raw === 'blue' || raw === 'amber' || raw === 'azure')) {
-      return raw as PilotBeamColor;
-    }
-  } catch {}
-  return 'green';
-}
-
-export function hasChosenBeamColor(): boolean {
-  if (typeof window === 'undefined') return true;
-  try {
-    return localStorage.getItem(PILOT_BEAM_COLOR_STORAGE_KEY) !== null;
-  } catch {}
-  return true;
-}
-
-export function setPilotBeamColor(color: PilotBeamColor): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(PILOT_BEAM_COLOR_STORAGE_KEY, color);
-    window.dispatchEvent(new CustomEvent('pilot_beam_color_changed', { detail: color }));
-  } catch {}
-}
 
 export interface StoryScoreEntry {
   id?: string;
@@ -178,166 +110,10 @@ export interface FTCEntry {
   color?: PilotBeamColor;
 }
 
-// Environment detection helper: blocks live Firestore submissions in dev console
-export function isDevelopmentEnvironment(): boolean {
-  if (typeof window === 'undefined') {
-    return process.env.NODE_ENV !== 'production';
-  }
-  const host = window.location.hostname.toLowerCase();
-  const isLocal =
-    host === 'localhost' ||
-    host === '127.0.0.1' ||
-    host === '0.0.0.0' ||
-    host.endsWith('.local');
-  const isAisDev =
-    host.startsWith('ais-dev-') ||
-    host.includes('-dev-') ||
-    host.includes('ais-dev') ||
-    window.location.port === '3000';
-  const isViteDev = Boolean(import.meta.env?.DEV);
-  return isLocal || isAisDev || isViteDev;
-}
-
-export const BANNED_INITIALS: readonly string[] = [
-  'CUM',
-  'FAG',
-  'KKK',
-  'FUK',
-  'COK',
-  'DIK',
-  'SHT',
-  'CNT',
-  'FUC',
-  'JIZ',
-  'NIG',
-  'CUK',
-  'CUC',
-  'PUS',
-  'DIX',
-  'PED',
-];
-
-export function isBannedInitials(initials: string | null | undefined): boolean {
-  if (!initials) return false;
-  const clean = initials.trim().toUpperCase();
-  return BANNED_INITIALS.includes(clean);
-}
-
-export function isBlockedFromLeaderboard(initials: string | null | undefined): boolean {
-  if (!initials) return false;
-  const clean = initials.trim().toUpperCase();
-  return clean === 'GOD' || isBannedInitials(clean);
-}
-
 // Local storage fallback cache keys (v3 clean slate)
 const LOCAL_LEADERBOARDS_CACHE_KEY = 'bit_resonance_leaderboards_cache_v3';
 const LOCAL_STORY_FTC_CACHE_KEY = 'game_n_story_ftc_cache_v3';
 const LOCAL_ARCADE_FTC_CACHE_KEY = 'game_n_arcade_ftc_cache_v3';
-export const PLAYER_CODE_STORAGE_KEY = 'game_n_player_code';
-export const SCORES_PURGE_FLAG = 'game_n_scores_wiped_v3';
-
-// Utility to completely wipe local high scores & old cached dev scores
-export function wipeAllSavedScores(): void {
-  if (typeof window === 'undefined') return;
-  try {
-    const keysToRemove = [
-      'game_n_high_scores_v1',
-      'game_n_high_scores_v2',
-      'game_n_high_scores_v3',
-      'story_scores_v2',
-      'arcade_scores_v2',
-      'speedrun_scores_v2',
-      'survival_scores_v2',
-      'story_scores_v3',
-      'arcade_scores_v3',
-      'speedrun_scores_v3',
-      'survival_scores_v3',
-      'bit_resonance_leaderboards_cache_v2',
-      'bit_resonance_leaderboards_cache_v3',
-      'game_n_story_ftc_cache_v1',
-      'game_n_story_ftc_cache_v2',
-      'game_n_story_ftc_cache_v3',
-      'game_n_arcade_ftc_cache_v1',
-      'game_n_arcade_ftc_cache_v2',
-      'game_n_arcade_ftc_cache_v3',
-    ];
-    for (const key of keysToRemove) {
-      localStorage.removeItem(key);
-    }
-
-    const currentCode = localStorage.getItem(PLAYER_CODE_STORAGE_KEY);
-    if (isBannedInitials(currentCode)) {
-      localStorage.removeItem(PLAYER_CODE_STORAGE_KEY);
-    }
-
-    // Strip highScores from persistent story save so players keep progression without contaminated scores
-    const rawStory = localStorage.getItem('game_n_story_save_v2');
-    if (rawStory) {
-      try {
-        const parsed = JSON.parse(rawStory);
-        if (parsed && typeof parsed === 'object') {
-          delete parsed.highScores;
-          localStorage.setItem('game_n_story_save_v2', JSON.stringify(parsed));
-        }
-      } catch {}
-    }
-
-    const rawLegacy = localStorage.getItem('game_n_run_data_v1');
-    if (rawLegacy) {
-      try {
-        const parsed = JSON.parse(rawLegacy);
-        if (parsed && typeof parsed === 'object') {
-          delete parsed.highScores;
-          localStorage.setItem('game_n_run_data_v1', JSON.stringify(parsed));
-        }
-      } catch {}
-    }
-  } catch (err) {
-    console.warn('wipeAllSavedScores warning:', err);
-  }
-}
-
-// Auto-run once to purge legacy dev scores & banned handles from browser
-if (typeof window !== 'undefined') {
-  try {
-    const curCode = localStorage.getItem(PLAYER_CODE_STORAGE_KEY);
-    if (isBannedInitials(curCode)) {
-      localStorage.removeItem(PLAYER_CODE_STORAGE_KEY);
-    }
-    if (!localStorage.getItem(SCORES_PURGE_FLAG)) {
-      wipeAllSavedScores();
-      localStorage.setItem(SCORES_PURGE_FLAG, 'true');
-    }
-  } catch {}
-}
-
-export function getPlayerCode(): string | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(PLAYER_CODE_STORAGE_KEY);
-    if (raw && /^[A-Z]{3}$/i.test(raw.trim())) {
-      const clean = raw.trim().toUpperCase();
-      if (isBannedInitials(clean)) {
-        localStorage.removeItem(PLAYER_CODE_STORAGE_KEY);
-        return null;
-      }
-      return clean;
-    }
-  } catch {}
-  return null;
-}
-
-export function setPlayerCode(code: string): void {
-  if (typeof window === 'undefined') return;
-  try {
-    const clean = code.trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
-    if (clean.length !== 3 || isBannedInitials(clean)) {
-      localStorage.removeItem(PLAYER_CODE_STORAGE_KEY);
-      return;
-    }
-    localStorage.setItem(PLAYER_CODE_STORAGE_KEY, clean);
-  } catch {}
-}
 
 const FILLER_CODES = ['AAA', 'BBB', 'CCC', 'DDD', 'EEE', 'FFF', 'GGG', 'HHH', 'III', 'JJJ'];
 
@@ -602,9 +378,9 @@ export async function registerPlayerCode(code: string): Promise<boolean> {
   const updatedCached = consolidateStoryScores([...curCached, initialStoryPayload]);
   saveToLocalCache('story_scores_v3', updatedCached);
 
-  // In development environment or if handle is blocked, keep registration local only
-  if (isDevelopmentEnvironment() || isBlockedFromLeaderboard(clean)) {
-    console.info(`[Leaderboard Dev] Player handle '${clean}' registered locally only (remote Firestore write blocked in dev console).`);
+  // In development environment, if handle is blocked, or if Firestore quota is reached, keep registration local only
+  if (isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(clean)) {
+    console.info(`[Leaderboard] Player handle '${clean}' registered in local storage.`);
     return true;
   }
 
@@ -630,7 +406,8 @@ export async function registerPlayerCode(code: string): Promise<boolean> {
       }
     }
     return true;
-  } catch (err) {
+  } catch (err: any) {
+    if (isQuotaError(err)) markFirestoreQuotaExhausted();
     console.warn('registerPlayerCode Firestore write warning:', err);
     return true; // Local storage succeeds
   }
@@ -787,9 +564,6 @@ export async function fetchStoryLeaderboard(): Promise<StoryScoreEntry[]> {
           }))
       : [];
 
-    // Proactively sync current player progression if pending
-    syncPlayerStoryProgress().catch(() => {});
-
     const localCode = getPlayerCode();
     const localItem = localCode ? [getLocalPlayerStoryProgression(localCode)] : [];
 
@@ -905,14 +679,26 @@ export async function submitStoryScore(entry: Omit<StoryScoreEntry, 'id' | 'crea
     color: entry.color || getPilotBeamColor(),
   };
 
-  // 1. Immediately update local storage cache keeping records together per pilot
+  // 1. Check previous local best before updating cache to prevent redundant Firestore writes
   const curCached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
+  const prevEntry = curCached.find(e => e.initials === cleanInitials);
+  const isNewStoryBest =
+    !prevEntry ||
+    incomingCompletions > (prevEntry.completions || 0) ||
+    payload.stageNum > (prevEntry.stageNum || 0) ||
+    (payload.completed && !prevEntry.completed);
+
   const updatedCached = consolidateStoryScores([...curCached, payload]);
   saveToLocalCache('story_scores_v3', updatedCached);
 
-  // If pilot is blocked from global leaderboard or running in development console, keep local only and return cleanly
-  if (isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
-    console.info(`[Leaderboard Dev] Story score for '${cleanInitials}' saved to local storage only (remote Firestore write blocked in dev console).`);
+  // Only write to Firestore if progression or completions strictly improved
+  if (!isNewStoryBest) {
+    return true;
+  }
+
+  // If pilot is blocked from global leaderboard, running in development console, or Firestore quota reached, keep local only and return cleanly
+  if (isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
+    console.info(`[Leaderboard] Story score for '${cleanInitials}' saved to local storage.`);
     return true;
   }
 
@@ -925,14 +711,21 @@ export async function submitStoryScore(entry: Omit<StoryScoreEntry, 'id' | 'crea
       const existingCompletions = typeof existingData.completions === 'number'
         ? existingData.completions
         : (existingData.completed ? 1 : 0);
+      const existingStage = existingData.stageNum || 0;
+
+      // Skip Firestore write if remote record is already equal or higher
+      if (existingCompletions >= incomingCompletions && existingStage >= payload.stageNum) {
+        return true;
+      }
+
       payload.completions = Math.max(incomingCompletions, existingCompletions);
       if (existingData.createdAt) {
         payload.createdAt = existingData.createdAt;
       }
       // If existing has progressed further, do not downgrade
-      if ((existingData.stageNum || 0) > payload.stageNum) {
+      if (existingStage > payload.stageNum) {
         payload.stageName = existingData.stageName || payload.stageName;
-        payload.stageNum = existingData.stageNum || 0;
+        payload.stageNum = existingStage;
         payload.bit = existingData.bit || 0;
         payload.resolution = existingData.resolution || 0;
       }
@@ -940,6 +733,7 @@ export async function submitStoryScore(entry: Omit<StoryScoreEntry, 'id' | 'crea
     await setDoc(docRef, payload);
     return true;
   } catch (err: any) {
+    if (isQuotaError(err)) markFirestoreQuotaExhausted();
     if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
       console.warn('[Leaderboard] Story submission blocked by security rules:', err.message);
     } else {
@@ -1097,12 +891,24 @@ export async function submitArcadeScore(entry: Omit<ArcadeScoreEntry, 'id' | 'cr
     color: entry.color || getPilotBeamColor(),
   };
 
-  // If pilot is blocked from global leaderboard or running in development console, save locally and return cleanly
-  if (isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
-    console.info(`[Leaderboard Dev] Arcade score for '${cleanInitials}' saved to local storage only (remote Firestore write blocked in dev console).`);
-    const current = loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES);
-    const updated = consolidateArcadeScores([...current, { id: docId, ...payload }]);
-    saveToLocalCache('arcade_scores_v3', updated);
+  const current = loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES);
+  const prevBest = current.find(e => e.initials === cleanInitials);
+  const isNewBest =
+    !prevBest ||
+    payload.stageNum > prevBest.stageNum ||
+    (payload.stageNum === prevBest.stageNum && payload.duration > prevBest.duration) ||
+    (payload.stageNum === prevBest.stageNum && payload.duration === prevBest.duration && payload.totalHz > prevBest.totalHz);
+
+  const updated = consolidateArcadeScores([...current, { id: docId, ...payload }]);
+  saveToLocalCache('arcade_scores_v3', updated);
+
+  if (!isNewBest) {
+    return true;
+  }
+
+  // If pilot is blocked from global leaderboard, running in development console, or Firestore quota reached, save locally and return cleanly
+  if (isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
+    console.info(`[Leaderboard] Arcade score for '${cleanInitials}' saved to local storage.`);
     return true;
   }
 
@@ -1110,14 +916,12 @@ export async function submitArcadeScore(entry: Omit<ArcadeScoreEntry, 'id' | 'cr
     await setDoc(doc(db, 'leaderboards_arcade', docId), payload);
     return true;
   } catch (err: any) {
+    if (isQuotaError(err)) markFirestoreQuotaExhausted();
     if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
       console.warn('[Leaderboard] Arcade submission blocked by security rules:', err.message);
     } else {
       console.warn('Failed to submit arcade score to Firestore, stored locally:', err);
     }
-    const current = loadFromLocalCache('arcade_scores_v3', DEFAULT_ARCADE_SCORES);
-    const updated = consolidateArcadeScores([...current, { id: docId, ...payload }]);
-    saveToLocalCache('arcade_scores_v3', updated);
     return false;
   }
 }
@@ -1250,12 +1054,20 @@ export async function submitSpeedrunScore(entry: Omit<SpeedrunScoreEntry, 'id' |
     color: entry.color || getPilotBeamColor(),
   };
 
-  // If pilot is blocked from global leaderboard or running in development console, save locally and return cleanly
-  if (isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
-    console.info(`[Leaderboard Dev] Speedrun score for '${cleanInitials}' saved to local storage only (remote Firestore write blocked in dev console).`);
-    const current = loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES);
-    const updated = consolidateSpeedrunScores([...current, { id: docId, ...payload }]);
-    saveToLocalCache('speedrun_scores_v3', updated);
+  const current = loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES);
+  const prevBest = current.find(e => e.initials === cleanInitials);
+  const isNewBest = !prevBest || payload.timeSeconds < prevBest.timeSeconds;
+
+  const updated = consolidateSpeedrunScores([...current, { id: docId, ...payload }]);
+  saveToLocalCache('speedrun_scores_v3', updated);
+
+  if (!isNewBest) {
+    return true;
+  }
+
+  // If pilot is blocked from global leaderboard, running in development console, or Firestore quota reached, save locally and return cleanly
+  if (isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
+    console.info(`[Leaderboard] Speedrun score for '${cleanInitials}' saved to local storage.`);
     return true;
   }
 
@@ -1263,14 +1075,12 @@ export async function submitSpeedrunScore(entry: Omit<SpeedrunScoreEntry, 'id' |
     await setDoc(doc(db, 'leaderboards_speedrun', docId), payload);
     return true;
   } catch (err: any) {
+    if (isQuotaError(err)) markFirestoreQuotaExhausted();
     if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
       console.warn('[Leaderboard] Speedrun submission blocked by security rules:', err.message);
     } else {
       console.warn('Failed to submit speedrun score to Firestore, stored locally:', err);
     }
-    const current = loadFromLocalCache('speedrun_scores_v3', DEFAULT_SPEEDRUN_SCORES);
-    const updated = consolidateSpeedrunScores([...current, { id: docId, ...payload }]);
-    saveToLocalCache('speedrun_scores_v3', updated);
     return false;
   }
 }
@@ -1406,12 +1216,23 @@ export async function submitSurvivalScore(entry: Omit<SurvivalScoreEntry, 'id' |
     color: entry.color || getPilotBeamColor(),
   };
 
-  // If pilot is blocked from global leaderboard or running in development console, save locally and return cleanly
-  if (isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
-    console.info(`[Leaderboard Dev] Survival score for '${cleanInitials}' saved to local storage only (remote Firestore write blocked in dev console).`);
-    const current = loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES);
-    const updated = consolidateSurvivalScores([...current, { id: docId, ...payload }]);
-    saveToLocalCache('survival_scores_v3', updated);
+  const current = loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES);
+  const prevBest = current.find(e => e.initials === cleanInitials);
+  const isNewBest =
+    !prevBest ||
+    payload.survivalSeconds > prevBest.survivalSeconds ||
+    (payload.survivalSeconds === prevBest.survivalSeconds && payload.totalHz > prevBest.totalHz);
+
+  const updated = consolidateSurvivalScores([...current, { id: docId, ...payload }]);
+  saveToLocalCache('survival_scores_v3', updated);
+
+  if (!isNewBest) {
+    return true;
+  }
+
+  // If pilot is blocked from global leaderboard, running in development console, or Firestore quota reached, save locally and return cleanly
+  if (isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
+    console.info(`[Leaderboard] Survival score for '${cleanInitials}' saved to local storage.`);
     return true;
   }
 
@@ -1419,14 +1240,12 @@ export async function submitSurvivalScore(entry: Omit<SurvivalScoreEntry, 'id' |
     await setDoc(doc(db, 'leaderboards_survival', docId), payload);
     return true;
   } catch (err: any) {
+    if (isQuotaError(err)) markFirestoreQuotaExhausted();
     if (err?.code === 'permission-denied' || err?.message?.includes('permission')) {
       console.warn('[Leaderboard] Survival submission blocked by security rules:', err.message);
     } else {
       console.warn('Failed to submit survival score to Firestore, stored locally:', err);
     }
-    const current = loadFromLocalCache('survival_scores_v3', DEFAULT_SURVIVAL_SCORES);
-    const updated = consolidateSurvivalScores([...current, { id: docId, ...payload }]);
-    saveToLocalCache('survival_scores_v3', updated);
     return false;
   }
 }
@@ -1487,8 +1306,8 @@ export function subscribeStoryFTC(callback: (ftc: FTCEntry | null) => void): Uns
 
 export async function recordStoryFTCIfFirst(initials: string): Promise<{ isFTC: boolean; ftc: FTCEntry }> {
   const cleanInitials = sanitizeInitials(initials);
-  if (isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
-    console.info(`[Leaderboard Dev] Story FTC for '${cleanInitials}' local only (remote write blocked in dev console).`);
+  if (isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
+    console.info(`[Leaderboard] Story FTC for '${cleanInitials}' saved to local storage.`);
     const existing = loadFromLocalCache(LOCAL_STORY_FTC_CACHE_KEY, null);
     return {
       isFTC: false,
@@ -1522,7 +1341,8 @@ export async function recordStoryFTCIfFirst(initials: string): Promise<{ isFTC: 
 
     saveToLocalCache(LOCAL_STORY_FTC_CACHE_KEY, result.ftc);
     return result;
-  } catch (err) {
+  } catch (err: any) {
+    if (isQuotaError(err)) markFirestoreQuotaExhausted();
     console.warn('recordStoryFTCIfFirst transaction warning:', err);
     const existing = loadFromLocalCache(LOCAL_STORY_FTC_CACHE_KEY, null);
     if (!existing) {
@@ -1595,8 +1415,8 @@ export async function recordArcadeFTCIfFirst(
   totalHz: number
 ): Promise<{ isFTC: boolean; ftc: FTCEntry }> {
   const cleanInitials = sanitizeInitials(initials);
-  if (isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
-    console.info(`[Leaderboard Dev] Arcade FTC for '${cleanInitials}' local only (remote write blocked in dev console).`);
+  if (isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(cleanInitials)) {
+    console.info(`[Leaderboard] Arcade FTC for '${cleanInitials}' saved to local storage.`);
     const existing = loadFromLocalCache(LOCAL_ARCADE_FTC_CACHE_KEY, null);
     return {
       isFTC: false,
@@ -1634,7 +1454,8 @@ export async function recordArcadeFTCIfFirst(
 
     saveToLocalCache(LOCAL_ARCADE_FTC_CACHE_KEY, result.ftc);
     return result;
-  } catch (err) {
+  } catch (err: any) {
+    if (isQuotaError(err)) markFirestoreQuotaExhausted();
     console.warn('recordArcadeFTCIfFirst transaction warning:', err);
     const existing = loadFromLocalCache(LOCAL_ARCADE_FTC_CACHE_KEY, null);
     if (!existing) {

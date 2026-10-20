@@ -1,23 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { GameState, GameMode, HighScores } from './types/game';
 import { INITIAL_MODULES } from './data/compilerModules';
-import { DimensionCanvas } from './components/DimensionCanvas';
-import { CompilerPipelineHUD } from './components/CompilerPipelineHUD';
 import { MainMenuModal } from './components/MainMenuModal';
 import { soundEngine } from './audio/soundEngine';
 import { loadUserSettings, saveUserSettings, UserSettings } from './utils/settings';
-import { InitialsRegistrationModal } from './components/InitialsRegistrationModal';
-import { getPlayerCode, isDevelopmentEnvironment, syncPlayerStoryProgress, wipeAllSavedScores } from './services/leaderboardService';
+import { SpeedrunRoom, getUrlRoomCode, joinSpeedrunRoom, subscribeToSpeedrunRoom } from './services/teamSpeedrunService';
+import { getPlayerCode, getPilotBeamColor } from './utils/pilotProfile';
 import {
   Cpu,
-  RotateCcw,
-  Activity,
   X,
-  Layers,
-  Sparkles,
   Maximize2,
   Minimize2,
 } from 'lucide-react';
+
+const DimensionCanvas = React.lazy(() =>
+  import('./components/DimensionCanvas').then(m => ({ default: m.DimensionCanvas }))
+);
+const CompilerPipelineHUD = React.lazy(() =>
+  import('./components/CompilerPipelineHUD').then(m => ({ default: m.CompilerPipelineHUD }))
+);
+const InitialsRegistrationModal = React.lazy(() =>
+  import('./components/InitialsRegistrationModal').then(m => ({ default: m.InitialsRegistrationModal }))
+);
+const TeamSpeedrunModal = React.lazy(() =>
+  import('./components/TeamSpeedrunModal').then(m => ({ default: m.TeamSpeedrunModal }))
+);
 
 const STORY_SAVE_KEY = 'game_n_story_save_v2';
 const RUN_STORAGE_KEY = 'game_n_run_data_v1';
@@ -183,6 +190,32 @@ export default function App() {
   // Prompt 3-letter FTC registration on startup if not already stored
   const [isFTCRegistrationOpen, setIsFTCRegistrationOpen] = useState<boolean>(() => !getPlayerCode());
 
+  // Team Speedrun Multiplayer state
+  const [isTeamModalOpen, setIsTeamModalOpen] = useState<boolean>(false);
+  const [teamRoom, setTeamRoom] = useState<SpeedrunRoom | null>(null);
+  const [initialRoomCode] = useState<string | null>(() => getUrlRoomCode());
+
+  // Auto-open Team Speedrun Modal & automatically join squad if room code was passed via direct link (?speedrunRoom=ABCD)
+  useEffect(() => {
+    if (initialRoomCode) {
+      setIsTeamModalOpen(true);
+      setIsMainMenuOpen(false);
+      const autoJoinUrlRoom = async () => {
+        try {
+          const initials = getPlayerCode() || 'PIL';
+          const color = getPilotBeamColor();
+          const res = await joinSpeedrunRoom(initialRoomCode, initials, color);
+          if (res.success && res.room) {
+            setTeamRoom(res.room);
+          }
+        } catch (e) {
+          console.warn('[App] Error auto-joining squad room from link:', e);
+        }
+      };
+      autoJoinUrlRoom();
+    }
+  }, [initialRoomCode]);
+
   // Responsive device / screen detection for phone vs desktop
   const [isMobileDevice, setIsMobileDevice] = React.useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -195,6 +228,14 @@ export default function App() {
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Warm-preload DimensionCanvas in the background right after the Main Menu paints so mode launch is instant
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      import('./components/DimensionCanvas').catch(() => {});
+    }, 100);
+    return () => window.clearTimeout(timer);
   }, []);
 
   // True Browser Fullscreen Mode state & toggle
@@ -332,19 +373,7 @@ export default function App() {
     }
   }, [gameState]);
 
-  // Proactively auto-sync story progression to global high scores on mount and resolution changes
-  React.useEffect(() => {
-    syncPlayerStoryProgress().catch(() => {});
-  }, []);
-
-  // Auto-sync story progression whenever pilot advances in bits, resolution, or completions
-  React.useEffect(() => {
-    if (!gameState.gameMode || gameState.gameMode === 'story') {
-      if (gameState.act1PurchasedN || (gameState.act1Bits && gameState.act1Bits > 0) || (gameState.act1Resolution && gameState.act1Resolution > 0)) {
-        syncPlayerStoryProgress().catch(() => {});
-      }
-    }
-  }, [gameState.act1Bits, gameState.act1Resolution, gameState.act1PurchasedN, gameState.storyCompletions]);
+  // Story progression is synced strictly at run end / game over to prevent Firestore write spikes
 
   // Before unload handler to guarantee current run data is saved before browser closes
   React.useEffect(() => {
@@ -409,6 +438,7 @@ export default function App() {
           act1Bits: nextBits,
           act1Phase: nextBits >= 9 ? 'line_segment' : 'point',
           engineCompilePercent: Math.min(100, prev.engineCompilePercent + 8),
+          ...(prev.gameMode === 'arcade' ? { hp: 100 } : {}),
         };
       } else {
         const nextBits = Math.min(10, (prev.act1Bits || 0) + 1);
@@ -449,7 +479,7 @@ export default function App() {
 
   // Mode Selection from Main Menu
   const handleSelectMode = (mode: GameMode, forceNewStory: boolean = false) => {
-    const isUnlocked = mode === 'story' || mode === 'arcade' || Boolean(gameState.hasCompletedStory || userSettings.controls.unlockAllModesDev);
+    const isUnlocked = mode === 'story' || mode === 'arcade' || mode === 'squad' || Boolean(gameState.hasCompletedStory || userSettings.controls.unlockAllModesDev);
     if (!isUnlocked) {
       return;
     }
@@ -543,6 +573,7 @@ export default function App() {
     } else if (mode === 'speedrun') {
       soundEngine.setMusicPacing('slow_waltz', 'easy');
       soundEngine.startBackgroundMusic();
+      setTeamRoom(null); // Pure solo speedrun: completely decouple from squad rooms
       setGameState(prev => ({
         ...DEFAULT_GAME_STATE,
         gameMode: 'speedrun',
@@ -567,6 +598,10 @@ export default function App() {
         speedrunRuns: 1,
         resources: { hertz: 0, volts: 0, baud: 0 },
       }));
+    } else if (mode === 'squad') {
+      soundEngine.setMusicPacing('slow_waltz', 'easy');
+      soundEngine.startBackgroundMusic();
+      setIsTeamModalOpen(true);
     } else if (mode === 'survival') {
       soundEngine.setMusicPacing('arcade_techno', 'easy');
       soundEngine.startBackgroundMusic();
@@ -623,6 +658,97 @@ export default function App() {
     }
   };
 
+  const lastLaunchSignatureRef = React.useRef<string>('');
+  const gameModeRef = React.useRef<GameMode | undefined>(gameState.gameMode);
+  gameModeRef.current = gameState.gameMode;
+  const carrierActiveRef = React.useRef<boolean>(gameState.carrierActive);
+  carrierActiveRef.current = gameState.carrierActive;
+
+  // Launch or Resume Team Speedrun Run from Squad Lobby or Saved Checkpoint
+  const handleLaunchTeamSpeedrun = useCallback((room: SpeedrunRoom) => {
+    const launchSig = `${room.code}:${room.lastContinueAt || 0}`;
+    if (lastLaunchSignatureRef.current === launchSig && gameModeRef.current === 'squad') {
+      setTeamRoom(room);
+      setIsMainMenuOpen(false);
+      setIsTeamModalOpen(false);
+      return;
+    }
+    lastLaunchSignatureRef.current = launchSig;
+
+    soundEngine.setBossMusic(false);
+    soundEngine.ensureResumed();
+    soundEngine.setMusicPacing('slow_waltz', 'easy');
+    soundEngine.startBackgroundMusic();
+    setTeamRoom(room);
+    setRunSessionKey(prev => prev + 1);
+
+    const shared = room.sharedState || {};
+    const savedBits = typeof shared.act1Bits === 'number' ? shared.act1Bits : 0;
+    const savedRes = typeof shared.act1Resolution === 'number' ? shared.act1Resolution : 0;
+    const savedSubPart = (shared.act1SubPart === 2 ? 2 : 1) as 1 | 2;
+    const savedTime = typeof shared.speedrunTime === 'number' ? shared.speedrunTime : 0;
+    const savedRuns = typeof shared.runNumber === 'number' ? shared.runNumber : 1;
+    const savedHz = typeof shared.totalHz === 'number' ? shared.totalHz : 0;
+    const savedV = typeof shared.totalV === 'number' ? shared.totalV : 0;
+    const savedBaud = typeof shared.totalBaud === 'number' ? shared.totalBaud : 0;
+
+    const isPart2 = savedSubPart === 2;
+    // In Squad Co-Op, N=1 is immediately active from launch so both pilots start synchronized on the coordinate trace
+    const hasN = true;
+    const currentN = isPart2 ? 2 : 1;
+    const act1Phase: 'void' | 'point' | 'line_segment' | 'ray' = isPart2
+      ? 'point'
+      : (savedBits >= 9 ? 'line_segment' : 'point');
+
+    setGameState(prev => ({
+      ...DEFAULT_GAME_STATE,
+      gameMode: 'squad',
+      totalRuns: (prev.totalRuns || 1) + 1,
+      hasCompletedStory: prev.hasCompletedStory,
+      highScores: prev.highScores || loadSavedHighScores(),
+      act: 1,
+      currentN,
+      act1PurchasedN: hasN,
+      act1Bits: savedBits,
+      act1SubPart: savedSubPart,
+      act1Resolution: savedRes,
+      act1Phase,
+      overshields: 0,
+      polarity: 1,
+      hp: 100,
+      maxHp: 100,
+      deathScreen: null,
+      audioActive: true,
+      carrierActive: true,
+      speedrunTime: savedTime,
+      speedrunRuns: savedRuns,
+      resources: { hertz: savedHz, volts: savedV, baud: savedBaud },
+    }));
+    setIsMainMenuOpen(false);
+    setIsTeamModalOpen(false);
+  }, []);
+
+  // Top-level Room Synchronization: Ensure Player Two and all pilots auto-launch when host launches
+  useEffect(() => {
+    if (!teamRoom?.code) return;
+    const unsub = subscribeToSpeedrunRoom(teamRoom.code, updated => {
+      if (!updated) {
+        setTeamRoom(null);
+        return;
+      }
+      setTeamRoom(updated);
+      // Automatically launch Player 2 / non-host pilots when squad status becomes 'active'
+      if (updated.status === 'active' && gameModeRef.current !== 'squad') {
+        handleLaunchTeamSpeedrun(updated);
+      } else if (updated.status === 'lobby' && gameModeRef.current === 'squad' && carrierActiveRef.current) {
+        // Squad returned to pilot room lobby
+        setGameState(prev => ({ ...prev, carrierActive: false }));
+        setIsTeamModalOpen(true);
+      }
+    });
+    return () => unsub();
+  }, [teamRoom?.code, handleLaunchTeamSpeedrun]);
+
   // Restart / Reset Active Run
   const handleResetRun = () => {
     soundEngine.playHitSound('quantum');
@@ -630,6 +756,8 @@ export default function App() {
       handleSelectMode('story', true);
     } else if (gameState.gameMode === 'speedrun') {
       handleSelectMode('speedrun');
+    } else if (gameState.gameMode === 'squad') {
+      if (teamRoom) handleLaunchTeamSpeedrun(teamRoom);
     } else if (gameState.gameMode === 'survival') {
       handleSelectMode('survival');
     } else if (gameState.gameMode === 'arcade') {
@@ -663,6 +791,8 @@ export default function App() {
     act1SubPart: storySource.act1SubPart ?? 1,
   };
 
+  const shouldRenderCanvas = !isMainMenuOpen || runSessionKey > 0;
+
   return (
     <div className="fixed inset-0 w-full h-[100dvh] bg-black text-neutral-100 font-sans overflow-hidden select-none touch-none">
       {/* NEARLY TRANSPARENT GREY TOGGLE WITH NO EFFECTS IN TOP RIGHT CORNER (ALWAYS ACCESSIBLE) */}
@@ -686,23 +816,30 @@ export default function App() {
 
       {/* Standalone Fullscreen Game Window (Border-free & Edge-to-Edge) */}
       <main className="relative w-full h-full overflow-hidden flex flex-col bg-black">
-        <DimensionCanvas
-          key={runSessionKey}
-          gameState={gameState}
-          onUpdateState={setGameState}
-          onOpenMainMenu={() => {
-            soundEngine.setMusicPacing('slow_waltz', 'easy');
-            soundEngine.startBackgroundMusic();
-            setIsMainMenuOpen(true);
-          }}
-          isMobile={isMobileDevice}
-          isMainMenuOpen={isMainMenuOpen}
-          userSettings={userSettings}
-          onUpdateSettings={handleUpdateSettings}
-          onDevAddBit={handleDevAddBit}
-          onDevAddRes={handleDevAddRes}
-          onTogglePipeline={() => setIsPipelineOpen(prev => !prev)}
-        />
+        {shouldRenderCanvas && (
+          <React.Suspense fallback={<div className="w-full h-full bg-[#01160d]" />}>
+            <DimensionCanvas
+              key={runSessionKey}
+              gameState={gameState}
+              onUpdateState={setGameState}
+              onOpenMainMenu={() => {
+                soundEngine.setMusicPacing('slow_waltz', 'easy');
+                soundEngine.startBackgroundMusic();
+                setIsMainMenuOpen(true);
+              }}
+              isMobile={isMobileDevice}
+              isMainMenuOpen={isMainMenuOpen}
+              userSettings={userSettings}
+              onUpdateSettings={handleUpdateSettings}
+              onDevAddBit={handleDevAddBit}
+              onDevAddRes={handleDevAddRes}
+              onTogglePipeline={() => setIsPipelineOpen(prev => !prev)}
+              teamRoom={gameState.gameMode === 'squad' ? teamRoom : null}
+              onOpenTeamModal={() => setIsTeamModalOpen(true)}
+              onUpdateTeamRoom={setTeamRoom}
+            />
+          </React.Suspense>
+        )}
 
         {/* Global Main Menu Modal */}
         <MainMenuModal
@@ -717,7 +854,28 @@ export default function App() {
           userSettings={userSettings}
           onUpdateSettings={handleUpdateSettings}
           isMobile={isMobileDevice}
+          onOpenTeamModal={() => setIsTeamModalOpen(true)}
         />
+
+        {/* Online Squad Co-Op Session Manager Modal */}
+        {(isTeamModalOpen || Boolean(initialRoomCode)) && (
+          <React.Suspense fallback={null}>
+            <TeamSpeedrunModal
+              isOpen={isTeamModalOpen}
+              onClose={() => {
+                setIsTeamModalOpen(false);
+                setGameState(prev => ({ ...prev, carrierActive: false }));
+                soundEngine.setMusicPacing('slow_waltz', 'easy');
+                soundEngine.startBackgroundMusic();
+                setIsMainMenuOpen(true);
+              }}
+              onLaunchRun={handleLaunchTeamSpeedrun}
+              activeRoom={teamRoom}
+              setActiveRoom={setTeamRoom}
+              initialCode={initialRoomCode}
+            />
+          </React.Suspense>
+        )}
 
         {/* Slide-over Engine Pipeline Drawer */}
         {isPipelineOpen && Boolean(userSettings.controls.devToolsEnabled) && (
@@ -740,18 +898,22 @@ export default function App() {
 
             {/* Drawer Content */}
             <div className="flex-1 overflow-hidden p-2">
-              <CompilerPipelineHUD gameState={gameState} />
+              <React.Suspense fallback={null}>
+                <CompilerPipelineHUD gameState={gameState} />
+              </React.Suspense>
             </div>
           </aside>
         )}
         {/* Startup 3-Letter FTC Pilot Registration Modal */}
         {isFTCRegistrationOpen && (
-          <InitialsRegistrationModal
-            isOpen={isFTCRegistrationOpen}
-            onCodeRegistered={() => {
-              setIsFTCRegistrationOpen(false);
-            }}
-          />
+          <React.Suspense fallback={null}>
+            <InitialsRegistrationModal
+              isOpen={isFTCRegistrationOpen}
+              onCodeRegistered={() => {
+                setIsFTCRegistrationOpen(false);
+              }}
+            />
+          </React.Suspense>
         )}
       </main>
     </div>
