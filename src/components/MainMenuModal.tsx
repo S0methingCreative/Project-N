@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { draw6BitBackground } from '../utils/backgroundArt';
-import { UserSettings, DEFAULT_USER_SETTINGS, saveUserSettings } from '../utils/settings';
+import { UserSettings, DEFAULT_USER_SETTINGS, saveUserSettings, getStoredMaxCreativeStage } from '../utils/settings';
 import { BeamColorSelectModal } from './BeamColorSelectModal';
 import {
   isDevelopmentEnvironment,
@@ -35,6 +35,10 @@ import {
 
 const GlobalLeaderboardModal = React.lazy(() =>
   import('./GlobalLeaderboardModal').then(m => ({ default: m.GlobalLeaderboardModal }))
+);
+
+const CreativeSpaceModal = React.lazy(() =>
+  import('./CreativeSpaceModal').then(m => ({ default: m.CreativeSpaceModal }))
 );
 
 export interface StoryProgressSummary {
@@ -56,7 +60,6 @@ interface MainMenuModalProps {
   totalRuns?: number;
   hasCompletedStory?: boolean;
   storyProgress?: StoryProgressSummary;
-  hasActiveRun?: boolean;
   userSettings?: UserSettings;
   onUpdateSettings?: (settings: UserSettings) => void;
   isMobile?: boolean;
@@ -71,7 +74,6 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   totalRuns = 0,
   hasCompletedStory = false,
   storyProgress,
-  hasActiveRun = false,
   userSettings = DEFAULT_USER_SETTINGS,
   onUpdateSettings,
   isMobile = false,
@@ -87,6 +89,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   const [devCodeError, setDevCodeError] = useState<string>('');
   const [lockedNotice, setLockedNotice] = useState<string | null>(null);
   const [isGlobalLeaderboardOpen, setIsGlobalLeaderboardOpen] = useState<boolean>(false);
+  const [isCreativeSpaceOpen, setIsCreativeSpaceOpen] = useState<boolean>(false);
   const [isWipedToast, setIsWipedToast] = useState<boolean>(false);
   const [isColorModalOpen, setIsColorModalOpen] = useState<boolean>(false);
   const [activePilotColor, setActivePilotColor] = useState<PilotBeamColor>(() => getPilotBeamColor());
@@ -149,18 +152,6 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
     };
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (hasActiveRun) {
-          onClose();
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, hasActiveRun]);
 
   if (!isOpen) return null;
 
@@ -197,6 +188,47 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
     return Boolean(hasCompletedStory || userSettings.controls.unlockAllModesDev);
   };
 
+  // Calculate highest Story Mode stage for Creative Space (Bit 10 = 10, Res 1 = 11 ... Res 10 = 20)
+  const rawStoryStage = hasCompletedStory
+    ? 20
+    : storyProgress?.act1SubPart === 2 || (storyProgress?.act1Bits || 0) >= 10
+    ? 10 + Math.min(10, Math.max(0, storyProgress?.act1Resolution || 0))
+    : Math.min(9, Math.max(0, storyProgress?.act1Bits || 0));
+
+  const maxCreativeStage = getStoredMaxCreativeStage(rawStoryStage);
+  const isDevCreativeOverride = Boolean(
+    userSettings.controls.devToolsEnabled || userSettings.controls.unlockAllModesDev
+  );
+  // Unlocks at Bit 10 (N=2) in Story Mode or when Dev Tools override is active
+  const isCreativeSpaceUnlocked = maxCreativeStage >= 10 || isDevCreativeOverride;
+
+  const unlockedResCount = isDevCreativeOverride
+    ? 10
+    : maxCreativeStage >= 20
+    ? 10
+    : maxCreativeStage >= 11
+    ? maxCreativeStage - 10
+    : 1;
+  const unlockedNotesCount = Math.min(8, Math.max(1, unlockedResCount));
+
+  const getCreativeTierBadge = (): string => {
+    if (isDevCreativeOverride) return 'DEV UNLOCKED · 8/8 NOTES · RES 10';
+    if (!isCreativeSpaceUnlocked) return 'LOCKED · REACH BIT 10 (N=2)';
+    return `8/8 STEPS · ${unlockedNotesCount}/8 NOTES (RES ${unlockedResCount}/10)`;
+  };
+
+  const handleOpenCreativeSpace = () => {
+    if (!isCreativeSpaceUnlocked) {
+      soundEngine.playIncorrectHit('packet');
+      setLockedNotice(
+        '🔒 CREATIVE SPACE LOCKED: Reach Bit 10 (N=2) in Story Mode to unlock the 8-Step Coordinate Sequencer, and progress Resolutions 1–8 to unlock Notes 1–8 & line colors!'
+      );
+      return;
+    }
+    soundEngine.playCadenceResolution();
+    setIsCreativeSpaceOpen(true);
+  };
+
   const handleModeClick = (mode: GameMode, forceNew: boolean = false) => {
     if (!isModeUnlocked(mode)) {
       soundEngine.playIncorrectHit('packet');
@@ -207,6 +239,8 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
       );
       return;
     }
+
+    setIsCreativeSpaceOpen(false);
 
     // If pilot has not selected a color yet, prompt the selection modal before launching
     if (!hasChosenBeamColor() && (mode === 'story' || mode === 'arcade' || mode === 'speedrun' || mode === 'squad')) {
@@ -404,15 +438,6 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                 <Volume2 className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
               )}
             </button>
-
-            {hasActiveRun ? (
-              <button
-                onClick={onClose}
-                className="px-3 py-1.5 text-xs text-neutral-200 hover:text-white bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 rounded-lg transition-colors cursor-pointer min-h-[38px] flex items-center font-bold"
-              >
-                RESUME
-              </button>
-            ) : null}
           </div>
         </div>
 
@@ -443,17 +468,6 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
           </button>
 
           <button
-            onClick={() => {
-              soundEngine.playCadenceResolution();
-              setIsGlobalLeaderboardOpen(true);
-            }}
-            className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer bg-amber-950/70 hover:bg-amber-900/90 text-amber-300 border border-amber-500/60 shadow-sm shadow-amber-950/40"
-          >
-            <Crown className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-            <span>GLOBAL TOP 10</span>
-          </button>
-
-          <button
             onClick={() => setActiveTab('options')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'options'
@@ -464,8 +478,6 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
             <Sliders className="w-3.5 h-3.5" />
             <span>OPTIONS</span>
           </button>
-
-
         </div>
 
         {/* Tab 1: Game Modes */}
@@ -776,6 +788,72 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* DEDICATED CREATIVE SPACE CARD (UNLOCKS AT BIT 10 / N=2, NOTES 1-8 UNLOCK ACROSS RES 1-8) */}
+            <div
+              onClick={handleOpenCreativeSpace}
+              className={`relative overflow-hidden group p-3 rounded-xl border transition-all cursor-pointer flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 ${
+                isCreativeSpaceUnlocked
+                  ? 'bg-gradient-to-r from-emerald-950/60 via-neutral-900/90 to-teal-950/50 border-emerald-500/60 hover:border-emerald-400'
+                  : 'bg-neutral-950/90 border-amber-500/40 opacity-85 hover:opacity-100 hover:border-amber-400/70'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <div
+                  className={`p-2 rounded-xl border shrink-0 flex items-center justify-center ${
+                    isCreativeSpaceUnlocked
+                      ? 'bg-emerald-500/20 border-emerald-400/70 text-emerald-300'
+                      : 'bg-amber-950/40 border-amber-500/50 text-amber-400'
+                  }`}
+                >
+                  {isCreativeSpaceUnlocked ? (
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
+                  ) : (
+                    <Lock className="w-4 h-4 text-amber-400" />
+                  )}
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`text-xs font-black uppercase tracking-wide ${
+                        isCreativeSpaceUnlocked ? 'text-emerald-300' : 'text-neutral-200'
+                      }`}
+                    >
+                      CREATIVE SPACE · LINE &amp; BEAT ETCH-A-SKETCH
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded text-[10px] font-mono font-black uppercase tracking-wider border ${
+                        isCreativeSpaceUnlocked
+                          ? 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300'
+                          : 'bg-amber-500/20 border-amber-400/70 text-amber-300'
+                      }`}
+                    >
+                      {getCreativeTierBadge()}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-neutral-300 font-mono mt-0.5">
+                    {isCreativeSpaceUnlocked
+                      ? '0–8 Quadrant Grid with all 8 Coordinate Steps unlocked. Resolutions 1–8 unlock Notes 1–8 & their 8 line colors.'
+                      : 'Reach Bit 10 (N=2) in Story Mode to unlock all 8 Coordinate Steps, and Resolutions 1–8 to unlock Notes 1–8 & line colors.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold shrink-0 self-end sm:self-center">
+                {isCreativeSpaceUnlocked ? (
+                  <span className="px-3 py-1.5 rounded-lg bg-emerald-500 text-black font-black flex items-center gap-1">
+                    <span>OPEN STUDIO</span>
+                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-1 rounded-lg bg-amber-950/80 border border-amber-500/60 text-amber-300 text-[10px] font-black tracking-wider uppercase flex items-center gap-1">
+                    <Lock className="w-3 h-3" />
+                    <span>BIT 10 LOCKED</span>
+                  </span>
+                )}
+              </div>
+            </div>
+
           </div>
         )}
 
@@ -1137,6 +1215,22 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
           <GlobalLeaderboardModal
             isOpen={isGlobalLeaderboardOpen}
             onClose={() => setIsGlobalLeaderboardOpen(false)}
+          />
+        </React.Suspense>
+      )}
+
+      {/* Creative Space Step Machine & Math Visualizer Modal (Lazy Loaded) */}
+      {isCreativeSpaceOpen && (
+        <React.Suspense fallback={null}>
+          <CreativeSpaceModal
+            isOpen={isCreativeSpaceOpen}
+            onClose={() => {
+              setIsCreativeSpaceOpen(false);
+              soundEngine.setMusicPacing('slow_waltz', 'easy');
+              soundEngine.startBackgroundMusic();
+            }}
+            effectiveStage={maxCreativeStage}
+            devUnlocked={isDevCreativeOverride}
           />
         </React.Suspense>
       )}

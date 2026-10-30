@@ -169,7 +169,7 @@ async function loadRoomWithFirestoreFallback(
 
 function getTeamBossMaxHp(pilotCount: number): number {
   const clamped = Math.min(4, Math.max(1, pilotCount));
-  return Math.round(100 * (1 + 0.5 * (clamped - 1)));
+  return 180 * clamped;
 }
 
 function generateUniqueRoomCode(): string {
@@ -248,8 +248,8 @@ function applyRoomAction(
     }
 
     case "launch": {
-      // Security check: Only the designated room host may launch the squad run
-      if (room.hostPilotId && pilotId !== room.hostPilotId) {
+      // Security check: In lobby, only the designated room host may launch; after wipe/completion, any registered squad pilot may trigger retry
+      if (room.status === "lobby" && room.hostPilotId && pilotId !== room.hostPilotId) {
         console.warn(`[Squad Room ${room.code}] Unauthorized launch attempt by pilot '${pilotId}' (Host is '${room.hostPilotId}').`);
         return {
           broadcastType: "NONE",
@@ -265,7 +265,7 @@ function applyRoomAction(
         ...room.sharedState,
         speedrunTime: 0,
         runNumber: 1,
-        act1Bits: 0,
+        act1Bits: 1,
         act1Resolution: 0,
         act1SubPart: 1,
         totalHz: 0,
@@ -277,7 +277,7 @@ function applyRoomAction(
         maxBoss2Hp: maxHp,
         isBossActive: false,
         runPulses: 0,
-        lastAction: "Squad run launched!",
+        lastAction: "Squad Arcade run launched at Bit 1!",
       };
       for (const p of Object.values(room.pilots)) {
         p.integrity = 100;
@@ -413,8 +413,19 @@ function applyRoomAction(
 
       if (data.newBits !== undefined) {
         room.sharedState.act1Bits = Number(data.newBits);
+        // Squad Arcade: Refill all pilots to 100% HP and instantly revive any ghosts on Bit completion
+        for (const p of Object.values(room.pilots)) {
+          p.integrity = 100;
+          p.isKnocked = false;
+          delete p.knockedAt;
+          delete p.knockedUntil;
+        }
         if (room.sharedState.act1Bits >= 9) {
+          const pilotCount = Math.max(1, Object.keys(room.pilots).length);
+          const maxHp = getTeamBossMaxHp(pilotCount);
           room.sharedState.isBossActive = true;
+          room.sharedState.boss1Hp = maxHp;
+          room.sharedState.maxBoss1Hp = maxHp;
           room.sharedState.runPulses = 0;
         }
       }
@@ -650,18 +661,18 @@ app.post("/api/squad/rooms", async (req, res) => {
     sharedState: {
       speedrunTime: 0,
       runNumber: 1,
-      act1Bits: 0,
+      act1Bits: 1,
       act1Resolution: 0,
       act1SubPart: 1,
       totalHz: 0,
       totalV: 0,
       totalBaud: 0,
-      boss1Hp: 100,
-      boss2Hp: 100,
-      maxBoss1Hp: 100,
-      maxBoss2Hp: 100,
+      boss1Hp: 180,
+      boss2Hp: 180,
+      maxBoss1Hp: 180,
+      maxBoss2Hp: 180,
       isBossActive: false,
-      lastAction: `Room initialized by host ${hostInitials}`,
+      lastAction: `Squad Arcade room initialized by host ${hostInitials}`,
     },
     createdAt: nowIso,
     updatedAt: nowIso,

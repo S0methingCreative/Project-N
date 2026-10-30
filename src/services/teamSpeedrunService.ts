@@ -520,11 +520,11 @@ export function getTeamResourceScale(pilotCount: number): number {
 }
 
 /**
- * Calculate Boss HP proportional scaling (+50% HP per added pilot: 100 / 150 / 200 / 250)
+ * Calculate Boss HP 1:1 scaling with Solo Arcade (180 HP per pilot: 180 / 360 / 540 / 720)
  */
 export function getTeamBossMaxHp(pilotCount: number): number {
   const clamped = Math.min(4, Math.max(1, pilotCount));
-  return Math.round(100 * (1 + 0.5 * (clamped - 1)));
+  return 180 * clamped;
 }
 
 /**
@@ -606,18 +606,18 @@ export async function createSpeedrunRoom(
     sharedState: {
       speedrunTime: 0,
       runNumber: 1,
-      act1Bits: 0,
+      act1Bits: 1,
       act1Resolution: 0,
       act1SubPart: 1,
       totalHz: 0,
       totalV: 0,
       totalBaud: 0,
-      boss1Hp: 100,
-      boss2Hp: 100,
-      maxBoss1Hp: 100,
-      maxBoss2Hp: 100,
+      boss1Hp: 180,
+      boss2Hp: 180,
+      maxBoss1Hp: 180,
+      maxBoss2Hp: 180,
       isBossActive: false,
-      lastAction: 'Room initialized by host ' + pilotInitials,
+      lastAction: 'Squad Arcade room initialized by host ' + pilotInitials,
     },
     createdAt: nowIso,
     updatedAt: nowIso,
@@ -927,7 +927,7 @@ export async function launchTeamRun(roomCode: string): Promise<SpeedrunRoom | nu
         ...local.sharedState,
         speedrunTime: 0,
         runNumber: 1,
-        act1Bits: 0,
+        act1Bits: 1,
         act1Resolution: 0,
         act1SubPart: 1,
         totalHz: 0,
@@ -939,7 +939,7 @@ export async function launchTeamRun(roomCode: string): Promise<SpeedrunRoom | nu
         maxBoss2Hp: maxHp,
         isBossActive: false,
         runPulses: 0,
-        lastAction: 'Squad run launched!',
+        lastAction: 'Squad Arcade run launched at Bit 1!',
       },
       updatedAt: nowIso,
     };
@@ -1387,8 +1387,21 @@ export async function compileTeamProgression(
 
     if (data.newBits !== undefined) {
       local.sharedState.act1Bits = data.newBits;
+      // Squad Arcade: Refill all pilots to 100% HP and instantly revive any ghosts on Bit completion
+      if (local.pilots) {
+        for (const p of Object.values(local.pilots)) {
+          p.integrity = 100;
+          p.isKnocked = false;
+          delete p.knockedAt;
+          delete p.knockedUntil;
+        }
+      }
       if (data.newBits >= 9) {
+        const pilotCount = Math.max(1, Object.keys(local.pilots || {}).length);
+        const maxHp = getTeamBossMaxHp(pilotCount);
         local.sharedState.isBossActive = true;
+        local.sharedState.boss1Hp = maxHp;
+        local.sharedState.maxBoss1Hp = maxHp;
         local.sharedState.runPulses = 0;
       }
     }
@@ -1418,8 +1431,15 @@ export async function compileTeamProgression(
     };
     if (data.newBits !== undefined) {
       fsFields['sharedState.act1Bits'] = data.newBits;
+      if (local.pilots) {
+        for (const [pid, p] of Object.entries(local.pilots)) {
+          fsFields[`pilots.${pid}`] = sanitizeForFirestore(p);
+        }
+      }
       if (data.newBits >= 9) {
         fsFields['sharedState.isBossActive'] = true;
+        fsFields['sharedState.boss1Hp'] = local.sharedState.boss1Hp;
+        fsFields['sharedState.maxBoss1Hp'] = local.sharedState.maxBoss1Hp;
         fsFields['sharedState.runPulses'] = 0;
       }
     }
@@ -1500,7 +1520,7 @@ export async function triggerTeamWipe(
     local.sharedState.boss2Hp = maxHp;
     local.sharedState.maxBoss1Hp = maxHp;
     local.sharedState.maxBoss2Hp = maxHp;
-    local.sharedState.lastAction = `SIMULTANEOUS SQUAD WIPE! Progress saved. Retrying segment (Run #${currentRunNumber + 1})`;
+    local.sharedState.lastAction = `SIMULTANEOUS SQUAD WIPE! Squad Arcade Run Terminated (1 Wipe = Game Over).`;
     if (checkpoint) {
       Object.assign(local.sharedState, checkpoint);
       local.sharedState.runPulses = 0;

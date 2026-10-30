@@ -65,3 +65,24 @@ export function saveUserSettings(settings: UserSettings): void {
     console.warn('Failed to persist user settings:', err);
   }
 }
+
+const CREATIVE_MAX_STAGE_STORAGE_KEY = 'GAME_N_CREATIVE_SPACE_MAX_STAGE_V1';
+let cachedMaxCreativeStage: number | null = null;
+
+export function getStoredMaxCreativeStage(currentStage: number): number {
+  try {
+    if (cachedMaxCreativeStage === null) {
+      const raw = localStorage.getItem(CREATIVE_MAX_STAGE_STORAGE_KEY);
+      const parsed = raw ? parseInt(raw, 10) : 0;
+      cachedMaxCreativeStage = isNaN(parsed) ? 0 : parsed;
+    }
+    if (currentStage > cachedMaxCreativeStage) {
+      cachedMaxCreativeStage = currentStage;
+      localStorage.setItem(CREATIVE_MAX_STAGE_STORAGE_KEY, String(currentStage));
+    }
+    return cachedMaxCreativeStage;
+  } catch {
+    return currentStage;
+  }
+}
+

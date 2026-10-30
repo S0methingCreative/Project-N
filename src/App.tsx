@@ -3,8 +3,8 @@ import { GameState, GameMode, HighScores } from './types/game';
 import { INITIAL_MODULES } from './data/compilerModules';
 import { MainMenuModal } from './components/MainMenuModal';
 import { soundEngine } from './audio/soundEngine';
-import { loadUserSettings, saveUserSettings, UserSettings } from './utils/settings';
-import { SpeedrunRoom, getUrlRoomCode, joinSpeedrunRoom, subscribeToSpeedrunRoom } from './services/teamSpeedrunService';
+import { loadUserSettings, saveUserSettings, UserSettings, getStoredMaxCreativeStage } from './utils/settings';
+import { SpeedrunRoom, getUrlRoomCode, joinSpeedrunRoom, subscribeToSpeedrunRoom, compileTeamProgression } from './services/teamSpeedrunService';
 import { getPlayerCode, getPilotBeamColor } from './utils/pilotProfile';
 import {
   Cpu,
@@ -373,6 +373,24 @@ export default function App() {
     }
   }, [gameState]);
 
+  // Only update highest Creative Space milestone when actual story Bit/Resolution milestones change
+  React.useEffect(() => {
+    if (!gameState.gameMode || gameState.gameMode === 'story') {
+      const storyStage = gameState.hasCompletedStory
+        ? 20
+        : gameState.act1SubPart === 2 || (gameState.act1Bits || 0) >= 10
+        ? 10 + Math.min(10, Math.max(0, gameState.act1Resolution || 0))
+        : Math.min(9, Math.max(0, gameState.act1Bits || 0));
+      getStoredMaxCreativeStage(storyStage);
+    }
+  }, [
+    gameState.gameMode,
+    gameState.hasCompletedStory,
+    gameState.act1SubPart,
+    gameState.act1Bits,
+    gameState.act1Resolution,
+  ]);
+
   // Story progression is synced strictly at run end / game over to prevent Firestore write spikes
 
   // Before unload handler to guarantee current run data is saved before browser closes
@@ -415,14 +433,24 @@ export default function App() {
           currentN: 1,
           act1PurchasedN: true,
           act1Phase: 'point',
-          act1Bits: 0,
+          act1Bits: (prev.gameMode === 'arcade' || prev.gameMode === 'squad') ? 1 : 0,
           act1SubPart: 1,
           act1Resolution: 0,
         };
       }
       if (prev.act1SubPart === 1) {
-        const nextBits = Math.min(10, (prev.act1Bits || 0) + 1);
-        if (nextBits === 10) {
+        const isArcadeOrSquad = prev.gameMode === 'arcade' || prev.gameMode === 'squad';
+        const maxBit = isArcadeOrSquad ? 9 : 10;
+        const nextBits = Math.min(maxBit, (prev.act1Bits || 0) + 1);
+        if (prev.gameMode === 'squad' && teamRoom?.code && nextBits > (prev.act1Bits || 0)) {
+          void compileTeamProgression(teamRoom.code, 'bit', {
+            newBits: nextBits,
+            costHz: 0,
+            costV: 0,
+            actionMsg: `Dev +1 Bit -> Bit ${nextBits}`,
+          });
+        }
+        if (nextBits === 10 && !isArcadeOrSquad) {
           return {
             ...prev,
             act1Bits: 10,
@@ -438,7 +466,7 @@ export default function App() {
           act1Bits: nextBits,
           act1Phase: nextBits >= 9 ? 'line_segment' : 'point',
           engineCompilePercent: Math.min(100, prev.engineCompilePercent + 8),
-          ...(prev.gameMode === 'arcade' ? { hp: 100 } : {}),
+          ...(isArcadeOrSquad ? { hp: 100 } : {}),
         };
       } else {
         const nextBits = Math.min(10, (prev.act1Bits || 0) + 1);
@@ -683,22 +711,16 @@ export default function App() {
     setRunSessionKey(prev => prev + 1);
 
     const shared = room.sharedState || {};
-    const savedBits = typeof shared.act1Bits === 'number' ? shared.act1Bits : 0;
-    const savedRes = typeof shared.act1Resolution === 'number' ? shared.act1Resolution : 0;
-    const savedSubPart = (shared.act1SubPart === 2 ? 2 : 1) as 1 | 2;
+    const savedBits = Math.min(9, Math.max(1, typeof shared.act1Bits === 'number' ? shared.act1Bits : 1));
     const savedTime = typeof shared.speedrunTime === 'number' ? shared.speedrunTime : 0;
     const savedRuns = typeof shared.runNumber === 'number' ? shared.runNumber : 1;
     const savedHz = typeof shared.totalHz === 'number' ? shared.totalHz : 0;
     const savedV = typeof shared.totalV === 'number' ? shared.totalV : 0;
-    const savedBaud = typeof shared.totalBaud === 'number' ? shared.totalBaud : 0;
 
-    const isPart2 = savedSubPart === 2;
-    // In Squad Co-Op, N=1 is immediately active from launch so both pilots start synchronized on the coordinate trace
+    // In Squad Arcade Mode, N=1 and Bit 1 are active from launch (Bits 1-9 -> Boss 1)
     const hasN = true;
-    const currentN = isPart2 ? 2 : 1;
-    const act1Phase: 'void' | 'point' | 'line_segment' | 'ray' = isPart2
-      ? 'point'
-      : (savedBits >= 9 ? 'line_segment' : 'point');
+    const currentN = 1;
+    const act1Phase: 'void' | 'point' | 'line_segment' | 'ray' = savedBits >= 9 ? 'line_segment' : 'point';
 
     setGameState(prev => ({
       ...DEFAULT_GAME_STATE,
@@ -710,8 +732,8 @@ export default function App() {
       currentN,
       act1PurchasedN: hasN,
       act1Bits: savedBits,
-      act1SubPart: savedSubPart,
-      act1Resolution: savedRes,
+      act1SubPart: 1,
+      act1Resolution: 0,
       act1Phase,
       overshields: 0,
       polarity: 1,
@@ -722,7 +744,7 @@ export default function App() {
       carrierActive: true,
       speedrunTime: savedTime,
       speedrunRuns: savedRuns,
-      resources: { hertz: savedHz, volts: savedV, baud: savedBaud },
+      resources: { hertz: savedHz, volts: savedV, baud: 0 },
     }));
     setIsMainMenuOpen(false);
     setIsTeamModalOpen(false);
@@ -850,7 +872,6 @@ export default function App() {
           totalRuns={gameState.totalRuns || 1}
           hasCompletedStory={gameState.hasCompletedStory}
           storyProgress={storyProgressSummary}
-          hasActiveRun={gameState.carrierActive}
           userSettings={userSettings}
           onUpdateSettings={handleUpdateSettings}
           isMobile={isMobileDevice}

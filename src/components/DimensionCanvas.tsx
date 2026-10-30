@@ -36,6 +36,7 @@ import {
   voteToContinueRun,
   pauseAndSaveTeamRun,
   returnToPilotRoom,
+  launchTeamRun,
   saveLastSpeedrunRoomCode,
   getSortedPilots,
 } from '../services/teamSpeedrunService';
@@ -1440,6 +1441,7 @@ export const DimensionCanvas: React.FC<Props> = ({
   const isGhostRef = useRef<boolean>(false);
   const [ghostTimer, setGhostTimer] = useState<number>(0);
   const ghostTimerRef = useRef<number>(0);
+  const respawnInvulnTimerRef = useRef<number>(0);
   const lastHandledWipeAtRef = useRef<number>(teamRoom?.lastWipeAt || 0);
   const lastHandledContinueAtRef = useRef<number>(teamRoom?.lastContinueAt || 0);
   const lastTelemetrySyncRef = useRef<number>(0);
@@ -1487,23 +1489,57 @@ export const DimensionCanvas: React.FC<Props> = ({
       }
     }
 
-    // 1. Sync Part 1 Bits progression compiled by squad
+    // 1. Sync Part 1 Bits progression compiled by squad (Squad Arcade Mode: Bits 1–9)
     if (teamRoom.sharedState?.act1Bits !== undefined && teamRoom.sharedState.act1Bits > bitsRef.current) {
-      const newBits = teamRoom.sharedState.act1Bits;
+      const prevB = bitsRef.current;
+      const newBits = Math.min(9, teamRoom.sharedState.act1Bits);
       bitsRef.current = newBits;
       setBits(newBits);
       hasNRef.current = true;
       setHasN(true);
-      if (!isResumingCheckpointRef.current) {
-        soundEngine.playCompileLevelUp(newBits === 9 ? 'major' : 'standard');
-        addCombatText(`⚡ SQUAD COMPILED BIT ${newBits}!`, playerXRef.current, 190, '#55ff99');
-        onLogAction(`⚡ SQUAD PROGRESS: Bit ${newBits} compiled from shared squad total!`);
+
+      // Squad Arcade: Refill all pilots to 100% HP and instantly revive any ghosts with 0.5s invulnerability
+      const wasGhost = isGhostRef.current;
+      setIntegrity(100);
+      integrityRef.current = 100;
+      damageFlashRef.current = 0;
+      screenShakeRef.current = 0;
+      healFlashRef.current = 1.0;
+      if (wasGhost) {
+        isGhostRef.current = false;
+        setIsGhost(false);
+        ghostTimerRef.current = 0;
+        setGhostTimer(0);
+        respawnInvulnTimerRef.current = 0.5;
+        reportPilotRevived(teamRoom.code, getLocalPilotId());
       }
 
-      if (newBits >= 9 && subPartRef.current === 1 && phaseRef.current !== 'boss') {
+      const pacing = getArcadePacing(1, newBits, 0, runPulsesRef.current);
+      currentGenreRef.current = pacing.genre;
+      currentZoneRef.current = pacing.zone;
+      currentMusicStageRef.current = pacing.genre;
+      soundEngine.setMusicPacing(pacing.genre, pacing.zone);
+
+      if (!isResumingCheckpointRef.current) {
+        soundEngine.playCompileLevelUp(newBits === 9 ? 'major' : 'standard');
+        soundEngine.playHitSound('shield');
+        addSparks(playerXRef.current, 220, '#33ff66', 18);
+        addCombatText(
+          wasGhost
+            ? `⚡ BIT ${prevB} COMPLETE: REVIVED & 100% HP!`
+            : `💚 BIT ${prevB} COMPLETE: SQUAD HP 100%!`,
+          playerXRef.current,
+          160,
+          '#33ff66'
+        );
+        addCombatText(`⚡ SQUAD COMPILED BIT ${newBits}!`, playerXRef.current, 190, '#55ff99');
+        onLogAction(`⚡ SQUAD ARCADE: Bit ${newBits} compiled! All pilots restored to 100% HP & ghosts revived.`);
+      }
+
+      if (newBits >= 9 && phaseRef.current !== 'boss') {
         setAct1Phase('boss');
         phaseRef.current = 'boss';
-        const pilotCount = Object.keys(teamRoom.pilots || {}).length;
+        const pilotCount = Math.max(1, Object.keys(teamRoom.pilots || {}).length);
         const maxBossHp = getTeamBossMaxHp(pilotCount);
         setBossHp(maxBossHp);
         bossHpRef.current = maxBossHp;
@@ -1514,11 +1550,7 @@ export const DimensionCanvas: React.FC<Props> = ({
         spawnCooldownRef.current = 0;
         topWavesSpawnedRef.current = 0;
         bottomWavesSpawnedRef.current = 0;
-        currentZoneRef.current = 'easy';
-        currentGenreRef.current = 'slow_waltz';
-        currentMusicStageRef.current = 'slow_waltz';
-        soundEngine.setMusicPacing('slow_waltz', 'easy');
-        onLogAction(`DESTINATION LOCKED BY CORRUPTED SOVEREIGN! Squad boss fight begins (${maxBossHp} HP)!`);
+        onLogAction(`DESTINATION LOCKED BY CORRUPTED SOVEREIGN! Squad Arcade boss fight begins (${maxBossHp} HP)!`);
       } else if (newBits < 9 && phaseRef.current === 'void') {
         setAct1Phase('point');
         phaseRef.current = 'point';
@@ -1527,110 +1559,25 @@ export const DimensionCanvas: React.FC<Props> = ({
       onUpdateState(prev => ({
         ...prev,
         act1PurchasedN: true,
-        currentN: prev.act1SubPart === 2 ? 2 : 1,
+        currentN: 1,
         act1Bits: newBits,
-        act1Phase: (prev.act1SubPart !== 2 && newBits >= 9) ? 'line_segment' : 'point',
-      }));
-    }
-
-    // 2. Sync Part 2 SubPart transition (Ascension to N=2 after Boss 1)
-    if (teamRoom.sharedState?.act1SubPart === 2 && subPartRef.current === 1) {
-      hasNRef.current = true;
-      setHasN(true);
-      subPartRef.current = 2;
-      setSubPart(2);
-      bitsRef.current = 10;
-      setBits(10);
-      const newRes = teamRoom.sharedState.act1Resolution || 0;
-      resolutionRef.current = newRes;
-      setResolution(newRes);
-      phaseRef.current = 'point';
-      setAct1Phase('point');
-      integrityRef.current = 100;
-      setIntegrity(100);
-      runPulsesRef.current = 0;
-      mathBurstStepRef.current = 0;
-      spawnCooldownRef.current = 0;
-      topWavesSpawnedRef.current = 0;
-      bottomWavesSpawnedRef.current = 0;
-      currentZoneRef.current = 'easy';
-      currentGenreRef.current = 'slow_waltz';
-      currentMusicStageRef.current = 'slow_waltz';
-      pulsesRef.current = [];
-      redErrorZonesRef.current = [];
-      soundEngine.setBossMusic(false);
-      soundEngine.setMusicPacing('slow_waltz', 'easy');
-      if (!isResumingCheckpointRef.current) {
-        addCombatText('✦ SOVEREIGN CONQUERED! ASCENDING TO N = 2! ✦', 460, 200, '#55ff99');
-        onLogAction(`✦ SQUAD MILESTONE: Ascended to Part 2 (Resolution ${newRes})!`);
-      }
-      onUpdateState(prev => ({
-        ...prev,
-        act1PurchasedN: true,
-        currentN: 2,
-        act1Bits: 10,
-        act1SubPart: 2,
-        act1Resolution: newRes,
-        act1Phase: 'point',
+        act1SubPart: 1,
+        act1Resolution: 0,
         hp: 100,
+        act1Phase: newBits >= 9 ? 'line_segment' : 'point',
       }));
     }
 
-    // 3. Sync Part 2 Resolution progression compiled by squad
-    if (
-      teamRoom.sharedState?.act1Resolution !== undefined &&
-      subPartRef.current === 2 &&
-      teamRoom.sharedState.act1Resolution > resolutionRef.current
-    ) {
-      const newRes = teamRoom.sharedState.act1Resolution;
-      resolutionRef.current = newRes;
-      setResolution(newRes);
-      if (!isResumingCheckpointRef.current) {
-        soundEngine.playCompileLevelUp(newRes === 9 ? 'major' : 'standard');
-        addCombatText(`⚡ SQUAD COMPILED RES ${newRes}!`, playerXRef.current, 190, '#ffe655');
-        onLogAction(`⚡ SQUAD PROGRESS: Resolution ${newRes} compiled from shared squad total!`);
-      }
-
-      if (newRes >= 9) {
-        const pilotCount = Object.keys(teamRoom.pilots || {}).length;
-        const maxBoss2Hp = getTeamBossMaxHp(pilotCount);
-        setBoss2Hp(maxBoss2Hp);
-        boss2HpRef.current = maxBoss2Hp;
-        bossTargetTimerRef.current = 0;
-        bossTargetZoneRef.current = 'harmonic';
-        bossHitFlashRef.current = 0;
-        runPulsesRef.current = 0;
-        mathBurstStepRef.current = 0;
-        spawnCooldownRef.current = 0;
-        topWavesSpawnedRef.current = 0;
-        bottomWavesSpawnedRef.current = 0;
-        currentZoneRef.current = 'easy';
-        currentGenreRef.current = 'slow_waltz';
-        currentMusicStageRef.current = 'slow_waltz';
-        soundEngine.setMusicPacing('slow_waltz', 'easy');
-        onLogAction(`DESTINATION LOCKED BY FRACTURE SOVEREIGN! Squad Boss 2 fight begins (${maxBoss2Hp} HP)!`);
-      }
-
-      onUpdateState(prev => ({
-        ...prev,
-        act1PurchasedN: true,
-        currentN: 2,
-        act1Bits: 10,
-        act1SubPart: 2,
-        act1Resolution: newRes,
-      }));
-    }
-
-    // 3b. Keep pulse progression synchronized across squad pilots within the same stage
+    // 2. Keep pulse progression synchronized across squad pilots within the same stage
     if (
       !deathScreenRef.current &&
+      !arcadeKillModalRef.current &&
+      !arcadeVictoryModalRef.current &&
       !isRoundEndedRef.current &&
       teamRoom.status === 'active' &&
       (!teamRoom.lastWipeAt || (teamRoom.lastContinueAt && teamRoom.lastContinueAt >= teamRoom.lastWipeAt)) &&
       typeof teamRoom.sharedState?.runPulses === 'number' &&
-      (teamRoom.sharedState.act1SubPart || 1) === subPartRef.current &&
-      (teamRoom.sharedState.act1Bits || 0) === bitsRef.current &&
-      (teamRoom.sharedState.act1Resolution || 0) === resolutionRef.current
+      (teamRoom.sharedState.act1Bits || 1) === bitsRef.current
     ) {
       const sharedPulses = teamRoom.sharedState.runPulses;
       if (sharedPulses > runPulsesRef.current + 2) {
@@ -1639,147 +1586,132 @@ export const DimensionCanvas: React.FC<Props> = ({
       }
     }
 
-    // 4. Sync Boss 1 HP from squad
+    // 3. Sync Boss 1 HP from squad — Defeating Boss 1 completes Squad Arcade Mode!
     if (teamRoom.sharedState?.boss1Hp !== undefined && phaseRef.current === 'boss') {
       if (teamRoom.sharedState.boss1Hp < bossHpRef.current) {
         bossHpRef.current = teamRoom.sharedState.boss1Hp;
         setBossHp(teamRoom.sharedState.boss1Hp);
       }
-      if (teamRoom.sharedState.boss1Hp <= 0 && subPartRef.current === 1) {
-        subPartRef.current = 2;
-        setSubPart(2);
-        bitsRef.current = 10;
-        setBits(10);
-        resolutionRef.current = 0;
-        setResolution(0);
-        phaseRef.current = 'point';
-        setAct1Phase('point');
-        integrityRef.current = 100;
-        setIntegrity(100);
-        runPulsesRef.current = 0;
-        mathBurstStepRef.current = 0;
-        spawnCooldownRef.current = 0;
-        topWavesSpawnedRef.current = 0;
-        bottomWavesSpawnedRef.current = 0;
-        currentZoneRef.current = 'easy';
-        currentGenreRef.current = 'slow_waltz';
-        currentMusicStageRef.current = 'slow_waltz';
+      if (teamRoom.sharedState.boss1Hp <= 0 && !arcadeVictoryModalRef.current) {
+        isRoundEndedRef.current = true;
+        soundEngine.setBossMusic(false);
+        soundEngine.playCadenceResolution();
+        const finalTime = speedrunTimeRef.current;
+        const arcModal = {
+          time: finalTime,
+          livesRemaining: 1,
+        };
+        arcadeVictoryModalRef.current = arcModal;
+        setArcadeVictoryModal(arcModal);
         pulsesRef.current = [];
         redErrorZonesRef.current = [];
-        soundEngine.setBossMusic(false);
-        soundEngine.setMusicPacing('slow_waltz', 'easy');
-        if (!isResumingCheckpointRef.current) {
-          addCombatText('✦ SOVEREIGN CONQUERED! ASCENDING TO N = 2! ✦', 460, 200, '#55ff99');
-        }
-        onUpdateState(prev => ({
-          ...prev,
-          act1PurchasedN: true,
-          currentN: 2,
-          act1Bits: 10,
-          act1SubPart: 2,
-          act1Resolution: 0,
-          act1Phase: 'point',
-          hp: 100,
-        }));
+        onLogAction(`👑 SQUAD ARCADE VICTORY! Corrupted Sovereign conquered by the squad in ${formatTime(finalTime)}!`);
       }
     }
 
-    // 5. Sync Boss 2 HP from squad (Squad Co-Op has NO leaderboard tracking)
-    if (teamRoom.sharedState?.boss2Hp !== undefined && subPartRef.current === 2 && resolutionRef.current >= 9) {
-      if (teamRoom.sharedState.boss2Hp < boss2HpRef.current) {
-        boss2HpRef.current = teamRoom.sharedState.boss2Hp;
-        setBoss2Hp(teamRoom.sharedState.boss2Hp);
-      }
-      if (teamRoom.sharedState.boss2Hp <= 0 && !speedrunCompleteModalRef.current) {
-        isRoundEndedRef.current = true;
-        const finalTime = speedrunTimeRef.current;
-        const completeModal = {
-          time: finalTime,
-          runs: speedrunRunsRef.current,
-        };
-        speedrunCompleteModalRef.current = completeModal;
-        setSpeedrunCompleteModal(completeModal);
-      }
-    }
-
-    // 6. Check if a simultaneous squad wipe was registered across the squad or all pilots are knocked
+    // 4. Check if a simultaneous squad wipe was registered across the squad or all pilots are knocked (1 Wipe = Game Over)
     const pilotsList = Object.values(teamRoom.pilots || {});
     const allSquadKnocked = pilotsList.length > 0 && pilotsList.every(p => p.isKnocked);
 
     if (
       (teamRoom.lastWipeAt && teamRoom.lastWipeAt > lastHandledWipeAtRef.current) ||
-      (allSquadKnocked && !deathScreenRef.current && !isRoundEndedRef.current)
+      (allSquadKnocked && !arcadeKillModalRef.current && !deathScreenRef.current && !isRoundEndedRef.current)
     ) {
       if (teamRoom.lastWipeAt) {
         lastHandledWipeAtRef.current = Math.max(lastHandledWipeAtRef.current, teamRoom.lastWipeAt);
       }
-      if (!deathScreenRef.current) {
+      if (!arcadeKillModalRef.current && !deathScreenRef.current) {
         showTeamWipeDeathScreenRef.current();
       }
     }
 
-    // 7. Check if squad resumed run from death screen (All pilots voted ready!)
-    const isServerResumedAfterWipe =
-      Boolean(deathScreenRef.current) &&
-      teamRoom.status === 'active' &&
-      !allSquadKnocked &&
-      (!teamRoom.lastWipeAt || (teamRoom.lastContinueAt && teamRoom.lastContinueAt >= teamRoom.lastWipeAt));
-
-    if (
-      (teamRoom.lastContinueAt && teamRoom.lastContinueAt > lastHandledContinueAtRef.current) ||
-      isServerResumedAfterWipe
-    ) {
-      if (teamRoom.lastContinueAt) {
-        lastHandledContinueAtRef.current = Math.max(lastHandledContinueAtRef.current, teamRoom.lastContinueAt);
-      }
+    // 5. Check if squad launched a new Squad Arcade retry from Bit 1
+    if (teamRoom.lastContinueAt && teamRoom.lastContinueAt > lastHandledContinueAtRef.current) {
+      lastHandledContinueAtRef.current = Math.max(lastHandledContinueAtRef.current, teamRoom.lastContinueAt);
       if (deathScreenRef.current) {
         deathScreenRef.current = null;
         setDeathScreen(null);
       }
+      if (arcadeKillModalRef.current) {
+        arcadeKillModalRef.current = null;
+        setArcadeKillModal(null);
+      }
+      if (arcadeVictoryModalRef.current) {
+        arcadeVictoryModalRef.current = null;
+        setArcadeVictoryModal(null);
+      }
       isRoundEndedRef.current = false;
+      lastCompiledSquadStageRef.current = '';
       integrityRef.current = 100;
       setIntegrity(100);
       isGhostRef.current = false;
       setIsGhost(false);
       ghostTimerRef.current = 0;
       setGhostTimer(0);
+      respawnInvulnTimerRef.current = 0.5;
+
+      const startBits = Math.min(9, Math.max(1, teamRoom.sharedState?.act1Bits || 1));
+      hasNRef.current = true;
+      setHasN(true);
+      subPartRef.current = 1;
+      setSubPart(1);
+      bitsRef.current = startBits;
+      setBits(startBits);
+      resolutionRef.current = 0;
+      setResolution(0);
+      phaseRef.current = startBits >= 9 ? 'boss' : 'point';
+      setAct1Phase(phaseRef.current);
+
+      runHzRef.current = 0;
+      runVoltsRef.current = 0;
+      runBaudRef.current = 0;
+      setRunHz(0);
+      setRunVolts(0);
+      setRunBaud(0);
+      pendingSquadHzRef.current = 0;
+      pendingSquadVRef.current = 0;
+      pendingSquadBaudRef.current = 0;
+      speedrunTimeRef.current = teamRoom.sharedState?.speedrunTime || 0;
+      setSpeedrunTime(speedrunTimeRef.current);
+
       runPulsesRef.current = 0;
       mathBurstStepRef.current = 0;
       spawnCooldownRef.current = 0;
       topWavesSpawnedRef.current = 0;
       bottomWavesSpawnedRef.current = 0;
-      currentZoneRef.current = 'easy';
-      currentGenreRef.current = 'slow_waltz';
-      currentMusicStageRef.current = 'slow_waltz';
+      playerXRef.current = 240;
 
       const pilotCount = Math.max(1, Object.keys(teamRoom.pilots || {}).length);
       const maxTeamBossHp = getTeamBossMaxHp(pilotCount);
-      if (subPartRef.current === 1 && bitsRef.current >= 9) {
-        phaseRef.current = 'boss';
-        setAct1Phase('boss');
-        bossHpRef.current = maxTeamBossHp;
-        setBossHp(maxTeamBossHp);
-        bossMissesRef.current = 0;
-        bossHitFlashRef.current = 0;
-      } else if (subPartRef.current === 2 && resolutionRef.current >= 9) {
-        boss2HpRef.current = maxTeamBossHp;
-        setBoss2Hp(maxTeamBossHp);
-        bossTargetTimerRef.current = 0;
-        bossTargetZoneRef.current = 'harmonic';
-        bossHitFlashRef.current = 0;
-      }
+      bossHpRef.current = maxTeamBossHp;
+      setBossHp(maxTeamBossHp);
+      bossMissesRef.current = 0;
+      bossHitFlashRef.current = 0;
 
-      const shouldPlayBossMusic =
-        (subPartRef.current === 1 && bitsRef.current >= 9) ||
-        (subPartRef.current === 2 && resolutionRef.current >= 9);
-      soundEngine.setBossMusic(shouldPlayBossMusic);
-      soundEngine.setMusicPacing('slow_waltz', 'easy');
+      const pacing = getArcadePacing(1, startBits, 0, 0);
+      currentZoneRef.current = pacing.zone;
+      currentGenreRef.current = pacing.genre;
+      currentMusicStageRef.current = pacing.genre;
+
+      soundEngine.setBossMusic(startBits >= 9);
+      soundEngine.setMusicPacing(pacing.genre, pacing.zone);
       soundEngine.startBackgroundMusic();
 
       pulsesRef.current = [];
       redErrorZonesRef.current = [];
       combatTextsRef.current = [];
-      displaySingleResumeBannerRef.current();
+
+      onUpdateState(prev => ({
+        ...prev,
+        act1PurchasedN: true,
+        currentN: 1,
+        act1Bits: startBits,
+        act1SubPart: 1,
+        act1Resolution: 0,
+        act1Phase: startBits >= 9 ? 'line_segment' : 'point',
+        hp: 100,
+        resources: { hertz: 0, volts: 0, baud: 0 },
+      }));
     }
   }, [teamRoom]);
 
@@ -2047,28 +1979,50 @@ export const DimensionCanvas: React.FC<Props> = ({
 
     const prevBits = bitsRef.current;
     const nextBits = isSquadActive
-      ? (nextSubPart === 2 ? 10 : Math.max(gameState.act1Bits || 0, shared?.act1Bits || 0, bitsRef.current || 0))
+      ? Math.min(9, Math.max(1, gameState.act1Bits || 1, shared?.act1Bits || 1, bitsRef.current || 1))
       : (gameState.act1Bits || 0);
     setBits(nextBits);
     bitsRef.current = nextBits;
 
-    // Arcade Mode ONLY: Refill player health to 100% whenever a Bit is completed (including via +1 BIT dev button)
-    if (gameState.gameMode === 'arcade' && nextBits > prevBits && prevBits >= 1) {
+    // Arcade & Squad Arcade Modes: Refill player health to 100% and revive ghosts whenever a Bit is completed (including via +1 BIT dev button)
+    if ((gameState.gameMode === 'arcade' || gameState.gameMode === 'squad') && nextBits > prevBits && prevBits >= 1) {
+      const wasGhost = isGhostRef.current;
       setIntegrity(100);
       integrityRef.current = 100;
       damageFlashRef.current = 0;
       screenShakeRef.current = 0;
       healFlashRef.current = 1.0;
+      if (wasGhost) {
+        isGhostRef.current = false;
+        setIsGhost(false);
+        ghostTimerRef.current = 0;
+        setGhostTimer(0);
+        respawnInvulnTimerRef.current = 0.5;
+        if (teamRoomRef.current) {
+          reportPilotRevived(teamRoomRef.current.code, getLocalPilotId());
+        }
+      }
       pulsesRef.current = pulsesRef.current.filter(p => p.reflected);
       spawnCooldownRef.current = 0;
+      const pacing = getArcadePacing(1, nextBits, 0, runPulsesRef.current);
+      currentGenreRef.current = pacing.genre;
+      currentZoneRef.current = pacing.zone;
+      soundEngine.setMusicPacing(pacing.genre, pacing.zone);
       soundEngine.playHitSound('shield');
       addSparks(playerXRef.current, 220, '#33ff66', 18);
-      addCombatText(`💚 BIT ${prevBits} COMPLETE: HEALTH REFILLED 100%!`, playerXRef.current, 160, '#33ff66');
+      addCombatText(
+        wasGhost
+          ? `⚡ BIT ${prevBits} COMPLETE: REVIVED & 100% HP!`
+          : `💚 BIT ${prevBits} COMPLETE: HEALTH REFILLED 100%!`,
+        playerXRef.current,
+        160,
+        '#33ff66'
+      );
       onLogAction(`💚 ARCADE BIT ${prevBits} COMPLETE: Pilot health refilled to 100% (Advancing to Bit ${nextBits})!`);
     }
 
     const nextRes = isSquadActive
-      ? (nextSubPart === 2 ? Math.max(gameState.act1Resolution || 0, shared?.act1Resolution || 0, resolutionRef.current || 0) : 0)
+      ? 0
       : (gameState.act1Resolution || 0);
     setResolution(nextRes);
     resolutionRef.current = nextRes;
@@ -2090,12 +2044,16 @@ export const DimensionCanvas: React.FC<Props> = ({
     setAct1Phase(nextPhase);
     phaseRef.current = nextPhase;
 
-    // Reset boss health when loading / updating to bit 9 or res 9 (Story / Speedrun only)
+    // Reset boss health when loading / updating to bit 9 or res 9
     if (gameState.gameMode !== 'survival' && nextSubPart === 1 && nextBits >= 9) {
       setAct1Phase('boss');
       phaseRef.current = 'boss';
-      setBossHp(MAX_BOSS_1_HP);
-      bossHpRef.current = MAX_BOSS_1_HP;
+      const pilotCount = (gameState.gameMode === 'squad' && teamRoomRef.current)
+        ? Math.max(1, Object.keys(teamRoomRef.current.pilots || {}).length)
+        : 1;
+      const targetMaxBoss1Hp = gameState.gameMode === 'squad' ? getTeamBossMaxHp(pilotCount) : MAX_BOSS_1_HP;
+      setBossHp(targetMaxBoss1Hp);
+      bossHpRef.current = targetMaxBoss1Hp;
       bossMissesRef.current = 0;
       bossHitFlashRef.current = 0;
     }
@@ -2577,9 +2535,39 @@ export const DimensionCanvas: React.FC<Props> = ({
           const newBits = targetBit;
           setBits(newBits);
           bitsRef.current = newBits;
+
+          // Squad Arcade: Refill local pilot to 100% HP and instantly revive if in Ghost mode
+          const wasGhost = isGhostRef.current;
+          setIntegrity(100);
+          integrityRef.current = 100;
+          damageFlashRef.current = 0;
+          screenShakeRef.current = 0;
+          healFlashRef.current = 1.0;
+          if (wasGhost) {
+            isGhostRef.current = false;
+            setIsGhost(false);
+            ghostTimerRef.current = 0;
+            setGhostTimer(0);
+            respawnInvulnTimerRef.current = 0.5;
+            reportPilotRevived(teamRoomRef.current.code, getLocalPilotId());
+          }
+          const pacing = getArcadePacing(1, newBits, 0, runPulsesRef.current);
+          currentGenreRef.current = pacing.genre;
+          currentZoneRef.current = pacing.zone;
+          soundEngine.setMusicPacing(pacing.genre, pacing.zone);
           soundEngine.playCompileLevelUp(newBits === 9 ? 'major' : 'standard');
+          soundEngine.playHitSound('shield');
+          addSparks(playerXRef.current, 220, '#33ff66', 18);
+          addCombatText(
+            wasGhost
+              ? `⚡ BIT ${currentB} COMPLETE: REVIVED & 100% HP!`
+              : `💚 BIT ${currentB} COMPLETE: SQUAD HP 100%!`,
+            playerXRef.current,
+            160,
+            '#33ff66'
+          );
           addCombatText(`⚡ SQUAD: ${upgrade.name}!`, playerXRef.current, 190, '#55ff99');
-          onLogAction(`SQUAD AUTO-COMPILE: Bit ${newBits} compiled from squad total (${costHz} Hz, ${costV} V)!`);
+          onLogAction(`SQUAD ARCADE AUTO-COMPILE: Bit ${newBits} compiled (${costHz} Hz, ${costV} V)! All pilots restored to 100% HP!`);
           if (newBits === 9) {
             setAct1Phase('boss');
             phaseRef.current = 'boss';
@@ -2591,13 +2579,14 @@ export const DimensionCanvas: React.FC<Props> = ({
             runPulsesRef.current = 0;
             mathBurstStepRef.current = 0;
             spawnCooldownRef.current = 0;
-            onLogAction(`DESTINATION LOCKED BY CORRUPTED SOVEREIGN! Squad boss fight begins (${maxBossHp} HP)!`);
+            onLogAction(`DESTINATION LOCKED BY CORRUPTED SOVEREIGN! Squad Arcade boss fight begins (${maxBossHp} HP)!`);
           }
           onUpdateState(prev => ({
             ...prev,
             act1PurchasedN: true,
             currentN: 1,
             act1Bits: newBits,
+            hp: 100,
             act1Phase: newBits >= 9 ? 'line_segment' : 'point',
           }));
           return;
@@ -2680,8 +2669,8 @@ export const DimensionCanvas: React.FC<Props> = ({
     }
 
     // 3. Auto-purchase Resolution upgrades (Part 2 ONLY: subPart === 2 && currentN === 2)
-    // Arcade mode completes at Boss 1 and strictly does NOT have Part 2
-    if (gameModeRef.current !== 'arcade' && subPartRef.current === 2 && resolutionRef.current < 9) {
+    // Arcade & Squad Arcade modes complete at Boss 1 and strictly do NOT have Part 2
+    if (gameModeRef.current !== 'arcade' && gameModeRef.current !== 'squad' && subPartRef.current === 2 && resolutionRef.current < 9) {
       const nextResIdx = resolutionRef.current;
       const upgrade = RESOLUTION_UPGRADES[nextResIdx];
       const reqBaud = upgrade ? upgrade.costBaud * (isSpeedrun ? teamScale : 1) : 999;
@@ -3129,8 +3118,15 @@ export const DimensionCanvas: React.FC<Props> = ({
     onLogAction("🕹️ ARCADE MODE ENGAGED: Starting from Bit 1 with 1 Life! Scales to Medium at Bit 6, gets hard at 9 (Boss 1); conquer Corrupted Sovereign for victory!");
   };
 
-  // Simultaneous Team Wipe: All pilots were knocked at the same time
-  // Triggers death screen allowing squad to continue their run or return to menu with progress saved!
+  const handleRestartSquadArcade = async () => {
+    if (teamRoomRef.current?.code) {
+      await launchTeamRun(teamRoomRef.current.code);
+    } else {
+      handleStartArcadeMode();
+    }
+  };
+
+  // Simultaneous Team Wipe: All pilots were knocked at the same time (1 Squad Wipe = Game Over in Squad Arcade Mode)
   const handleExecuteTeamWipe = () => {
     speedrunRunsRef.current = (teamRoomRef.current?.sharedState?.runNumber || (speedrunRunsRef.current + 1));
     setSpeedrunRuns(speedrunRunsRef.current);
@@ -3148,43 +3144,33 @@ export const DimensionCanvas: React.FC<Props> = ({
     setIsGhost(false);
     ghostTimerRef.current = 0;
     setGhostTimer(0);
+    respawnInvulnTimerRef.current = 0;
     soundEngine.playHitSound('quantum');
     soundEngine.setBossMusic(false);
     soundEngine.setMusicPacing('slow_waltz', 'easy');
 
-    // Save current room code to local storage (triggerTeamWipe already persists checkpoint on server)
     if (teamRoomRef.current) {
       saveLastSpeedrunRoomCode(teamRoomRef.current.code);
     }
 
-    const squadHz = (teamRoomRef.current?.sharedState?.totalHz || 0) + pendingSquadHzRef.current;
-    const squadV = (teamRoomRef.current?.sharedState?.totalV || 0) + pendingSquadVRef.current;
-    const squadBaud = (teamRoomRef.current?.sharedState?.totalBaud || 0) + pendingSquadBaudRef.current;
-    const isPart2 = subPartRef.current === 2;
-    const currentB = bitsRef.current;
-    const currentR = resolutionRef.current;
-    const checkpointLabel = isPart2 ? `Part 2 (Resolution ${currentR})` : `Part 1 (Bit ${currentB})`;
+    const currentB = Math.max(1, bitsRef.current);
+    const isBoss = phaseRef.current === 'boss' || currentB >= 9;
+    const stageName = isBoss ? 'Boss 1: Corrupted Sovereign (Bit 9)' : `Bit ${currentB}`;
+    const stageNum = isBoss ? 9.5 : currentB;
+    const finalTime = speedrunTimeRef.current;
 
     isRoundEndedRef.current = true;
-    const screen: DeathScreenState = {
-      active: true,
-      collectedHz: runHzRef.current,
-      collectedV: runVoltsRef.current,
-      collectedBaud: runBaudRef.current,
-      costHz: 0,
-      costV: 0,
-      costBaud: 0,
-      target: isPart2 ? 'resolution' : 'bit',
-      currentResolution: currentR,
-      upgradeName: `💀 SQUAD WIPE · CHECKPOINT SAVED`,
-      upgradeDesc: `${checkpointLabel} (Run #${speedrunRunsRef.current})`,
-      message: `💀 SIMULTANEOUS SQUAD WIPE!\nALL PILOTS KNOCKED OUT.\nSAVED CHECKPOINT: ${checkpointLabel}.\nSQUAD TOTAL BANK: ${squadHz} HZ, ${squadV} V${isPart2 ? `, ${squadBaud} FLUX` : ''}.\nPROGRESS IS SAVED. CHOOSE AN OPTION BELOW:`,
+    const killModal = {
+      stageName,
+      stageNum,
+      time: finalTime,
+      reason: 'SIMULTANEOUS SQUAD WIPE: All pilots knocked out simultaneously (1 Squad Wipe = Game Over)!',
     };
-    deathScreenRef.current = screen;
-    setDeathScreen(screen);
+    arcadeKillModalRef.current = killModal;
+    setArcadeKillModal(killModal);
 
-    addCombatText(`💀 SQUAD WIPED! CHECKPOINT SAVED`, 460, 200, '#ff3344');
-    onLogAction(`💀 SIMULTANEOUS SQUAD WIPE: All pilots down! Progress saved at ${checkpointLabel}. Continue run or return to menu.`);
+    addCombatText(`💀 SQUAD WIPED! GAME OVER`, 460, 200, '#ff3344');
+    onLogAction(`💀 SQUAD ARCADE GAME OVER: Simultaneous squad wipe at ${stageName} after ${formatTime(finalTime)}!`);
   };
   showTeamWipeDeathScreenRef.current = handleExecuteTeamWipe;
 
@@ -3883,14 +3869,18 @@ export const DimensionCanvas: React.FC<Props> = ({
         return;
       }
 
-      // Arcade kill screen quick key: Enter / C to retry
+      // Arcade / Squad Arcade kill screen quick key: Enter / C to retry
       if (arcadeKillModalRef.current) {
         if (deathBufferSecondsRef.current > 0) {
           e.preventDefault();
           return;
         }
         if (e.key === 'Enter' || e.key === 'c' || e.key === 'C') {
-          handleStartArcadeMode();
+          if (gameModeRef.current === 'squad') {
+            void handleRestartSquadArcade();
+          } else {
+            handleStartArcadeMode();
+          }
         }
         return;
       }
@@ -4033,7 +4023,12 @@ export const DimensionCanvas: React.FC<Props> = ({
       const TRACE_START = 80;
       const TRACE_END = w - 80;
 
-      // Speedrun 5-Second Knocked-to-Respawn Automatic Timer
+      // Decay 0.5s Respawn Invulnerability Timer
+      if (respawnInvulnTimerRef.current > 0) {
+        respawnInvulnTimerRef.current = Math.max(0, respawnInvulnTimerRef.current - dt);
+      }
+
+      // Squad Arcade 5-Second Knocked-to-Respawn Automatic Timer (+0.5s Invulnerability on Respawn)
       if (isGhostRef.current) {
         ghostTimerRef.current = Math.max(0, ghostTimerRef.current - dt);
         setGhostTimer(ghostTimerRef.current);
@@ -4044,9 +4039,14 @@ export const DimensionCanvas: React.FC<Props> = ({
           setGhostTimer(0);
           integrityRef.current = 100;
           setIntegrity(100);
+          respawnInvulnTimerRef.current = 0.5;
+          if (phase === 'boss') {
+            playerXRef.current = Math.min(playerXRef.current, TRACE_END - 90);
+          }
           soundEngine.playHitSound('shield');
-          addCombatText('⚡ RESPAWNED (100% HP)!', playerXRef.current, TRACE_Y - 24, '#33ff66');
-          onLogAction('⚡ PILOT REVIVED: 5.0s automatic countdown complete. Integrity restored to 100%. Vulnerable immediately!');
+          addSparks(playerXRef.current, TRACE_Y, '#00f0ff', 16);
+          addCombatText('⚡ RESPAWNED (100% HP · 0.5s SHIELD)!', playerXRef.current, TRACE_Y - 24, '#33ff66');
+          onLogAction('⚡ PILOT REVIVED: 5.0s ghost countdown complete. Integrity restored to 100% with 0.5s respawn invulnerability!');
           if (teamRoomRef.current) {
             reportPilotRevived(teamRoomRef.current.code, getLocalPilotId());
           }
@@ -4178,16 +4178,20 @@ export const DimensionCanvas: React.FC<Props> = ({
         );
 
         if (!isRoundOver && !isMainMenuOpenRef.current && (hasN || stateRef.current.carrierActive)) {
-          // At start of run on bit 9 or res 9, guarantee boss health is reset to full (Story / Speedrun only)
+          // At start of run on bit 9 or res 9, guarantee boss health is reset to full
           if (gameModeRef.current !== 'survival' && runPulsesRef.current === 0) {
             if ((subPartRef.current === 1 || stateRef.current.act1SubPart === 1) && (bitsRef.current >= 9 || stateRef.current.act1Bits >= 9)) {
               if (phaseRef.current !== 'boss') {
                 setAct1Phase('boss');
                 phaseRef.current = 'boss';
               }
-              if (bossHpRef.current < MAX_BOSS_1_HP) {
-                bossHpRef.current = MAX_BOSS_1_HP;
-                setBossHp(MAX_BOSS_1_HP);
+              const pilotCount = (gameModeRef.current === 'squad' && teamRoomRef.current)
+                ? Math.max(1, Object.keys(teamRoomRef.current.pilots || {}).length)
+                : 1;
+              const targetMaxBoss1Hp = gameModeRef.current === 'squad' ? getTeamBossMaxHp(pilotCount) : MAX_BOSS_1_HP;
+              if (bossHpRef.current < targetMaxBoss1Hp && (!teamRoomRef.current?.sharedState?.isBossActive)) {
+                bossHpRef.current = targetMaxBoss1Hp;
+                setBossHp(targetMaxBoss1Hp);
               }
               bossMissesRef.current = 0;
               bossHitFlashRef.current = 0;
@@ -4204,13 +4208,15 @@ export const DimensionCanvas: React.FC<Props> = ({
 
           // In Part 1 Boss fight (or Survival Boss 1): boss pulls player toward right!
           if ((gameModeRef.current !== 'survival' && phase === 'boss' && subPartRef.current === 1) || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
-            // If player incorrectly polarizes more than 1 projectile (bossMissesRef.current > 1),
-            // gravitational suction accelerates irreversibly, dragging player into the singularity!
-            const pullRate = bossMissesRef.current > 1 ? 140 : bossMissesRef.current === 1 ? 26 : 14;
-            playerXRef.current = Math.min(TRACE_END - 20, playerXRef.current + dt * pullRate);
+            if (!isGhostRef.current && respawnInvulnTimerRef.current <= 0) {
+              // If player incorrectly polarizes more than 1 projectile (bossMissesRef.current > 1),
+              // gravitational suction accelerates irreversibly, dragging player into the singularity!
+              const pullRate = bossMissesRef.current > 1 ? 140 : bossMissesRef.current === 1 ? 26 : 14;
+              playerXRef.current = Math.min(TRACE_END - 20, playerXRef.current + dt * pullRate);
 
-            if (playerXRef.current >= TRACE_END - 24) {
-              triggerDeathRef.current("SUCKED INTO CORRUPTED SINGULARITY: More than 1 failed polarization caused irreversible gravitational collapse!");
+              if (playerXRef.current >= TRACE_END - 24) {
+                triggerDeathRef.current("SUCKED INTO CORRUPTED SINGULARITY: More than 1 failed polarization caused irreversible gravitational collapse!");
+              }
             }
           }
 
@@ -4355,7 +4361,7 @@ export const DimensionCanvas: React.FC<Props> = ({
           let targetZone: SpeedZone = 'easy';
           let targetGenre: MusicGenre = 'slow_waltz';
 
-          if (gameModeRef.current === 'arcade') {
+          if (gameModeRef.current === 'arcade' || gameModeRef.current === 'squad') {
             const arcadePacing = getArcadePacing(
               subPartRef.current,
               bitsRef.current,
@@ -5037,7 +5043,11 @@ export const DimensionCanvas: React.FC<Props> = ({
             ctx.lineWidth = 1;
             ctx.strokeRect(barX - 2, barY - 2, barW + 4, barH + 4);
 
-            const hpPct = Math.max(0, bossHpRef.current / MAX_BOSS_1_HP);
+            const boss1PilotCount = (gameModeRef.current === 'squad' && teamRoomRef.current)
+              ? Math.max(1, Object.keys(teamRoomRef.current.pilots || {}).length)
+              : 1;
+            const currentMaxBoss1Hp = gameModeRef.current === 'squad' ? getTeamBossMaxHp(boss1PilotCount) : MAX_BOSS_1_HP;
+            const hpPct = Math.max(0, Math.min(1, bossHpRef.current / currentMaxBoss1Hp));
             ctx.fillStyle = hpPct > 0.5 ? '#33ff66' : hpPct > 0.25 ? '#ffaa33' : '#ff2255';
             ctx.fillRect(barX, barY, hpPct * barW, barH);
 
@@ -5131,13 +5141,15 @@ export const DimensionCanvas: React.FC<Props> = ({
           const avatarColorCfg = BEAM_COLOR_CONFIGS[pilotBeamColorRef.current] || BEAM_COLOR_CONFIGS.green;
           const isGhostActive = isGhostRef.current;
 
-          // 1. RENDER SQUAD TEAMMATES (Squad Co-Op Mode Only)
+          // 1. RENDER SQUAD TEAMMATES (Squad Arcade Mode Only)
           // Explicit Rules from User:
           // - "4.b hide other player's polarizers. and make the other player's avatars less bright than the 'active' player's."
           // - "Ensure other player's waves do not show on your screen or interact with any other player other than their own."
+          // - "Only a fixed horizontal squad bar strip below the coordinate line" for fellow pilot health bars.
           if (gameModeRef.current === 'squad' && teamRoomRef.current?.pilots) {
             const myId = getLocalPilotId();
-            const teammates = Object.values(teamRoomRef.current.pilots).filter(p => p.id !== myId);
+            const sortedPilots = getSortedPilots(teamRoomRef.current.pilots, teamRoomRef.current.hostPilotId);
+            const teammates = sortedPilots.filter(p => p.id !== myId);
 
             teammates.forEach((tm, idx) => {
               ctx.save();
@@ -5174,29 +5186,89 @@ export const DimensionCanvas: React.FC<Props> = ({
               if (tmKnocked) {
                 ctx.fillStyle = '#ff4455';
                 ctx.fillText('[GHOST]', tmX, TRACE_Y - 23);
-              } else if (tm.integrity !== undefined && tm.integrity < 100) {
-                const barW = 20;
-                const barH = 2.5;
-                const barX = tmX - barW / 2;
-                const barY = TRACE_Y + 10;
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
-                const hpPct = Math.max(0, Math.min(1, tm.integrity / 100));
-                ctx.fillStyle = hpPct > 0.5 ? '#33ff66' : '#ffaa33';
-                ctx.fillRect(barX, barY, hpPct * barW, barH);
               }
 
-              // CRITICAL: NO POLARIZER ARROW OR RETICLE IS DRAWN FOR TEAMMATES!
+              // CRITICAL: NO POLARIZER ARROW OR UNDER-AVATAR HEALTH BAR IS DRAWN ON THE LINE FOR TEAMMATES!
               ctx.restore();
             });
+
+            // FIXED HORIZONTAL FELLOW PILOT HEALTH BAR STRIP BELOW THE COORDINATE LINE
+            if (teammates.length > 0) {
+              ctx.save();
+              const cardW = Math.min(170, Math.floor((w - 60) / Math.max(1, teammates.length)) - 10);
+              const cardH = 26;
+              const gap = 12;
+              const totalStripW = teammates.length * cardW + (teammates.length - 1) * gap;
+              const startX = Math.max(20, (w - totalStripW) / 2);
+              const stripY = TRACE_Y + 46;
+
+              teammates.forEach((tm, idx) => {
+                const cx = startX + idx * (cardW + gap);
+                const tmKnocked = Boolean(tm.isKnocked);
+                const tmColorCfg = BEAM_COLOR_CONFIGS[tm.color] || BEAM_COLOR_CONFIGS.azure;
+                const rawHp = tmKnocked ? 0 : Math.max(0, Math.min(100, tm.integrity ?? 100));
+                const hpPct = rawHp / 100;
+
+                // Card background & border
+                ctx.fillStyle = 'rgba(6, 12, 18, 0.88)';
+                ctx.fillRect(cx, stripY, cardW, cardH);
+                ctx.strokeStyle = tmKnocked ? 'rgba(255, 68, 85, 0.7)' : tmColorCfg.hex;
+                ctx.lineWidth = 1.2;
+                ctx.strokeRect(cx, stripY, cardW, cardH);
+
+                // Beam color indicator dot + Callsign
+                ctx.fillStyle = tmColorCfg.hex;
+                ctx.fillRect(cx + 6, stripY + 5, 6, 6);
+                ctx.font = 'bold 9.5px monospace';
+                ctx.textAlign = 'left';
+                ctx.fillStyle = '#f4f4f5';
+                const tmLabel = tm.initials || tm.id.slice(0, 3).toUpperCase();
+                ctx.fillText(tmLabel, cx + 16, stripY + 11);
+
+                // Right-aligned HP % or Ghost Countdown
+                ctx.textAlign = 'right';
+                if (tmKnocked) {
+                  const remSec = tm.knockedUntil ? Math.max(0, (tm.knockedUntil - Date.now()) / 1000) : 0;
+                  ctx.fillStyle = '#ffcc00';
+                  ctx.font = 'bold 8.5px monospace';
+                  ctx.fillText(remSec > 0 ? `👻 GHOST ${remSec.toFixed(1)}s` : '👻 GHOST', cx + cardW - 6, stripY + 11);
+                } else {
+                  ctx.fillStyle = rawHp < 35 ? '#ff3355' : rawHp < 65 ? '#ffaa33' : '#33ff66';
+                  ctx.font = 'bold 9px monospace';
+                  ctx.fillText(`${Math.round(rawHp)}% HP`, cx + cardW - 6, stripY + 11);
+                }
+
+                // Horizontal HP Bar Track
+                const barX = cx + 6;
+                const barY = stripY + 16;
+                const barW = cardW - 12;
+                const barH = 5;
+                ctx.fillStyle = 'rgba(24, 24, 32, 0.95)';
+                ctx.fillRect(barX, barY, barW, barH);
+
+                if (tmKnocked) {
+                  // Ghost recovery progress bar
+                  const remMs = tm.knockedUntil ? Math.max(0, tm.knockedUntil - Date.now()) : 0;
+                  const ghostRecoveryPct = Math.max(0, Math.min(1, 1 - remMs / 5000));
+                  ctx.fillStyle = '#00f0ff';
+                  ctx.fillRect(barX, barY, ghostRecoveryPct * barW, barH);
+                } else {
+                  ctx.fillStyle = rawHp < 35 ? '#ff3355' : rawHp < 65 ? '#ffaa33' : '#33ff66';
+                  ctx.fillRect(barX, barY, hpPct * barW, barH);
+                }
+              });
+
+              ctx.textAlign = 'start';
+              ctx.restore();
+            }
           }
 
           // 2. RENDER ACTIVE (LOCAL) PLAYER AVATAR
           ctx.save();
           if (isGhostActive) {
             // Ethereal translucent ghost avatar with pulsation
-            ctx.globalAlpha = 0.45 + Math.sin(time * 0.012) * 0.2;
-            ctx.fillStyle = 'rgba(0, 240, 255, 0.2)';
+            ctx.globalAlpha = 0.55 + Math.sin(time * 0.012) * 0.2;
+            ctx.fillStyle = 'rgba(0, 240, 255, 0.22)';
             ctx.strokeStyle = '#00f0ff';
             ctx.shadowColor = '#00f0ff';
             ctx.shadowBlur = 18;
@@ -5207,6 +5279,19 @@ export const DimensionCanvas: React.FC<Props> = ({
             ctx.shadowBlur = isBloom ? 24 : currentBits >= 1 ? 10 : 0;
           }
           ctx.lineWidth = isBloom ? 3.5 : 2;
+
+          // 0.5s Respawn Invulnerability Phase-Shield Ring
+          if (!isGhostActive && respawnInvulnTimerRef.current > 0) {
+            ctx.save();
+            ctx.strokeStyle = '#00f0ff';
+            ctx.shadowColor = '#00f0ff';
+            ctx.shadowBlur = 14;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(playerX, TRACE_Y, 16 + Math.sin(time * 0.04) * 2, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
 
           // Subtle accent particle glow around avatar (until Res 6)
           if (!isGhostActive && currentRes < 6 && currentBits >= 1) {
@@ -5225,15 +5310,16 @@ export const DimensionCanvas: React.FC<Props> = ({
 
           // Ghost countdown floating indicator
           if (isGhostActive) {
+            const ghostPolText = polarityRef.current === 1 ? '▲ UP' : polarityRef.current === -1 ? '▼ DOWN' : '■ NEUTRAL';
             ctx.fillStyle = '#ffcc00';
             ctx.font = 'bold 11px monospace';
             ctx.textAlign = 'center';
             ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
             ctx.shadowBlur = 6;
-            ctx.fillText(`👻 GHOST [${ghostTimerRef.current.toFixed(1)}s]`, playerX, TRACE_Y - 28);
-            ctx.fillStyle = '#00f0ff';
-            ctx.font = '8px monospace';
-            ctx.fillText('AUTO RESPAWN PENDING', playerX, TRACE_Y - 16);
+            ctx.fillText(`👻 GHOST [${ghostTimerRef.current.toFixed(1)}s]`, playerX, TRACE_Y - 34);
+            ctx.fillStyle = polarityRef.current === 1 ? '#55ff99' : polarityRef.current === -1 ? '#ff66aa' : '#66ccff';
+            ctx.font = 'bold 9px monospace';
+            ctx.fillText(`PREP POLARITY: [${ghostPolText}]`, playerX, TRACE_Y - 23);
             ctx.shadowBlur = 0;
             ctx.textAlign = 'start';
           }
@@ -5261,45 +5347,48 @@ export const DimensionCanvas: React.FC<Props> = ({
             }
           }
 
-          // BIT 3+: Active Polarizer Reticle (Directional Vector Arrow above head)
-          // Rendered ONLY for the active player when alive!
-          if (!isGhostActive && currentBits >= 3) {
+          // Active Polarizer Reticle (Directional Vector Arrow above/below avatar)
+          // Rendered for the active player when in Ghost state (so players can prepare for incoming waves) OR from Bit 3+!
+          if (isGhostActive || currentBits >= 3) {
+            ctx.save();
+            ctx.globalAlpha = isGhostActive ? 0.95 : 1.0;
             if (polarityRef.current === 1) {
               // Arrow UP
               ctx.strokeStyle = '#55ff99';
               ctx.shadowColor = '#55ff99';
-              ctx.shadowBlur = isBloom ? 10 : 0;
+              ctx.shadowBlur = (isBloom || isGhostActive) ? 10 : 0;
               ctx.lineWidth = 2.5;
               ctx.beginPath();
-              ctx.moveTo(playerX - 7, TRACE_Y - 14);
-              ctx.lineTo(playerX, TRACE_Y - 24);
-              ctx.lineTo(playerX + 7, TRACE_Y - 14);
+              ctx.moveTo(playerX - 7, TRACE_Y - 11);
+              ctx.lineTo(playerX, TRACE_Y - 20);
+              ctx.lineTo(playerX + 7, TRACE_Y - 11);
               ctx.stroke();
               ctx.shadowBlur = 0;
             } else if (polarityRef.current === -1) {
-              // Arrow DOWN (Unlocked at Bit 9)
+              // Arrow DOWN
               ctx.strokeStyle = '#ff66aa';
               ctx.shadowColor = '#ff66aa';
-              ctx.shadowBlur = isBloom ? 10 : 0;
+              ctx.shadowBlur = (isBloom || isGhostActive) ? 10 : 0;
               ctx.lineWidth = 2.5;
               ctx.beginPath();
-              ctx.moveTo(playerX - 7, TRACE_Y + 14);
-              ctx.lineTo(playerX, TRACE_Y + 24);
-              ctx.lineTo(playerX + 7, TRACE_Y + 14);
+              ctx.moveTo(playerX - 7, TRACE_Y + 11);
+              ctx.lineTo(playerX, TRACE_Y + 20);
+              ctx.lineTo(playerX + 7, TRACE_Y + 11);
               ctx.stroke();
               ctx.shadowBlur = 0;
             } else {
               // Neutral indicator (dash above square)
               ctx.strokeStyle = '#66ccff';
               ctx.shadowColor = '#66ccff';
-              ctx.shadowBlur = isBloom ? 10 : 0;
+              ctx.shadowBlur = (isBloom || isGhostActive) ? 10 : 0;
               ctx.lineWidth = 2;
               ctx.beginPath();
-              ctx.moveTo(playerX - 6, TRACE_Y - 18);
-              ctx.lineTo(playerX + 6, TRACE_Y - 18);
+              ctx.moveTo(playerX - 6, TRACE_Y - 14);
+              ctx.lineTo(playerX + 6, TRACE_Y - 14);
               ctx.stroke();
               ctx.shadowBlur = 0;
             }
+            ctx.restore();
           }
           ctx.restore();
 
@@ -5380,8 +5469,9 @@ export const DimensionCanvas: React.FC<Props> = ({
             }
           } else {
             // Part 1 / Standard / Void: ALWAYS show barStr and roundedIntegrity%
-            const isArcade = gameModeRef.current === 'arcade';
+            const isArcadeOrSquad = gameModeRef.current === 'arcade' || gameModeRef.current === 'squad';
             const isTeamSpeedrun = gameModeRef.current === 'squad' && Boolean(teamRoomRef.current);
+            const squadScale = isTeamSpeedrun ? Math.max(1, Math.min(4, Object.keys(teamRoomRef.current?.pilots || {}).length)) : 1;
             const squadHz = isTeamSpeedrun ? ((teamRoomRef.current?.sharedState?.totalHz || 0) + pendingSquadHzRef.current) : 0;
             const squadV = isTeamSpeedrun ? ((teamRoomRef.current?.sharedState?.totalV || 0) + pendingSquadVRef.current) : 0;
 
@@ -5390,10 +5480,10 @@ export const DimensionCanvas: React.FC<Props> = ({
             ctx.fillStyle = '#88ffaa';
             ctx.font = w < 640 ? '9.5px monospace' : '10px monospace';
             const targetB = Math.min(9, currentBits + 1);
-            const targetInfo = isArcade && phase === 'boss'
+            const targetInfo = isArcadeOrSquad && phase === 'boss'
               ? '[SOVEREIGN BOSS ENGAGED]'
-              : isArcade && ARCADE_BIT_UNLOCK_COSTS[targetB]
-              ? `[Target: Bit ${targetB} (${ARCADE_BIT_UNLOCK_COSTS[targetB].costHz} Hz / ${ARCADE_BIT_UNLOCK_COSTS[targetB].costV} V${targetB === 9 ? ' -> Boss' : ''})]`
+              : isArcadeOrSquad && ARCADE_BIT_UNLOCK_COSTS[targetB]
+              ? `[Target: Bit ${targetB} (${ARCADE_BIT_UNLOCK_COSTS[targetB].costHz * squadScale} Hz / ${ARCADE_BIT_UNLOCK_COSTS[targetB].costV * squadScale} V${targetB === 9 ? ' -> Boss' : ''})]`
               : `[Target: Bit ${Math.min(10, currentBits + 1)}]`;
 
             const harvestText = isTeamSpeedrun
@@ -5610,11 +5700,11 @@ export const DimensionCanvas: React.FC<Props> = ({
                   addCombatText('✦ SOVEREIGN CONQUERED! ✦', TRACE_END, TRACE_Y - 30, '#55ff99');
                   survivalResourcesRef.current.hz += 50;
                   survivalResourcesRef.current.volts += 50;
-                } else if (gameModeRef.current === 'arcade') {
-                  // Arcade mode ENDS at the first boss!
+                } else if (gameModeRef.current === 'arcade' || gameModeRef.current === 'squad') {
+                  // Arcade & Squad Arcade modes END in Victory at the first boss (Corrupted Sovereign)!
                   isRoundEndedRef.current = true;
-                  const finalTime = arcadeTimeRef.current;
-                  const lives = arcadeLivesRef.current;
+                  const finalTime = gameModeRef.current === 'squad' ? speedrunTimeRef.current : arcadeTimeRef.current;
+                  const lives = gameModeRef.current === 'squad' ? 1 : arcadeLivesRef.current;
                   const arcModal = {
                     time: finalTime,
                     livesRemaining: lives,
@@ -5623,35 +5713,46 @@ export const DimensionCanvas: React.FC<Props> = ({
                   setArcadeVictoryModal(arcModal);
                   pulsesRef.current = [];
                   redErrorZonesRef.current = [];
-                  onUpdateState(prev => {
-                    const curBestTime = prev.highScores?.arcadeBestTime || 0;
-                    const isNewBest = !curBestTime || finalTime < curBestTime;
-                    return {
-                      ...prev,
-                      arcadeTime: finalTime,
-                      arcadeFurthestStage: 'Victory! (Boss 1 Conquered)',
-                      arcadeFurthestStageNum: 9.5,
-                      highScores: {
-                        ...prev.highScores,
-                        arcadeBestStage: 'Victory! (Boss 1 Conquered)',
-                        arcadeBestStageNum: 9.5,
-                        arcadeBestTime: isNewBest ? finalTime : curBestTime,
-                      },
-                    };
-                  });
-                  arcadeTotalHzRef.current += 50;
-                  saveRunRecord('arcade', {
-                    stageName: 'Boss 1 Conquered ★',
-                    stageNum: 9.5,
-                    bit: 9,
-                    duration: finalTime,
-                    totalHz: arcadeTotalHzRef.current,
-                    completed: true,
-                    isVictory: true,
-                  });
-                  onLogAction(`👑 ARCADE VICTORY! Conquered Corrupted Sovereign in ${formatTime(finalTime)} with ${lives} lives remaining! Recorded in Vault.`);
+
+                  if (gameModeRef.current === 'squad') {
+                    if (teamRoomRef.current) {
+                      syncSharedProgress(teamRoomRef.current.code, {
+                        boss1Hp: 0,
+                        lastAction: 'Corrupted Sovereign Conquered! Squad Arcade Completed ★',
+                      });
+                    }
+                    onLogAction(`👑 SQUAD ARCADE VICTORY! Conquered Corrupted Sovereign in ${formatTime(finalTime)}!`);
+                  } else {
+                    onUpdateState(prev => {
+                      const curBestTime = prev.highScores?.arcadeBestTime || 0;
+                      const isNewBest = !curBestTime || finalTime < curBestTime;
+                      return {
+                        ...prev,
+                        arcadeTime: finalTime,
+                        arcadeFurthestStage: 'Victory! (Boss 1 Conquered)',
+                        arcadeFurthestStageNum: 9.5,
+                        highScores: {
+                          ...prev.highScores,
+                          arcadeBestStage: 'Victory! (Boss 1 Conquered)',
+                          arcadeBestStageNum: 9.5,
+                          arcadeBestTime: isNewBest ? finalTime : curBestTime,
+                        },
+                      };
+                    });
+                    arcadeTotalHzRef.current += 50;
+                    saveRunRecord('arcade', {
+                      stageName: 'Boss 1 Conquered ★',
+                      stageNum: 9.5,
+                      bit: 9,
+                      duration: finalTime,
+                      totalHz: arcadeTotalHzRef.current,
+                      completed: true,
+                      isVictory: true,
+                    });
+                    onLogAction(`👑 ARCADE VICTORY! Conquered Corrupted Sovereign in ${formatTime(finalTime)} with ${lives} lives remaining! Recorded in Vault.`);
+                  }
                 } else {
-                  // Story / Speedrun / Squad mode Boss 1 victory! Clear boss hazards & award transcendence to N=2
+                  // Story / Speedrun mode Boss 1 victory! Clear boss hazards & award transcendence to N=2
                   pulsesRef.current = [];
                   redErrorZonesRef.current = [];
                   integrityRef.current = 100;
@@ -5667,15 +5768,6 @@ export const DimensionCanvas: React.FC<Props> = ({
                   setAct1Phase('point');
                   phaseRef.current = 'point';
                   runPulsesRef.current = 0;
-
-                  if (gameModeRef.current === 'squad' && teamRoomRef.current) {
-                    compileTeamProgression(teamRoomRef.current.code, 'subpart2', {
-                      newBits: 10,
-                      newResolution: 0,
-                      newSubPart: 2,
-                      actionMsg: 'Boss 1 Conquered! Squad ascending to Part 2 (N=2)',
-                    });
-                  }
 
                   onUpdateState(prev => ({
                     ...prev,
@@ -5750,6 +5842,15 @@ export const DimensionCanvas: React.FC<Props> = ({
                 p.speed = Math.abs(p.speed) * 1.4;
                 p.x = playerX + paddleHalf + 10;
               } else {
+                // 0.5s Respawn Invulnerability check: absorb mismatched wave harmlessly
+                if (respawnInvulnTimerRef.current > 0) {
+                  soundEngine.playHitSound('shield');
+                  addSparks(playerX, TRACE_Y, '#00f0ff', 12);
+                  addCombatText('🛡️ INVULN (0.5s)', playerX, TRACE_Y - 22, '#00f0ff');
+                  pulsesRef.current.splice(i, 1);
+                  continue;
+                }
+
                 if ((gameModeRef.current !== 'survival' && phase === 'boss') || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
                   bossMissesRef.current++;
                 }
@@ -5800,6 +5901,15 @@ export const DimensionCanvas: React.FC<Props> = ({
                 p.speed = Math.abs(p.speed) * 1.4;
                 p.x = playerX + paddleHalf + 10;
               } else {
+                // 0.5s Respawn Invulnerability check: absorb mismatched wave harmlessly
+                if (respawnInvulnTimerRef.current > 0) {
+                  soundEngine.playHitSound('shield');
+                  addSparks(playerX, TRACE_Y, '#00f0ff', 12);
+                  addCombatText('🛡️ INVULN (0.5s)', playerX, TRACE_Y - 22, '#00f0ff');
+                  pulsesRef.current.splice(i, 1);
+                  continue;
+                }
+
                 if ((gameModeRef.current !== 'survival' && phase === 'boss') || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
                   bossMissesRef.current++;
                 }
@@ -5973,9 +6083,9 @@ export const DimensionCanvas: React.FC<Props> = ({
             ctx.textAlign = 'center';
             ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
             ctx.shadowBlur = 4;
-            const pilotCount = teamRoomRef.current ? Object.keys(teamRoomRef.current.pilots || {}).length : 1;
+            const pilotCount = teamRoomRef.current ? Math.max(1, Object.keys(teamRoomRef.current.pilots || {}).length) : 1;
             const squadTag = teamRoomRef.current ? `  [SQUAD ${teamRoomRef.current.code} · ${pilotCount}P (${pilotCount}x REQ)]` : '';
-            ctx.fillText(`👥 SQUAD CO-OP: ${formatTime(speedrunTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]  [RUN #${speedrunRunsRef.current}]${squadTag}`, modeHudX, modeHudY);
+            ctx.fillText(`🕹️ SQUAD ARCADE: ${formatTime(speedrunTimeRef.current)}  [${currentZoneRef.current.toUpperCase()}]  [1 WIPE = GAME OVER]${squadTag}`, modeHudX, modeHudY);
             ctx.restore();
           } else if (gameModeRef.current === 'survival') {
             ctx.save();
@@ -6000,9 +6110,13 @@ export const DimensionCanvas: React.FC<Props> = ({
         }
 
         if ((gameModeRef.current !== 'survival' && phase === 'boss') || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
+          const boss1PilotCount = (gameModeRef.current === 'squad' && teamRoomRef.current)
+            ? Math.max(1, Object.keys(teamRoomRef.current.pilots || {}).length)
+            : 1;
+          const currentMaxBoss1Hp = gameModeRef.current === 'squad' ? getTeamBossMaxHp(boss1PilotCount) : MAX_BOSS_1_HP;
           ctx.fillStyle = '#ff4466';
           ctx.font = '13px monospace';
-          ctx.fillText(`SOVEREIGN: ${Math.round((bossHpRef.current / MAX_BOSS_1_HP) * 100)}%`, w - 180, 26);
+          ctx.fillText(`SOVEREIGN: ${Math.round((bossHpRef.current / currentMaxBoss1Hp) * 100)}%`, w - 180, 26);
         }
 
       // Update Particles (white explosion pixels in 0D Void & N=1, colored/quantized in 1-bit+)
@@ -7009,13 +7123,13 @@ export const DimensionCanvas: React.FC<Props> = ({
           </div>
         )}
 
-        {/* ARCADE MODE KILL SCREEN MODAL */}
+        {/* ARCADE / SQUAD ARCADE MODE KILL SCREEN MODAL */}
         {arcadeKillModal && (
           <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
             <div className="bg-[#120f1a] border-2 border-purple-500 rounded-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto my-auto p-5 sm:p-6 text-center shadow-2xl shadow-purple-950/90 animate-in fade-in zoom-in-95 duration-200 space-y-3 sm:space-y-4">
-              <div className="text-3xl animate-pulse">🕹️ 💀 🕹️</div>
+              <div className="text-3xl animate-pulse">{gameState.gameMode === 'squad' ? '👥 💀 🕹️' : '🕹️ 💀 🕹️'}</div>
               <h2 className="text-xl sm:text-2xl font-black font-mono text-purple-400 tracking-wider">
-                ARCADE RUN TERMINATED
+                {gameState.gameMode === 'squad' ? 'SQUAD ARCADE WIPED — GAME OVER' : 'ARCADE RUN TERMINATED'}
               </h2>
               <div className="text-xs text-neutral-300 font-mono leading-relaxed bg-black/60 p-4 rounded-xl border border-neutral-800 text-left space-y-2">
                 <div className="flex justify-between items-center">
@@ -7027,7 +7141,11 @@ export const DimensionCanvas: React.FC<Props> = ({
                   <span className="text-sm font-bold text-amber-300">{formatTime(arcadeKillModal.time)}</span>
                 </div>
                 <div className="text-[10px] text-purple-400/90 italic pt-1 border-t border-neutral-800">
-                  {userSettingsRef.current?.controls?.devToolsEnabled ? (
+                  {gameState.gameMode === 'squad' ? (
+                    <span className="text-rose-400 font-bold not-italic">
+                      💀 All squad pilots were knocked out simultaneously (1 Squad Wipe = Game Over).
+                    </span>
+                  ) : userSettingsRef.current?.controls?.devToolsEnabled ? (
                     <span className="text-amber-400 font-bold not-italic">
                       ⚠️ DEV MODE ACTIVE: Saved locally only (Global Leaderboard submission disabled)
                     </span>
@@ -7045,12 +7163,16 @@ export const DimensionCanvas: React.FC<Props> = ({
                 </div>
               )}
 
-              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              <div className="flex flex-col sm:flex-row gap-3 pt-2 flex-wrap">
                 <button
                   type="button"
                   onClick={() => {
                     if (deathBufferSeconds > 0) return;
-                    handleStartArcadeMode();
+                    if (gameState.gameMode === 'squad') {
+                      void handleRestartSquadArcade();
+                    } else {
+                      handleStartArcadeMode();
+                    }
                   }}
                   disabled={deathBufferSeconds > 0}
                   className={`flex-1 py-3 px-4 font-mono font-black text-xs sm:text-sm rounded-xl transition-all shadow-lg flex items-center justify-center gap-1.5 ${
@@ -7059,8 +7181,30 @@ export const DimensionCanvas: React.FC<Props> = ({
                       : 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white cursor-pointer shadow-emerald-950/50 border border-emerald-400/30'
                   }`}
                 >
-                  <span>🕹️ RETRY ARCADE</span>
+                  <span>{gameState.gameMode === 'squad' ? '🕹️ RETRY SQUAD ARCADE (BIT 1)' : '🕹️ RETRY ARCADE'}</span>
                 </button>
+                {gameState.gameMode === 'squad' && onOpenTeamModal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (deathBufferSeconds > 0) return;
+                      if (teamRoomRef.current) {
+                        void returnToPilotRoom(teamRoomRef.current.code);
+                      }
+                      setArcadeKillModal(null);
+                      arcadeKillModalRef.current = null;
+                      isRoundEndedRef.current = false;
+                      integrityRef.current = 100;
+                      setIntegrity(100);
+                      onOpenTeamModal();
+                    }}
+                    disabled={deathBufferSeconds > 0}
+                    className="py-3 px-4 bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 font-mono text-xs rounded-xl border border-cyan-500/60 transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5"
+                  >
+                    <Users className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>PILOT ROOM</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -7103,13 +7247,13 @@ export const DimensionCanvas: React.FC<Props> = ({
           </div>
         )}
 
-        {/* ARCADE MODE VICTORY MODAL */}
+        {/* ARCADE / SQUAD ARCADE MODE VICTORY MODAL */}
         {arcadeVictoryModal && (
           <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
             <div className="bg-[#120f1a] border-2 border-amber-400 rounded-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto my-auto p-5 sm:p-6 text-center shadow-2xl shadow-purple-950/90 animate-in fade-in zoom-in-95 duration-200 space-y-3 sm:space-y-4">
-              <div className="text-4xl animate-bounce">👑 🕹️ ⚡</div>
+              <div className="text-4xl animate-bounce">{gameState.gameMode === 'squad' ? '👑 👥 🕹️' : '👑 🕹️ ⚡'}</div>
               <h2 className="text-xl sm:text-2xl font-black font-mono text-amber-400 tracking-wider">
-                ARCADE ESCALATION MASTERED!
+                {gameState.gameMode === 'squad' ? 'SQUAD ARCADE MASTERED!' : 'ARCADE ESCALATION MASTERED!'}
               </h2>
               <div className="text-xs text-neutral-300 font-mono leading-relaxed bg-black/60 p-4 rounded-xl border border-neutral-800 text-left space-y-2">
                 <div className="flex justify-between items-center">
@@ -7117,27 +7261,57 @@ export const DimensionCanvas: React.FC<Props> = ({
                   <span className="text-lg font-black text-cyan-300">{formatTime(arcadeVictoryModal.time)}</span>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-neutral-400">Lives Remaining:</span>
-                  <span className="text-sm font-bold text-rose-300">1 / 1 LIFE</span>
+                  <span className="text-neutral-400">{gameState.gameMode === 'squad' ? 'Squad Status:' : 'Lives Remaining:'}</span>
+                  <span className="text-sm font-bold text-rose-300">
+                    {gameState.gameMode === 'squad'
+                      ? `${Math.max(1, Object.keys(teamRoom?.pilots || {}).length)} PILOT SQUAD · ZERO WIPES`
+                      : '1 / 1 LIFE'}
+                  </span>
                 </div>
                 <div className="pt-2 border-t border-neutral-800 text-[11px] text-emerald-400 font-bold">
-                  Corrupted Sovereign conquered across escalating difficulty (Easy → Hard at Bit 9 with Cycling 2)!
+                  Corrupted Sovereign conquered across escalating Arcade difficulty (Bits 1–9 · Cycling 2 Hard)!
                 </div>
-                {Boolean(userSettingsRef.current?.controls?.devToolsEnabled) && (
+                {gameState.gameMode !== 'squad' && Boolean(userSettingsRef.current?.controls?.devToolsEnabled) && (
                   <div className="text-[10px] font-mono text-amber-400 bg-amber-950/50 border border-amber-600/40 rounded p-1.5 text-center font-bold">
                     ⚠️ DEV MODE ACTIVE: Global Leaderboard &amp; First-To-Complete bypassed
                   </div>
                 )}
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              <div className="flex flex-col sm:flex-row gap-3 pt-2 flex-wrap">
                 <button
                   type="button"
-                  onClick={handleStartArcadeMode}
+                  onClick={() => {
+                    if (gameState.gameMode === 'squad') {
+                      void handleRestartSquadArcade();
+                    } else {
+                      handleStartArcadeMode();
+                    }
+                  }}
                   className="flex-1 py-3 px-4 bg-purple-600 hover:bg-purple-500 active:bg-purple-700 text-white font-mono font-black text-xs sm:text-sm rounded-xl transition-all shadow-lg cursor-pointer"
                 >
-                  🕹️ REPLAY ARCADE
+                  {gameState.gameMode === 'squad' ? '🕹️ REPLAY SQUAD ARCADE' : '🕹️ REPLAY ARCADE'}
                 </button>
+                {gameState.gameMode === 'squad' && onOpenTeamModal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (teamRoomRef.current) {
+                        void returnToPilotRoom(teamRoomRef.current.code);
+                      }
+                      setArcadeVictoryModal(null);
+                      arcadeVictoryModalRef.current = null;
+                      isRoundEndedRef.current = false;
+                      integrityRef.current = 100;
+                      setIntegrity(100);
+                      onOpenTeamModal();
+                    }}
+                    className="py-3 px-4 bg-cyan-950/80 hover:bg-cyan-900 text-cyan-300 font-mono text-xs rounded-xl border border-cyan-500/60 transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5"
+                  >
+                    <Users className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>PILOT ROOM</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -7153,17 +7327,19 @@ export const DimensionCanvas: React.FC<Props> = ({
                   <Sparkles className="w-3.5 h-3.5" />
                   <span>MAIN MENU</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setGlobalScoresTab('arcade');
-                    setIsGlobalScoresOpen(true);
-                  }}
-                  className="py-3 px-4 bg-amber-950/70 hover:bg-amber-900/90 text-amber-300 font-mono text-xs rounded-xl border border-amber-500/60 transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5 shadow-sm"
-                >
-                  <Trophy className="w-3.5 h-3.5 text-amber-400" />
-                  <span>SCORES</span>
-                </button>
+                {gameState.gameMode !== 'squad' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGlobalScoresTab('arcade');
+                      setIsGlobalScoresOpen(true);
+                    }}
+                    className="py-3 px-4 bg-amber-950/70 hover:bg-amber-900/90 text-amber-300 font-mono text-xs rounded-xl border border-amber-500/60 transition-all cursor-pointer font-bold flex items-center justify-center gap-1.5 shadow-sm"
+                  >
+                    <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                    <span>SCORES</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setIsOptionsMenuOpen(true)}

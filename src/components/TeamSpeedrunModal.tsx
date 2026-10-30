@@ -213,13 +213,13 @@ export const TeamSpeedrunModal: React.FC<TeamSpeedrunModalProps> = ({
             </div>
             <div>
               <h2 className="text-xl sm:text-2xl font-black font-mono tracking-wider text-cyan-300 flex items-center gap-2">
-                SQUAD CO-OP
+                SQUAD ARCADE CO-OP
                 <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 font-sans border border-cyan-500/40 font-bold uppercase tracking-widest">
                   1–4 PILOTS
                 </span>
               </h2>
               <p className="text-xs text-zinc-400 font-mono">
-                Pure Co-Op Experience · Linear Resource Multipliers · 5s Automatic Respawn · No Leaderboard
+                Squad Arcade Mode (Bits 1–9) · 1:1 Resource &amp; Boss HP Scaling · 5s Ghost Respawn · 1 Wipe = Game Over
               </p>
             </div>
           </div>
@@ -335,33 +335,33 @@ export const TeamSpeedrunModal: React.FC<TeamSpeedrunModalProps> = ({
               <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 space-y-3">
                 <div className="text-xs font-mono font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
                   <Shield className="w-3.5 h-3.5 text-cyan-400" />
-                  SQUAD CO-OP SCALING RULES (NO LEADERBOARD)
+                  SQUAD ARCADE SCALING RULES (1:1 SCALING · BITS 1–9)
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs font-mono">
                   <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800">
                     <div className="text-zinc-500">1 PILOT</div>
                     <div className="text-cyan-400 font-bold text-sm">1× Resources</div>
-                    <div className="text-[11px] text-zinc-400">100 HP Bosses</div>
+                    <div className="text-[11px] text-zinc-400">180 HP Boss</div>
                   </div>
                   <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800">
                     <div className="text-zinc-500">2 PILOTS</div>
                     <div className="text-cyan-400 font-bold text-sm">2× Resources</div>
-                    <div className="text-[11px] text-zinc-400">150 HP Bosses</div>
+                    <div className="text-[11px] text-zinc-400">360 HP Boss</div>
                   </div>
                   <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800">
                     <div className="text-zinc-500">3 PILOTS</div>
                     <div className="text-cyan-400 font-bold text-sm">3× Resources</div>
-                    <div className="text-[11px] text-zinc-400">200 HP Bosses</div>
+                    <div className="text-[11px] text-zinc-400">540 HP Boss</div>
                   </div>
                   <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800">
                     <div className="text-zinc-500">4 PILOTS</div>
                     <div className="text-cyan-400 font-bold text-sm">4× Resources</div>
-                    <div className="text-[11px] text-zinc-400">250 HP Bosses</div>
+                    <div className="text-[11px] text-zinc-400">720 HP Boss</div>
                   </div>
                 </div>
                 <div className="text-[11px] text-zinc-400 leading-normal font-mono border-t border-zinc-800/80 pt-2 flex flex-col gap-1">
-                  <div>⚡ <span className="text-zinc-200">Ghost Respawn:</span> 0 HP triggers 5s automatic ghost recovery. Waves continue flowing; no teammate revive required.</div>
-                  <div>💀 <span className="text-zinc-200">Team Wipe:</span> If all pilots are knocked simultaneously, the current checkpoint resets per Speedrun rules.</div>
+                  <div>⚡ <span className="text-zinc-200">Ghost Respawn &amp; Bit Heal:</span> 0 HP triggers 5s ghost recovery (+0.5s respawn shield) with polarity reticle. Completing any Bit refills all pilots to 100% HP &amp; revives ghosts!</div>
+                  <div>💀 <span className="text-zinc-200">1 Squad Wipe = Game Over:</span> If all pilots are knocked out simultaneously, the Squad Arcade run terminates immediately.</div>
                 </div>
               </div>
 
@@ -510,34 +510,14 @@ export const TeamSpeedrunModal: React.FC<TeamSpeedrunModalProps> = ({
                   <div className="text-sm font-bold text-cyan-400">{resourceScale}× Requirements</div>
                 </div>
                 <div>
-                  <div className="text-[10px] text-zinc-500 uppercase">Boss 1 & 2 Health</div>
-                  <div className="text-sm font-bold text-amber-400">{bossHp} HP (+50%/pilot)</div>
+                  <div className="text-[10px] text-zinc-500 uppercase">Boss 1 Health (1:1)</div>
+                  <div className="text-sm font-bold text-amber-400">{bossHp} HP (180×{pilotCount})</div>
                 </div>
                 <div>
-                  <div className="text-[10px] text-zinc-500 uppercase">Revive Mechanic</div>
-                  <div className="text-sm font-bold text-emerald-400">5.0s Auto Ghost</div>
+                  <div className="text-[10px] text-zinc-500 uppercase">Squad Wipe Rule</div>
+                  <div className="text-sm font-bold text-rose-400">1 Wipe = Game Over</div>
                 </div>
               </div>
-
-              {/* SAVED SQUAD CHECKPOINT BANNER */}
-              {hasSavedProgress && (
-                <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/40 flex items-center justify-between text-xs font-mono text-amber-200">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-                    <div>
-                      <div className="font-bold text-amber-300">
-                        SAVED SQUAD CHECKPOINT: {activeRoom.sharedState?.act1SubPart === 2 ? `PART 2 · RES ${activeRoom.sharedState?.act1Resolution || 0}` : `PART 1 · BIT ${activeRoom.sharedState?.act1Bits || 0}`}
-                      </div>
-                      <div className="text-[11px] text-amber-400/80">
-                        Squad Bank: {activeRoom.sharedState?.totalHz || 0} Hz / {activeRoom.sharedState?.totalV || 0} V{activeRoom.sharedState?.act1SubPart === 2 ? ` / ${activeRoom.sharedState?.totalBaud || 0} Flux` : ''} · Run #{activeRoom.sharedState?.runNumber || 1}
-                      </div>
-                    </div>
-                  </div>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-amber-900/60 border border-amber-600/50 uppercase tracking-widest font-bold">
-                    SAVED
-                  </span>
-                </div>
-              )}
 
               {/* Host / Pilot Ready & Launch Controls */}
               <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
@@ -556,40 +536,17 @@ export const TeamSpeedrunModal: React.FC<TeamSpeedrunModalProps> = ({
                 )}
 
                 {isHost ? (
-                  hasSavedProgress ? (
-                    <div className="w-full flex flex-col sm:flex-row items-center gap-2">
-                      <button
-                        onClick={handleResumeSquad}
-                        disabled={loading}
-                        className="w-full sm:flex-1 py-3 px-4 rounded-xl font-mono font-black text-sm tracking-wider bg-gradient-to-r from-emerald-500 to-cyan-500 text-black hover:opacity-95 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(16,185,129,0.4)] cursor-pointer"
-                      >
-                        <Play className="w-4 h-4 fill-current" />
-                        <span>CONTINUE RUN (RESUME)</span>
-                      </button>
-                      <button
-                        onClick={handleLaunchSquad}
-                        disabled={loading}
-                        className="w-full sm:w-auto py-3 px-4 rounded-xl font-mono font-bold text-xs tracking-wider bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-700 active:scale-[0.98] transition-all cursor-pointer"
-                        title="Start over from Bit 0"
-                      >
-                        <span>NEW RUN (RESET)</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={handleLaunchSquad}
-                      disabled={loading}
-                      className="w-full py-3 px-6 rounded-xl font-mono font-black text-sm tracking-wider bg-gradient-to-r from-cyan-500 to-emerald-500 text-black hover:opacity-95 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(6,182,212,0.4)] cursor-pointer"
-                    >
-                      <Play className="w-4 h-4 fill-current" />
-                      <span>LAUNCH SQUAD CO-OP ({pilotCount} PILOT{pilotCount > 1 ? 'S' : ''})</span>
-                    </button>
-                  )
+                  <button
+                    onClick={handleLaunchSquad}
+                    disabled={loading}
+                    className="w-full py-3 px-6 rounded-xl font-mono font-black text-sm tracking-wider bg-gradient-to-r from-cyan-500 to-emerald-500 text-black hover:opacity-95 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(6,182,212,0.4)] cursor-pointer"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>LAUNCH SQUAD ARCADE ({pilotCount} PILOT{pilotCount > 1 ? 'S' : ''})</span>
+                  </button>
                 ) : (
                   <div className="w-full sm:w-1/2 text-center text-xs font-mono text-zinc-400 p-3 bg-zinc-900/60 rounded-xl border border-zinc-800">
-                    {hasSavedProgress
-                      ? 'Saved checkpoint detected. Waiting for Host to continue run...'
-                      : 'Waiting for Host to launch Squad Co-Op session...'}
+                    Waiting for Host to launch Squad Arcade session (Bit 1)...
                   </div>
                 )}
 

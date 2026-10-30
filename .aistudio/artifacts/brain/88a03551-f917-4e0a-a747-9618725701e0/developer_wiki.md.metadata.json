@@ -1,0 +1,5 @@
+{
+  "summary":  "Updated Chapter 8 and FAQ 9 in the Developer Wiki to document the (-8 to +8) two-point coordinate line drawing system where (Hi-Hat, Kick) sets Point 1 (X1, Y1) and (Snare, Bass Line) sets Point 2 (X2, Y2) connected by an emerald green line.",
+  "updatedAt":  "2026-10-22T12:49:11.601343568Z",
+  "userFacing":  true
+}
