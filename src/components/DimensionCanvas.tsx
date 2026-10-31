@@ -1825,6 +1825,7 @@ export const DimensionCanvas: React.FC<Props> = ({
   };
 
   const handleToggleMuteAll = () => {
+    soundEngine.unlockMobileAudio();
     const current = userSettingsRef.current ?? DEFAULT_USER_SETTINGS;
     const updated: UserSettings = {
       ...current,
@@ -2267,6 +2268,7 @@ export const DimensionCanvas: React.FC<Props> = ({
   // Initialize Carrier Audio Soundtrack
   const handleStartAudio = () => {
     if (isMainMenuOpenRef.current) return;
+    soundEngine.unlockMobileAudio();
     soundEngine.init();
     soundEngine.setMusicPacing(currentGenreRef.current, currentZoneRef.current);
     soundEngine.startBackgroundMusic();
@@ -2279,6 +2281,7 @@ export const DimensionCanvas: React.FC<Props> = ({
   };
 
   const handleToggleMute = () => {
+    soundEngine.unlockMobileAudio();
     const isMuted = soundEngine.toggleMute();
     onUpdateState(prev => ({ ...prev, audioActive: !isMuted }));
   };
@@ -6191,6 +6194,7 @@ export const DimensionCanvas: React.FC<Props> = ({
     }
 
     lastTouchTimeRef.current = Date.now();
+    soundEngine.unlockMobileAudio();
     if (!stateRef.current.carrierActive) {
       handleStartAudio();
     }
@@ -7452,6 +7456,16 @@ export const DimensionCanvas: React.FC<Props> = ({
                       onChange={(e) => handleSfxVolumeChange(Number(e.target.value))}
                       className="w-full accent-emerald-500 cursor-pointer h-2 bg-neutral-800 rounded-lg appearance-none"
                     />
+                  </div>
+
+                  {/* iPhone / Mobile Web Audio Tip */}
+                  <div className="p-3 rounded-xl bg-neutral-950/90 border border-neutral-800/90 text-xs text-neutral-400 space-y-1">
+                    <div className="text-cyan-300 font-bold flex items-center gap-1.5 font-mono">
+                      <span>📱 iPhone Audio Tip</span>
+                    </div>
+                    <p className="leading-relaxed text-[11px] text-neutral-300 font-mono">
+                      If you don't hear sound on iPhone, ensure the physical <strong>Silent/Ring switch</strong> on the side of your phone is switched to Ring (orange not visible) or Silent mode is turned off in Control Center, and media volume is turned up.
+                    </p>
                   </div>
                 </div>
               )}

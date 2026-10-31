@@ -513,6 +513,7 @@ export default function App() {
     }
 
     setIsMainMenuOpen(false);
+    soundEngine.unlockMobileAudio();
     soundEngine.setBossMusic(false);
     soundEngine.ensureResumed();
     setRunSessionKey(prev => prev + 1);

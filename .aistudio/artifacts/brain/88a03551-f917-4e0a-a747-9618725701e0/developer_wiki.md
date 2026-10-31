@@ -276,6 +276,15 @@ f_note = f_base * (2 ^ (semitones / 12))
   - Base Tempo: 138 BPM.
   - Rhythm Pattern: 4-on-the-floor kick with high-frequency hi-hat chimes. Used in Arcade and Survival.
 
+### 7.4 iOS Safari & Mobile Audio Unlock Engine
+Web Audio API on iOS WebKit devices (iPhone, iPad, iOS Chrome) operates under two strict constraints:
+1. **User Interaction & Buffer Priming**: iOS Safari blocks `AudioContext` from transitioning from `'suspended'` to `'running'` unless executed synchronously inside a direct user-gesture handler (`touchstart`, `touchend`, `pointerdown`, `click`). In addition, WebKit requires playing a 1-sample dummy buffer source connected to `destination` to prime the hardware output pipe.
+2. **Hardware Silent/Ring Switch Bypass**: By default, Web Audio routes through iOS's **Ambient** audio session category, which is silenced completely if the iPhone's physical silent switch is toggled to Silent (orange showing) or Silent mode is active in Control Center. To resolve this:
+   - Modern iOS (17+) uses `navigator.audioSession.type = 'playback'`, explicitly elevating Web Audio to the playback media channel.
+   - For all iOS versions, a tiny hidden 46-byte silent PCM WAV HTML5 `<audio>` element is played during the user gesture. HTML5 audio natively routes to the playback channel, causing iOS WebKit to promote all audio from the web app past the hardware silent switch.
+   - Capture-phase global listeners (`touchstart`, `touchend`, `pointerdown`, `click`, `keydown` on `window` and `document`) ensure the very first screen touch unlocks the audio engine regardless of container `stopPropagation` calls.
+   - `visibilitychange` and `focus` event hooks automatically re-prime the engine when returning from lock screen or app switching.
+
 ---
 
 ## Chapter 8: Creative Space — 8-Step Line & Beat Etch-a-Sketch (-8 to +8 Grid)

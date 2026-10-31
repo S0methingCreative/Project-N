@@ -39,9 +39,40 @@ class SoundEngine {
   private fundamentalFreq: number = 261.63; // C4
   private lastCompileSoundTime: number = 0;
 
+  // iOS / Mobile Audio Unlock & Silent Switch Bypass State
+  private silentAudioElement: HTMLAudioElement | null = null;
+  private isUnlocked: boolean = false;
+  private unlockListenersAttached: boolean = false;
+  private boundUnlockHandler: ((e?: Event) => void) | null = null;
+
+  constructor() {
+    if (typeof window !== 'undefined') {
+      this.armMobileUnlockListeners();
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            if (this.ctx && (this.ctx.state === 'suspended' || (this.ctx as any).state === 'interrupted')) {
+              this.ctx.resume().catch(() => {});
+              this.armMobileUnlockListeners();
+            }
+            if (this.silentAudioElement && this.silentAudioElement.paused) {
+              this.silentAudioElement.play().catch(() => {});
+            }
+          }
+        });
+        window.addEventListener('focus', () => {
+          if (this.ctx && (this.ctx.state === 'suspended' || (this.ctx as any).state === 'interrupted')) {
+            this.ctx.resume().catch(() => {});
+            this.armMobileUnlockListeners();
+          }
+        });
+      }
+    }
+  }
+
   public init(): boolean {
     if (this.ctx && this.ctx.state !== 'closed') {
-      if (this.ctx.state === 'suspended') {
+      if (this.ctx.state === 'suspended' || (this.ctx as any).state === 'interrupted') {
         this.ctx.resume().catch(() => {});
       }
       return true;
@@ -50,6 +81,18 @@ class SoundEngine {
     try {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
       this.ctx = new AudioContextClass();
+
+      // Monitor AudioContext state changes for iOS interruptions (locking screen, app switcher)
+      this.ctx.onstatechange = () => {
+        if (this.ctx?.state === 'running') {
+          this.isUnlocked = true;
+          if (this.isMusicActive) {
+            this.nextNoteTime = this.ctx.currentTime + 0.05;
+          }
+        } else if (this.ctx?.state === 'suspended' || (this.ctx as any)?.state === 'interrupted') {
+          this.armMobileUnlockListeners();
+        }
+      };
 
       // Master Gain - Crisp and audible
       this.masterGain = this.ctx.createGain();
@@ -74,6 +117,7 @@ class SoundEngine {
       this.updateGains();
 
       this.isInitialized = true;
+      this.armMobileUnlockListeners();
       return true;
     } catch (e) {
       console.warn('AudioContext initialization failed or blocked:', e);
@@ -101,11 +145,108 @@ class SoundEngine {
     return this.sfxGain || this.filterNode || this.masterGain || (this.ctx as AudioContext).destination;
   }
 
-  public async ensureResumed(): Promise<void> {
+  /**
+   * Unlocks Web Audio on iOS / iPhone (Safari, WebKit, iOS Chrome).
+   * - Configures navigator.audioSession.type = 'playback' (iOS 17+) so the hardware Silent Switch doesn't mute sound.
+   * - Concurrently plays a tiny silent HTML5 audio element to force iOS into playback channel (universal iOS fallback).
+   * - Resumes AudioContext synchronously inside the user-gesture callstack.
+   * - Primes the hardware audio buffer with a 1-sample dummy buffer source.
+   */
+  public unlockMobileAudio(): void {
+    // 1. iOS 17+ audioSession API: route Web Audio to playback channel so hardware Silent/Mute switch doesn't silence audio
+    if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
+      try {
+        (navigator as any).audioSession.type = 'playback';
+      } catch {}
+    }
+
+    // 2. Universal iOS silent switch bypass: trigger tiny silent HTML5 audio element
+    if (typeof document !== 'undefined' && !this.silentAudioElement) {
+      try {
+        const audio = document.createElement('audio');
+        audio.setAttribute('x-webkit-airplay', 'deny');
+        audio.setAttribute('playsinline', 'true');
+        audio.preload = 'auto';
+        audio.loop = true;
+        // 46-byte valid silent PCM WAV data URI
+        audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==';
+        audio.volume = 0.01;
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {});
+        }
+        this.silentAudioElement = audio;
+      } catch {}
+    } else if (this.silentAudioElement && this.silentAudioElement.paused) {
+      try {
+        const playPromise = this.silentAudioElement.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {});
+        }
+      } catch {}
+    }
+
+    // 3. Ensure AudioContext is created
     if (!this.ctx) {
       this.init();
     }
-    if (this.ctx && this.ctx.state === 'suspended') {
+
+    // 4. Synchronously resume AudioContext within user gesture callstack
+    if (this.ctx) {
+      if (this.ctx.state === 'suspended' || (this.ctx as any).state === 'interrupted') {
+        this.ctx.resume().catch(() => {});
+      }
+
+      // 5. Prime iOS hardware audio pipeline with 1-sample dummy buffer
+      try {
+        const buffer = this.ctx.createBuffer(1, 1, 22050);
+        const source = this.ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(this.ctx.destination);
+        source.start(0);
+      } catch {}
+
+      if (this.ctx.state === 'running') {
+        this.isUnlocked = true;
+        if (this.isMusicActive) {
+          this.nextNoteTime = this.ctx.currentTime + 0.05;
+        }
+      }
+    }
+  }
+
+  public armMobileUnlockListeners(): void {
+    if (typeof window === 'undefined' || this.unlockListenersAttached) return;
+    this.unlockListenersAttached = true;
+
+    const events = ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'click', 'keydown'];
+    const unlockHandler = () => {
+      this.unlockMobileAudio();
+      if (this.ctx && this.ctx.state === 'running') {
+        this.removeMobileUnlockListeners();
+      }
+    };
+
+    this.boundUnlockHandler = unlockHandler;
+    events.forEach(evt => {
+      window.addEventListener(evt, unlockHandler, { capture: true, passive: true });
+      document.addEventListener(evt, unlockHandler, { capture: true, passive: true });
+    });
+  }
+
+  public removeMobileUnlockListeners(): void {
+    if (!this.boundUnlockHandler || typeof window === 'undefined') return;
+    const events = ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'click', 'keydown'];
+    events.forEach(evt => {
+      window.removeEventListener(evt, this.boundUnlockHandler!, { capture: true });
+      document.removeEventListener(evt, this.boundUnlockHandler!, { capture: true });
+    });
+    this.unlockListenersAttached = false;
+  }
+
+  public async ensureResumed(): Promise<void> {
+    this.unlockMobileAudio();
+    if (this.ctx && (this.ctx.state === 'suspended' || (this.ctx as any).state === 'interrupted')) {
       try {
         await this.ctx.resume();
       } catch (e) {}
@@ -1393,13 +1534,8 @@ class SoundEngine {
 
 export const soundEngine = new SoundEngine();
 
-// Auto-unlock Web Audio on first user gesture anywhere on window
+// Auto-unlock Web Audio on first user gesture anywhere on window/document
 if (typeof window !== 'undefined') {
-  const handleUserGesture = () => {
-    soundEngine.init();
-    soundEngine.ensureResumed();
-  };
-  window.addEventListener('pointerdown', handleUserGesture, { passive: true });
-  window.addEventListener('keydown', handleUserGesture, { passive: true });
-  window.addEventListener('click', handleUserGesture, { passive: true });
+  soundEngine.armMobileUnlockListeners();
 }
+

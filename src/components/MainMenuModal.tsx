@@ -230,6 +230,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   };
 
   const handleModeClick = (mode: GameMode, forceNew: boolean = false) => {
+    soundEngine.unlockMobileAudio();
     if (!isModeUnlocked(mode)) {
       soundEngine.playIncorrectHit('packet');
       setLockedNotice(
@@ -256,6 +257,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   };
 
   const handleBeamColorConfirmed = (chosenColor: PilotBeamColor) => {
+    soundEngine.unlockMobileAudio();
     setActivePilotColor(chosenColor);
     if (pendingLaunchMode) {
       const mode = pendingLaunchMode;
@@ -288,6 +290,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   };
 
   const handleToggleMuteAll = () => {
+    soundEngine.unlockMobileAudio();
     const updated: UserSettings = {
       ...userSettings,
       audio: {
@@ -383,9 +386,12 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 font-mono select-none animate-in fade-in duration-150 overflow-hidden"
       onClick={(e) => {
         e.stopPropagation();
-        soundEngine.ensureResumed();
+        soundEngine.unlockMobileAudio();
         soundEngine.setMusicPacing('slow_waltz', 'easy');
         soundEngine.startBackgroundMusic();
+      }}
+      onTouchStart={() => {
+        soundEngine.unlockMobileAudio();
       }}
     >
       {/* 6-BIT RETRO GRAPHICS BACKGROUND CANVAS */}
@@ -401,7 +407,13 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
       <div
         className="relative w-full max-w-xl max-h-[96dvh] sm:max-h-[92dvh] bg-[#0c0d12]/95 border border-emerald-500/70 rounded-2xl shadow-2xl shadow-emerald-950/80 p-3 sm:p-5 flex flex-col gap-2 sm:gap-3.5 my-auto z-10 overflow-y-auto scrollbar-none"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        onClick={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          soundEngine.unlockMobileAudio();
+        }}
+        onTouchStart={() => {
+          soundEngine.unlockMobileAudio();
+        }}
       >
         {/* Sleek Minimalist Header */}
         <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
@@ -1036,6 +1048,16 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                     onChange={(e) => handleSfxVolumeChange(Number(e.target.value))}
                     className="w-full accent-emerald-500 cursor-pointer h-1.5 bg-neutral-800 rounded appearance-none"
                   />
+                </div>
+
+                {/* iPhone / Mobile Web Audio Tip */}
+                <div className="p-2.5 rounded-lg bg-neutral-950/90 border border-neutral-800/90 text-[11px] text-neutral-400 space-y-1">
+                  <div className="text-cyan-300 font-bold flex items-center gap-1.5">
+                    <span>📱 iPhone Audio Tip</span>
+                  </div>
+                  <p className="leading-relaxed text-[10px] text-neutral-300">
+                    If you don't hear sound on iPhone, ensure the physical <strong>Silent/Ring switch</strong> on the side of your phone is switched to Ring (orange not visible) or Silent mode is disabled in Control Center, and media volume is turned up.
+                  </p>
                 </div>
               </div>
             )}
