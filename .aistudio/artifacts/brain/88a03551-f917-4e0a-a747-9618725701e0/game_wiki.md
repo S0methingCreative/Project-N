@@ -58,6 +58,17 @@ Game N provides four primary game modes, each enforcing distinct persistence rul
 ### 2.1 Story Mode
 The canonical narrative progression spanning the full genesis from $0\text{D}$ to $2\text{D}$ Master Transcendence.
 - **Save State Persistence**: Automatically persists to local storage key `game_n_story_save_v2`. Persisted fields: `currentN`, `act1Bits`, `act2Resolution`, `hertz`, `volts`, `baud`, `overshields`, `autoCompileEnabled`, `storyDialogueFlags`.
+- **Narrative Mission Briefing (Terminal Boot)**:
+  - Fresh campaigns or new Story runs boot up with a retro CRT phosphor terminal sequence (`StoryIntroModal`).
+  - Interpolates dynamic pilot callsign (e.g., `PILOT CODE [AAA] LOCKED IN`).
+  - Instructs pilots on the dual-zone flight controls: tap the right side of the screen to invert polarity and synchronize with incoming waves.
+  - Normalizes failure and teaches the roguelite progression loop: **"DE-COHERENCE IS PROGRESS"** — dissolution in the void is an intentional calibration cycle that banks collected $\text{Hz}$ and $\text{V}$ frequencies for permanent compilation.
+  - Features typewriter teletype animation with tap-to-reveal fast-forward and a quick **"SKIP BRIEFING"** option.
+- **Initial Calibration Subsidy (First Two Compiles Free)**:
+  - To eliminate friction and teach the core loop, the first two Story Mode compiles are completely free ($0\text{ Hz}, 0\text{ V}$):
+    1. **Compile 1 ($N = 1$ Origin Pixel)**: $0\text{ Hz}, 0\text{ V}$.
+    2. **Compile 2 ($\text{Bit } 1$ 1-Bit Graphics)**: Subsidized at $0\text{ Hz}, 0\text{ V}$ (normally $1\text{ Hz}, 1\text{ V}$).
+  - In the Signal Collapse / Compile screen, free tutorial compiles are highlighted with an animated glowing phosphor border (`ring-2 ring-emerald-400 animate-pulse shadow-lg`) and a pulsing arrow indicator (`▲ TUTORIAL: TAP TO COMPILE (FREE) ▲`).
 - **Checkpointing**: Automatic checkpointing upon entering Part Two ($N=2$) and upon defeating Boss 1 (Bit 10 compiled).
 - **Death Recovery**:
   - Depletion of integrity to $0$ triggers the **Signal Collapse / Decompilation Screen**.

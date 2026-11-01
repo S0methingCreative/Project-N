@@ -1183,6 +1183,7 @@ interface Props {
   onOpenMainMenu?: () => void;
   isMobile?: boolean;
   isMainMenuOpen?: boolean;
+  isStoryIntroOpen?: boolean;
   userSettings?: UserSettings;
   onUpdateSettings?: (settings: UserSettings) => void;
   onDevAddBit?: () => void;
@@ -1200,6 +1201,7 @@ export const DimensionCanvas: React.FC<Props> = ({
   onOpenMainMenu,
   isMobile = false,
   isMainMenuOpen = false,
+  isStoryIntroOpen = false,
   userSettings = DEFAULT_USER_SETTINGS,
   onUpdateSettings,
   onDevAddBit,
@@ -1210,6 +1212,10 @@ export const DimensionCanvas: React.FC<Props> = ({
   onUpdateTeamRoom,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Story intro modal state ref to pause simulation while reading briefing
+  const isStoryIntroOpenRef = useRef<boolean>(isStoryIntroOpen);
+  isStoryIntroOpenRef.current = isStoryIntroOpen;
 
   // Settings ref for input and wheel handlers
   const userSettingsRef = useRef<UserSettings>(userSettings);
@@ -1294,6 +1300,18 @@ export const DimensionCanvas: React.FC<Props> = ({
       }
     }
   }, [isMainMenuOpen]);
+
+  // Story intro modal synchronization: pause simulation, purge lingering pulses, and reset integrity
+  useEffect(() => {
+    if (isStoryIntroOpen) {
+      pulsesRef.current = [];
+      redErrorZonesRef.current = [];
+      spawnCooldownRef.current = 2.0; // 2 seconds safety grace period upon dismissing intro before any pulse spawns!
+      runPulsesRef.current = 0;
+      setIntegrity(100);
+      integrityRef.current = 100;
+    }
+  }, [isStoryIntroOpen]);
 
   // Act 1 Deep Progression States
   // Phases: 'void' (0D) -> 'point' (N=1, collecting 9 bits) -> 'boss' (line segment) -> 'ray' (rift to 2D)
@@ -3481,18 +3499,26 @@ export const DimensionCanvas: React.FC<Props> = ({
       const nextBitIdx = Math.min(BIT_GRAPHICS_UPGRADES.length - 1, curBits);
       const upgrade = BIT_GRAPHICS_UPGRADES[nextBitIdx];
       const isBoss1Locked = curBits >= 9;
+
+      // In Story Mode, Bit 1 (the 2nd compile after N=1) is completely FREE (0 Hz, 0 V) as part of the initial dimensional subsidy!
+      const isFreeBit1 = (gameModeRef.current === 'story' || !gameModeRef.current) && curBits === 0;
+      const effectiveCostHz = isFreeBit1 ? 0 : upgrade.costHz;
+      const effectiveCostV = isFreeBit1 ? 0 : upgrade.costV;
+
       const screen: DeathScreenState = {
         active: true,
         collectedHz: hzGained,
         collectedV: vGained,
         collectedBaud: baudGained,
-        costHz: upgrade.costHz,
-        costV: upgrade.costV,
+        costHz: effectiveCostHz,
+        costV: effectiveCostV,
         target: 'bit',
         upgradeName: upgrade.name,
-        upgradeDesc: upgrade.desc,
+        upgradeDesc: isFreeBit1 ? 'Free compile of 1-bit binary raster engine.' : upgrade.desc,
         message: isBoss1Locked
           ? `DESTINATION BESIEGED.\nYOU NOW HAVE ${currentTotalHz} HZ AND ${currentTotalV} V.\nOBJECTIVE: DEFEAT BOSS 1 (CORRUPTED SOVEREIGN) TO COMPILE BIT 10!`
+          : isFreeBit1
+          ? `PERIMETER DISSOLVED.\nDE-COHERENCE IS PROGRESS: BANKED +${hzGained} HZ AND +${vGained} V.\nCOMPILE BIT 1 (FREE)?`
           : `OH NO YOU DIED.\nYOU COLLECTED ${hzGained} HZ AND ${vGained} V.\nYOU NOW HAVE ${currentTotalHz} HZ AND ${currentTotalV} V.\nSPEND ${upgrade.costHz} HZ AND ${upgrade.costV} V TO COMPILE ${upgrade.name}?\n"${upgrade.desc}"`,
       };
       deathScreenRef.current = screen;
@@ -3500,6 +3526,8 @@ export const DimensionCanvas: React.FC<Props> = ({
       onLogAction(
         isBoss1Locked
           ? `Destination besieged. Defeat Boss 1 (Corrupted Sovereign) to compile Bit 10 (Master Engine)!`
+          : isFreeBit1
+          ? `Perimeter dissolved. Collected ${hzGained} HZ, ${vGained} V. Initial Subsidy: Bit 1 compile is 100% free!`
           : `Perimeter dissolved. Collected ${hzGained} HZ, ${vGained} V. Next upgrade: ${upgrade.name} (${upgrade.costHz} Hz, ${upgrade.costV} V).`
       );
     }
@@ -3735,7 +3763,7 @@ export const DimensionCanvas: React.FC<Props> = ({
 
   // Cycle Active Polarizer (called by Spacebar, touch on canvas, or the Opaque Polarizer Button)
   const cyclePolarizer = () => {
-    if (isMainMenuOpenRef.current) return;
+    if (isMainMenuOpenRef.current || isStoryIntroOpenRef.current) return;
     // Start carrier audio if not yet engaged
     if (!stateRef.current.carrierActive) {
       handleStartAudio();
@@ -3793,7 +3821,7 @@ export const DimensionCanvas: React.FC<Props> = ({
   // Mouse wheel listener for desktop Part Two navigation
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
-      if (isMainMenuOpenRef.current || subPartRef.current !== 2 || resolutionRef.current < 2) return;
+      if (isMainMenuOpenRef.current || isStoryIntroOpenRef.current || subPartRef.current !== 2 || resolutionRef.current < 2) return;
       e.preventDefault();
       // Sluggish early on at Resolution 2 so player has to aggressively spin it, improving with Resolution upgrades:
       const agility =
@@ -3824,8 +3852,8 @@ export const DimensionCanvas: React.FC<Props> = ({
   // Keyboard Handlers
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Do not handle gameplay keys while main menu is open
-      if (isMainMenuOpenRef.current) return;
+      // Do not handle gameplay keys while main menu or story intro modal is open
+      if (isMainMenuOpenRef.current || isStoryIntroOpenRef.current) return;
 
       // Key 8: Activate carrier drone
       if (e.key === '8') {
@@ -3938,8 +3966,8 @@ export const DimensionCanvas: React.FC<Props> = ({
 
     // GLOBAL MOUSE CLICK: Left mouse click cycles polarity direction; RMB cycles if configured
     const handleGlobalMouseDown = (e: MouseEvent) => {
-      // Don't cycle polarizer or start gameplay if main menu or death screen is open, or during death buffer
-      if (isMainMenuOpenRef.current) return;
+      // Don't cycle polarizer or start gameplay if main menu, story intro, or death screen is open, or during death buffer
+      if (isMainMenuOpenRef.current || isStoryIntroOpenRef.current) return;
       if (deathScreenRef.current || deathBufferSecondsRef.current > 0) return;
 
       // Ignore emulated mouse events following touch interactions
@@ -4080,8 +4108,8 @@ export const DimensionCanvas: React.FC<Props> = ({
         if (screenShakeRef.current < 0.2) screenShakeRef.current = 0;
       }
 
-      // When at main menu, MainMenuModal renders the 6-bit background; halt entity simulation & canvas redraw
-      if (isMainMenuOpenRef.current) {
+      // When at main menu or reading story intro briefing, halt entity simulation & canvas redraw
+      if (isMainMenuOpenRef.current || isStoryIntroOpenRef.current) {
         ctx.restore();
         animId = requestAnimationFrame(render);
         return;
@@ -6185,6 +6213,7 @@ export const DimensionCanvas: React.FC<Props> = ({
   const handleCanvasTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     if (
       isMainMenuOpenRef.current ||
+      isStoryIntroOpenRef.current ||
       deathScreenRef.current ||
       deathBufferSecondsRef.current > 0 ||
       isGlobalScoresOpen ||
@@ -6232,6 +6261,7 @@ export const DimensionCanvas: React.FC<Props> = ({
   const handleCanvasTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
     if (
       isMainMenuOpenRef.current ||
+      isStoryIntroOpenRef.current ||
       deathScreenRef.current ||
       deathBufferSecondsRef.current > 0 ||
       isGlobalScoresOpen ||
@@ -6293,6 +6323,7 @@ export const DimensionCanvas: React.FC<Props> = ({
     lastTouchTimeRef.current = Date.now();
     if (
       isMainMenuOpenRef.current ||
+      isStoryIntroOpenRef.current ||
       deathScreenRef.current ||
       deathBufferSecondsRef.current > 0 ||
       isGlobalScoresOpen ||
@@ -6475,6 +6506,18 @@ export const DimensionCanvas: React.FC<Props> = ({
                 OH NO YOU DIED.
               </div>
 
+              {(deathScreen.target === 'N' || (deathScreen.target === 'bit' && deathScreen.costHz === 0 && deathScreen.costV === 0)) && (
+                <div className="text-[11px] text-emerald-300 bg-emerald-950/70 border border-emerald-500/60 p-2.5 rounded-lg text-left space-y-1">
+                  <div className="font-bold flex items-center gap-1.5 text-emerald-400">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-300 animate-pulse" />
+                    <span>DE-COHERENCE IS PROGRESS</span>
+                  </div>
+                  <div className="text-[10px] text-neutral-300 leading-snug">
+                    Dissolving in the void is the intended calibration cycle! Your energy has been safely banked. The first two compiles are subsidized at 0 HZ / 0 V to establish your visual matrix.
+                  </div>
+                </div>
+              )}
+
               <div className="text-xs text-neutral-300 leading-relaxed bg-black/70 p-3 rounded-lg border border-neutral-800 text-left space-y-1.5">
                 <div>• Collected this run: <span className="text-cyan-400 font-bold">+{deathScreen.collectedHz} HZ</span> and <span className="text-rose-400 font-bold">+{deathScreen.collectedV} V</span>.</div>
                 <div>• Available reserves: <span className="text-cyan-300 font-bold">{gameState.resources.hertz} HZ</span> and <span className="text-rose-300 font-bold">{gameState.resources.volts} V</span>.</div>
@@ -6529,7 +6572,9 @@ export const DimensionCanvas: React.FC<Props> = ({
                     <span className="text-cyan-300 font-mono">SPEEDRUN RUN #{speedrunRunsRef.current} · RESUME THE CLOCK TO CONTINUE</span>
                   )
                 ) : deathScreen.target === 'N' ? (
-                  <span>COMPILE N = 1 (FREE)?</span>
+                  <span className="text-emerald-300 font-bold">COMPILE N = 1 (FREE)?</span>
+                ) : (deathScreen.target === 'bit' && deathScreen.costHz === 0 && deathScreen.costV === 0) ? (
+                  <span className="text-emerald-300 font-bold">COMPILE BIT 1 (FREE)?</span>
                 ) : deathScreen.target === 'resolution' ? (
                   resolution >= 9 ? (
                     <span className="text-amber-300 font-mono">BOSS 2 ENCOUNTER: DEFEAT FRACTURE SOVEREIGN TO UNLOCK RESOLUTION 10 (240 FPS)</span>
@@ -6619,38 +6664,47 @@ export const DimensionCanvas: React.FC<Props> = ({
                       <Sparkles className="w-4 h-4 text-amber-200" />
                       <span>{deathScreen.target === 'resolution' ? 'CHALLENGE BOSS 2' : 'CHALLENGE BOSS 1'}</span>
                     </button>
-                  ) : (
-                    <button
-                      onClick={handlePurchaseUpgrade}
-                      disabled={
-                        deathBufferSeconds > 0 ||
-                        (deathScreen.target !== 'N' && (
-                          (deathScreen.target === 'resolution' && Math.max(gameState.resources.baud, stateRef.current.resources.baud) < (deathScreen.costBaud || 0)) ||
-                          (Math.max(gameState.resources.hertz, stateRef.current.resources.hertz) < deathScreen.costHz) ||
-                          (Math.max(gameState.resources.volts, stateRef.current.resources.volts) < deathScreen.costV)
-                        ))
-                      }
-                      className={`w-full sm:w-auto px-5 py-3 font-bold rounded-lg text-xs transition-all shadow-lg flex items-center justify-center gap-1.5 font-mono ${
-                        deathBufferSeconds > 0
-                          ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-50'
-                          : (deathScreen.target !== 'N' && (
-                             (deathScreen.target === 'resolution' && Math.max(gameState.resources.baud, stateRef.current.resources.baud) < (deathScreen.costBaud || 0)) ||
-                             (Math.max(gameState.resources.hertz, stateRef.current.resources.hertz) < deathScreen.costHz) ||
-                             (Math.max(gameState.resources.volts, stateRef.current.resources.volts) < deathScreen.costV)))
-                          ? 'bg-neutral-800/80 text-neutral-500 border border-neutral-700/60 cursor-not-allowed opacity-60'
-                          : 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white active:scale-95 cursor-pointer shadow-blue-950/60 border border-blue-400/30'
-                      }`}
-                    >
-                      <Sparkles className="w-4 h-4 text-blue-200" />
-                      <span>
-                        {deathScreen.target === 'N'
-                          ? 'COMPILE 1 N (FREE)'
-                          : deathScreen.target === 'resolution'
-                          ? `COMPILE RES ${resolution + 1}`
-                          : `COMPILE BIT ${bits + 1}`}
-                      </span>
-                    </button>
-                  )
+                  ) : (() => {
+                    const isFreeCompile = deathScreen.target === 'N' || (deathScreen.target === 'bit' && deathScreen.costHz === 0 && deathScreen.costV === 0);
+                    return (
+                      <div className="flex flex-col items-center gap-1.5 w-full sm:w-auto">
+                        <button
+                          onClick={handlePurchaseUpgrade}
+                          disabled={
+                            deathBufferSeconds > 0 ||
+                            (!isFreeCompile && (
+                              (deathScreen.target === 'resolution' && Math.max(gameState.resources.baud, stateRef.current.resources.baud) < (deathScreen.costBaud || 0)) ||
+                              (Math.max(gameState.resources.hertz, stateRef.current.resources.hertz) < deathScreen.costHz) ||
+                              (Math.max(gameState.resources.volts, stateRef.current.resources.volts) < deathScreen.costV)
+                            ))
+                          }
+                          className={`w-full sm:w-auto px-5 py-3 font-bold rounded-lg text-xs transition-all shadow-lg flex items-center justify-center gap-1.5 font-mono ${
+                            deathBufferSeconds > 0
+                              ? 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed opacity-50'
+                              : (!isFreeCompile && (
+                                 (deathScreen.target === 'resolution' && Math.max(gameState.resources.baud, stateRef.current.resources.baud) < (deathScreen.costBaud || 0)) ||
+                                 (Math.max(gameState.resources.hertz, stateRef.current.resources.hertz) < deathScreen.costHz) ||
+                                 (Math.max(gameState.resources.volts, stateRef.current.resources.volts) < deathScreen.costV)))
+                              ? 'bg-neutral-800/80 text-neutral-500 border border-neutral-700/60 cursor-not-allowed opacity-60'
+                              : isFreeCompile
+                              ? 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white ring-2 ring-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.7)] animate-pulse active:scale-95 cursor-pointer'
+                              : 'bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white active:scale-95 cursor-pointer shadow-blue-950/60 border border-blue-400/30'
+                          }`}
+                        >
+                          <Sparkles className={`w-4 h-4 ${isFreeCompile ? 'text-emerald-200' : 'text-blue-200'}`} />
+                          <span>
+                            {deathScreen.target === 'N'
+                              ? 'COMPILE 1 N (FREE)'
+                              : isFreeCompile
+                              ? 'COMPILE BIT 1 (FREE)'
+                              : deathScreen.target === 'resolution'
+                              ? `COMPILE RES ${resolution + 1}`
+                              : `COMPILE BIT ${bits + 1}`}
+                          </span>
+                        </button>
+                      </div>
+                    );
+                  })()
                 )}
 
                 {(() => {

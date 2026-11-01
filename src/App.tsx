@@ -25,6 +25,9 @@ const InitialsRegistrationModal = React.lazy(() =>
 const TeamSpeedrunModal = React.lazy(() =>
   import('./components/TeamSpeedrunModal').then(m => ({ default: m.TeamSpeedrunModal }))
 );
+const StoryIntroModal = React.lazy(() =>
+  import('./components/StoryIntroModal').then(m => ({ default: m.StoryIntroModal }))
+);
 
 const STORY_SAVE_KEY = 'game_n_story_save_v2';
 const RUN_STORAGE_KEY = 'game_n_run_data_v1';
@@ -189,6 +192,9 @@ export default function App() {
   const [isMainMenuOpen, setIsMainMenuOpen] = useState<boolean>(true);
   // Prompt 3-letter FTC registration on startup if not already stored
   const [isFTCRegistrationOpen, setIsFTCRegistrationOpen] = useState<boolean>(() => !getPlayerCode());
+
+  // Story Mode narrative intro terminal modal
+  const [isStoryIntroOpen, setIsStoryIntroOpen] = useState<boolean>(false);
 
   // Team Speedrun Multiplayer state
   const [isTeamModalOpen, setIsTeamModalOpen] = useState<boolean>(false);
@@ -520,6 +526,7 @@ export default function App() {
 
     if (mode === 'story') {
       if (forceNewStory) {
+        setIsStoryIntroOpen(true);
         // Player chose to restart story mode from scratch:
         // Clear all materials gathered (HZ, V, and BD) back to 0, reset dimensional progress back to 0-bit void
         const freshStory: GameState = {
@@ -543,8 +550,8 @@ export default function App() {
           engineCompilePercent: 8,
           compiledModules: INITIAL_MODULES,
           deathScreen: null,
-          audioActive: true,
-          carrierActive: true,
+          audioActive: false,
+          carrierActive: false, // Remains paused while reading briefing
           resources: {
             hertz: 0,
             volts: 0,
@@ -557,7 +564,6 @@ export default function App() {
           localStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(freshStory));
         } catch {}
         soundEngine.setMusicPacing('slow_waltz', 'easy');
-        soundEngine.startBackgroundMusic();
         setGameState(freshStory);
         return;
       }
@@ -565,8 +571,13 @@ export default function App() {
       // Resume persistent story save file
       const savedStory = loadSavedStoryData();
       if (savedStory) {
+        const isFresh = !savedStory.act1PurchasedN && (savedStory.act1Bits || 0) === 0 && (savedStory.totalRuns || 1) <= 1;
+        if (isFresh) {
+          setIsStoryIntroOpen(true);
+        } else {
+          soundEngine.startBackgroundMusic();
+        }
         soundEngine.setMusicPacing('slow_waltz', 'easy');
-        soundEngine.startBackgroundMusic();
         setGameState(prev => ({
           ...DEFAULT_GAME_STATE,
           ...savedStory,
@@ -575,12 +586,13 @@ export default function App() {
           hasCompletedStory: prev.hasCompletedStory || savedStory.hasCompletedStory || false,
           storyCompletions: prev.storyCompletions || savedStory.storyCompletions || (savedStory.hasCompletedStory ? 1 : 0),
           highScores: prev.highScores || loadSavedHighScores(),
-          audioActive: true,
-          carrierActive: true,
+          audioActive: !isFresh,
+          carrierActive: !isFresh,
           deathScreen: null,
           hp: Math.max(100, savedStory.hp || 100),
         }));
       } else {
+        setIsStoryIntroOpen(true);
         const initialStory: GameState = {
           ...DEFAULT_GAME_STATE,
           gameMode: 'story',
@@ -588,15 +600,14 @@ export default function App() {
           hasCompletedStory: gameState.hasCompletedStory,
           storyCompletions: gameState.storyCompletions || (gameState.hasCompletedStory ? 1 : 0),
           highScores: gameState.highScores || loadSavedHighScores(),
-          audioActive: true,
-          carrierActive: true,
+          audioActive: false,
+          carrierActive: false,
         };
         try {
           localStorage.setItem(STORY_SAVE_KEY, JSON.stringify(initialStory));
           localStorage.setItem(RUN_STORAGE_KEY, JSON.stringify(initialStory));
         } catch {}
         soundEngine.setMusicPacing('slow_waltz', 'easy');
-        soundEngine.startBackgroundMusic();
         setGameState(initialStory);
       }
     } else if (mode === 'speedrun') {
@@ -852,6 +863,7 @@ export default function App() {
               }}
               isMobile={isMobileDevice}
               isMainMenuOpen={isMainMenuOpen}
+              isStoryIntroOpen={isStoryIntroOpen}
               userSettings={userSettings}
               onUpdateSettings={handleUpdateSettings}
               onDevAddBit={handleDevAddBit}
@@ -933,6 +945,37 @@ export default function App() {
               isOpen={isFTCRegistrationOpen}
               onCodeRegistered={() => {
                 setIsFTCRegistrationOpen(false);
+              }}
+            />
+          </React.Suspense>
+        )}
+
+        {/* Story Mode Narrative Mission Briefing Terminal */}
+        {isStoryIntroOpen && (
+          <React.Suspense fallback={null}>
+            <StoryIntroModal
+              isOpen={isStoryIntroOpen}
+              onClose={() => {
+                setIsStoryIntroOpen(false);
+                soundEngine.unlockMobileAudio();
+                soundEngine.setMusicPacing('slow_waltz', 'easy');
+                soundEngine.startBackgroundMusic();
+                setGameState(prev => ({
+                  ...prev,
+                  carrierActive: true,
+                  audioActive: true,
+                }));
+              }}
+              onStartStory={() => {
+                setIsStoryIntroOpen(false);
+                soundEngine.unlockMobileAudio();
+                soundEngine.setMusicPacing('slow_waltz', 'easy');
+                soundEngine.startBackgroundMusic();
+                setGameState(prev => ({
+                  ...prev,
+                  carrierActive: true,
+                  audioActive: true,
+                }));
               }}
             />
           </React.Suspense>
