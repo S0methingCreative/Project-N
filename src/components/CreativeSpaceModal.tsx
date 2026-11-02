@@ -634,7 +634,7 @@ export const CreativeSpaceModal: React.FC<CreativeSpaceModalProps> = ({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Creative Space Musical Math Etch-a-Sketch"
+      aria-label="Creative Space"
       className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 font-mono select-none animate-in fade-in duration-150"
       onClick={onClose}
     >
@@ -651,7 +651,7 @@ export const CreativeSpaceModal: React.FC<CreativeSpaceModalProps> = ({
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h2 className="text-sm sm:text-base font-black text-white tracking-wider uppercase">
-                  CREATIVE SPACE · LINE &amp; BEAT ETCH-A-SKETCH
+                  CREATIVE SPACE
                 </h2>
                 <span className="text-[11px] text-emerald-400 font-bold tabular-nums">
                   {devUnlocked ? 'DEV UNLOCKED (RES 10)' : `RES ${maxResUnlocked}/10`} · 8/8 STEPS ·{' '}
@@ -750,7 +750,7 @@ export const CreativeSpaceModal: React.FC<CreativeSpaceModalProps> = ({
             <div className="space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black text-white uppercase">
-                  ETCH-A-SKETCH LINE DECK
+                  LINE DECK
                 </span>
                 <span className="inline-flex items-center gap-1 text-[10px] font-bold text-neutral-300">
                   <span

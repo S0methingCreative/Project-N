@@ -578,6 +578,7 @@ function applyRoomAction(
         room.sharedState.runPulses = 0;
       }
       for (const p of Object.values(room.pilots)) {
+        p.isReady = false;
         p.readyToContinue = false;
         p.integrity = 100;
         p.isKnocked = false;
@@ -640,7 +641,7 @@ app.post("/api/squad/rooms", async (req, res) => {
     initials: hostInitials,
     color: hostColor,
     isHost: true,
-    isReady: true,
+    isReady: false,
     integrity: 100,
     isKnocked: false,
     x: 0.5,
@@ -736,6 +737,7 @@ app.post("/api/squad/rooms/:code/join", async (req, res) => {
       ...existing,
       initials: pInitials,
       color: pColor,
+      isReady: room.status === "lobby" ? false : Boolean(existing.isReady),
       lastHeartbeat: now,
       slotIndex: typeof existing.slotIndex === "number" ? existing.slotIndex : existing.isHost ? 0 : 1,
       joinedAt: existing.joinedAt || now,
@@ -781,7 +783,7 @@ app.post("/api/squad/rooms/:code/join", async (req, res) => {
     initials: pInitials,
     color: pColor,
     isHost: isFirstPilot || room.hostPilotId === pId,
-    isReady: true,
+    isReady: false,
     integrity: 100,
     isKnocked: false,
     x: 0.5,

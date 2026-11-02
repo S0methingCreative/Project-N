@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Terminal, ChevronRight, Play, X, ShieldAlert, Sparkles, Radio } from 'lucide-react';
+import { Terminal, ChevronRight, Play, ShieldAlert, Radio } from 'lucide-react';
 import { getPlayerCode } from '../utils/pilotProfile';
 import { soundEngine } from '../audio/soundEngine';
 
@@ -7,70 +7,130 @@ interface StoryIntroModalProps {
   isOpen: boolean;
   onClose: () => void;
   onStartStory?: () => void;
+  variant?: 'intro' | 'bit10';
 }
 
 interface ScriptLine {
   id: string;
-  type: 'header' | 'callsign' | 'system' | 'mission' | 'controls' | 'protocol' | 'subsidy' | 'climax';
+  type: 'header' | 'callsign' | 'mission' | 'controls' | 'protocol';
   text: string;
   color?: string;
   highlight?: boolean;
 }
 
+const renderHighlightedSlice = (fullText: string, charLimit: number) => {
+  const parts = fullText.split(/(\b(?:Hz|HZ|Crests|V|Troughs|Bd|BD|packets|Packets)\b)/g);
+  let remaining = charLimit;
+
+  return parts.map((part, idx) => {
+    if (remaining <= 0 || !part) return null;
+    const visiblePart = part.slice(0, remaining);
+    remaining -= part.length;
+
+    if (part === 'Hz' || part === 'HZ' || part === 'Crests') {
+      return (
+        <span
+          key={idx}
+          className="text-[#33ff66] font-bold drop-shadow-[0_0_6px_rgba(51,255,102,0.45)]"
+        >
+          {visiblePart}
+        </span>
+      );
+    }
+
+    if (part === 'V' || part === 'Troughs') {
+      return (
+        <span
+          key={idx}
+          className="text-[#ff4455] font-bold drop-shadow-[0_0_6px_rgba(255,68,85,0.45)]"
+        >
+          {visiblePart}
+        </span>
+      );
+    }
+
+    if (part === 'Bd' || part === 'BD' || part === 'packets' || part === 'Packets') {
+      return (
+        <span
+          key={idx}
+          className="text-[#38bdf8] font-bold drop-shadow-[0_0_6px_rgba(56,189,248,0.45)]"
+        >
+          {visiblePart}
+        </span>
+      );
+    }
+
+    return <React.Fragment key={idx}>{visiblePart}</React.Fragment>;
+  });
+};
+
 export const StoryIntroModal: React.FC<StoryIntroModalProps> = ({
   isOpen,
   onClose,
   onStartStory,
+  variant = 'intro',
 }) => {
   const pilotCode = getPlayerCode() || 'PIL';
 
-  const scriptLines: ScriptLine[] = [
-    {
-      id: 'greeting',
-      type: 'header',
-      text: 'GREETINGS INTERDIMENSIONAL TRAVELER.',
-      color: 'text-emerald-400 font-bold',
-    },
-    {
-      id: 'pilot',
-      type: 'callsign',
-      text: `PILOT CODE [${pilotCode}] LOCKED IN.`,
-      color: 'text-cyan-300 font-bold',
-      highlight: true,
-    },
-    {
-      id: 'init',
-      type: 'system',
-      text: 'INITIALIZING PROJECT N-DIMENSIONAL COMPILER...',
-      color: 'text-neutral-400',
-    },
-    {
-      id: 'goal',
-      type: 'mission',
-      text: 'PRIMARY MISSION: Synchronize polarizer to match incoming waves (crest) and troughs to collect HZ and V frequencies. Compile bits with HZ and V to power the visual matrix.',
-      color: 'text-neutral-200',
-    },
-    {
-      id: 'controls',
-      type: 'controls',
-      text: 'MANUAL OVERRIDE: Tap the RIGHT SIDE of your screen to invert polarity in sync with incoming signals.',
-      color: 'text-amber-300 font-semibold',
-      highlight: true,
-    },
-    {
-      id: 'protocol',
-      type: 'protocol',
-      text: 'TACTICAL DIRECTIVE — DE-COHERENCE IS PROGRESS: Do not fear dissolution. In Story Mode, dying is the intended calibration cycle. Each collapse returns you to your core compiler with banked HZ & V to materialize permanent dimensional hardware.',
-      color: 'text-emerald-300',
-      highlight: true,
-    },
-    {
-      id: 'ascend',
-      type: 'climax',
-      text: 'Level up and ascend to conquer the first dimension.',
-      color: 'text-emerald-400 font-bold tracking-wider',
-    },
-  ];
+  const scriptLines: ScriptLine[] =
+    variant === 'bit10'
+      ? [
+          {
+            id: 'sovereign_defeated',
+            type: 'header',
+            text: 'CORRUPTED SOVEREIGN DEFEATED: New Coordinate reached',
+            color: 'text-emerald-400 font-bold',
+          },
+          {
+            id: 'overshield_unlocked',
+            type: 'mission',
+            text: 'OVERSHIELD UNLOCKED: Collecting packets generate Bd and provides health or overshield charge.',
+            color: 'text-neutral-200',
+            highlight: true,
+          },
+          {
+            id: 'controls_res2',
+            type: 'controls',
+            text: 'FLIGHT CONTROL TELEMETRY: Movement unlocked at Res 2.\nSwipe Left and Right on the left side of your screen to control your pilot.',
+            color: 'text-amber-300 font-semibold',
+            highlight: true,
+          },
+        ]
+      : [
+          {
+            id: 'greeting',
+            type: 'header',
+            text: 'GREETINGS INTERDIMENSIONAL TRAVELER.',
+            color: 'text-emerald-400 font-bold',
+          },
+          {
+            id: 'pilot',
+            type: 'callsign',
+            text: `PILOT CODE [${pilotCode}] LOCKED IN.`,
+            color: 'text-cyan-300 font-bold',
+            highlight: true,
+          },
+          {
+            id: 'goal',
+            type: 'mission',
+            text: 'PRIMARY MISSION: Collect Hz and V to compile Bits to power the visual matrix.',
+            color: 'text-neutral-200',
+          },
+          {
+            id: 'controls',
+            type: 'controls',
+            text: 'FLIGHT CONTROL TELEMETRY: Tap the Right side of your screen to synchronize polarizer to incoming Crests and Troughs to collect HZ and V.',
+            color: 'text-amber-300 font-semibold',
+            highlight: true,
+          },
+          {
+            id: 'protocol',
+            type: 'protocol',
+            text: 'DE-COHERENCE IS PROGRESS: Dissolution returns you to your core compiler with your collected resources to compile permanent dimensional hardware to aid your mission.',
+            color: 'text-emerald-300',
+            highlight: true,
+          },
+        ];
 
   // Typewriter state
   const [revealedLineIndex, setRevealedLineIndex] = useState<number>(0);
@@ -86,7 +146,7 @@ export const StoryIntroModal: React.FC<StoryIntroModalProps> = ({
       setIsCompleted(false);
       soundEngine.unlockMobileAudio();
     }
-  }, [isOpen]);
+  }, [isOpen, variant]);
 
   // Teletype typewriter progression
   useEffect(() => {
@@ -111,7 +171,7 @@ export const StoryIntroModal: React.FC<StoryIntroModalProps> = ({
       return () => clearTimeout(timer);
     } else {
       // Line completed, short pause before next line
-      const linePause = currentLine.type === 'climax' || currentLine.type === 'header' ? 350 : 200;
+      const linePause = currentLine.type === 'header' ? 350 : 200;
       const timer = setTimeout(() => {
         setRevealedLineIndex(prev => prev + 1);
         setCurrentCharIndex(0);
@@ -173,16 +233,6 @@ export const StoryIntroModal: React.FC<StoryIntroModalProps> = ({
               INITIALIZING PROJECT N-DIMENSIONAL COMPILER
             </span>
           </div>
-
-          <button
-            type="button"
-            onClick={handleEngage}
-            aria-label="Skip Briefing"
-            className="flex items-center gap-1 px-2.5 py-1 text-[11px] rounded bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-300 transition-colors cursor-pointer min-h-[36px] min-w-[36px]"
-          >
-            <span>SKIP BRIEFING</span>
-            <X className="w-3.5 h-3.5 text-emerald-400" />
-          </button>
         </div>
 
         {/* TERMINAL BODY / TELETYPE LOG */}
@@ -195,9 +245,7 @@ export const StoryIntroModal: React.FC<StoryIntroModalProps> = ({
             if (idx > revealedLineIndex) return null;
 
             const isCurrentLine = idx === revealedLineIndex && !isCompleted;
-            const displayedText = isCurrentLine
-              ? line.text.slice(0, currentCharIndex)
-              : line.text;
+            const charLimit = isCurrentLine ? currentCharIndex : line.text.length;
 
             return (
               <div
@@ -225,7 +273,7 @@ export const StoryIntroModal: React.FC<StoryIntroModalProps> = ({
                     )}
 
                     <p className="whitespace-pre-line leading-relaxed">
-                      {displayedText}
+                      {renderHighlightedSlice(line.text, charLimit)}
                       {isCurrentLine && (
                         <span className="inline-block w-2 h-3.5 ml-1 bg-emerald-400 animate-pulse" />
                       )}
@@ -246,15 +294,11 @@ export const StoryIntroModal: React.FC<StoryIntroModalProps> = ({
         </div>
 
         {/* TERMINAL FOOTER / ACTION BUTTON */}
-        <div className="relative z-30 p-3 sm:p-5 bg-neutral-950 border-t border-emerald-500/40 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="text-[11px] text-neutral-400 text-center sm:text-left">
-            <span className="text-emerald-400 font-bold">DIRECTIVE:</span> Tap right side of screen to invert polarity.
-          </div>
-
+        <div className="relative z-30 p-3 sm:p-5 bg-neutral-950 border-t border-emerald-500/40 flex items-center">
           <button
             type="button"
             onClick={handleEngage}
-            className={`w-full sm:w-auto px-6 py-3 rounded-lg font-bold text-xs sm:text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-95 ${
+            className={`w-full px-6 py-3.5 rounded-lg font-bold text-xs sm:text-sm tracking-wider uppercase transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg active:scale-95 ${
               isCompleted
                 ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/60 ring-2 ring-emerald-400/80 animate-pulse'
                 : 'bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 border border-emerald-500/60 shadow-emerald-950/40'

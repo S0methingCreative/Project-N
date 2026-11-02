@@ -5,6 +5,7 @@ import { Volume2, VolumeX, Shield, Play, RotateCcw, Zap, Sparkles, ArrowUp, Arro
 import { draw6BitBackground } from '../utils/backgroundArt';
 import { UserSettings, DEFAULT_USER_SETTINGS, saveUserSettings } from '../utils/settings';
 import { GlobalLeaderboardModal } from './GlobalLeaderboardModal';
+import { StoryIntroModal } from './StoryIntroModal';
 import {
   checkQualifiesForTop10,
   submitStoryScore,
@@ -43,7 +44,14 @@ import {
 import { LeaderboardTab } from './GlobalLeaderboardModal';
 
 export const MAX_BOSS_1_HP = 180;
+export const STORY_MAX_BOSS_1_HP = MAX_BOSS_1_HP + 50;
 export const MAX_BOSS_2_HP = 220;
+
+export const getBoss1MaxHp = (mode?: GameMode, pilotCount = 1): number => {
+  if (mode === 'squad') return getTeamBossMaxHp(pilotCount);
+  if (!mode || mode === 'story' || mode === 'normal') return STORY_MAX_BOSS_1_HP;
+  return MAX_BOSS_1_HP;
+};
 
 export const formatTime = (secs: number): string => {
   const m = Math.floor(secs / 60);
@@ -289,53 +297,68 @@ function drawDynamicVoidBackground(
   resolution: number = 0,
   bossTargetZone: 'attenuation' | 'harmonic' | 'emitter' = 'harmonic'
 ) {
-  // If in Part Two: Render the Frame Rate & 2D Awakening Background
-  // Dynamic Subatomic Simulation: An electron has escaped N=1 into N=2.
-  // At the nuclear level, visualize a proton transforming into an electron (beta decay / quark flavor change)
-  // Scaling with high movement and kinetic energy across Resolutions 1 through 10.
-  if (subPart === 2) {
-    // 1. Deep Interstellar Space Canvas & Orion Nebula Base Gradient
-    // Deep cosmic space transitions from stellar indigo-violet (#020108) to rich cosmic nebula base
-    const resBases = [
-      '#020108', '#030210', '#05031a', '#070424', '#09052f',
-      '#0c063b', '#0f0747', '#120854', '#150962', '#180a70', '#1c0c80'
-    ];
-    const baseColor = resBases[Math.min(10, resolution)] || '#05031a';
-    ctx.fillStyle = baseColor;
+  // Effective bit depth for the foundational pixel world:
+  // In Part Two (after Boss 1 defeat), return the foundational landscape to Bit 8
+  // and maintain the generated Bit 1–8 world through the end of Story Mode.
+  const effectiveBits = subPart === 2 ? 8 : currentBits;
+
+  // If 0 bits purchased (or before N in Part 1): pure black screen! Total acoustic void.
+  if (effectiveBits <= 0) {
+    ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, w, h);
+    return;
+  }
 
-    // Dynamic relativistic particle motion velocity multiplier based on resolution
-    const motionSpeed = 0.0012 + Math.min(10, resolution) * 0.00045;
-    
-    // NUCLEON CORE SPAWN LOCATION (Res >= 2):
-    // Spawns in the far right of the screen exactly where the boss spawns (TRACE_END = w - 80, TRACE_Y)
-    const nuclearCenterX = TRACE_END;
-    const nuclearCenterY = TRACE_Y;
+  // 1. Base pixel void background fill (Bit 8 '#022015' maintained throughout Part Two)
+  const voidBases: Record<number, string> = {
+    1: '#000402',
+    2: '#000703',
+    3: '#000b05',
+    4: '#000e07',
+    5: '#01120a',
+    6: '#01160d',
+    7: '#021a11',
+    8: '#022015',
+    9: '#051216', // Diminished tainted palette
+    10: '#031422', // Deep celestial navy for full transcendence
+  };
+  ctx.fillStyle = voidBases[Math.min(10, effectiveBits)] || '#01120a';
+  ctx.fillRect(0, 0, w, h);
 
-    // 2. Distant Twinkling Starfield in Deep Cosmic Space (Beyond Orion's Nebula)
+  const horizonY = 276; // Below oscilloscope corridor (TRACE_Y = 220)
+  const nuclearCenterX = TRACE_END;
+  const nuclearCenterY = TRACE_Y;
+
+  // =============================================================
+  // LAYER A: DEEP-SKY RESOLUTION AWAKENING (BEHIND BIT MOUNTAINS)
+  // Rendered only in Part Two once Resolution >= 1 is compiled.
+  // At Res = 0 (immediately after Boss 1 defeat), this is skipped
+  // so the background returns purely to the Bit 8 state.
+  // =============================================================
+  if (subPart === 2 && resolution >= 1) {
+    const nebAlpha = Math.min(0.85, (resolution / 10) * 0.85);
+
+    // A1. Distant Twinkling Starfield in Deep Cosmic Space
     for (let s = 0; s < 70; s++) {
       const sx = ((s * 197.3 + 41) % w);
       const sy = ((s * 131.7 + 29) % h);
-      // Strictly avoid obstructing the central gameplay line
       if (Math.abs(sy - TRACE_Y) > 22) {
         const starTwinkle = (Math.sin(time * 0.0032 + s * 1.618) + 1) * 0.5;
         const sAlpha = 0.15 + starTwinkle * 0.65 * Math.min(1, 0.35 + resolution * 0.07);
         const sColor = s % 4 === 0
-          ? `rgba(180, 225, 255, ${sAlpha})` // O/B-type blue-white star
+          ? `rgba(180, 225, 255, ${sAlpha})`
           : s % 4 === 1
-          ? `rgba(255, 235, 190, ${sAlpha})` // G-type golden sun
+          ? `rgba(255, 235, 190, ${sAlpha})`
           : s % 4 === 2
-          ? `rgba(255, 160, 160, ${sAlpha})` // M-type red dwarf
-          : `rgba(255, 255, 255, ${sAlpha})`; // White pinpoint
+          ? `rgba(255, 160, 160, ${sAlpha})`
+          : `rgba(255, 255, 255, ${sAlpha})`;
         ctx.fillStyle = sColor;
         const sSize = (s % 8 === 0 && resolution >= 4) ? 2 : 1;
         ctx.fillRect(Math.floor(sx), Math.floor(sy), sSize, sSize);
       }
     }
 
-    // 3. Distant Rotating Spiral Galaxies (Beyond Orion's Nebula)
-    // "smaller and more see through and not on the line playing field also have them dispersed
-    // throughout the screen so that if they do overlap, it is only the end of the arms."
+    // A2. Distant Rotating Spiral Galaxies (Res >= 2)
     if (resolution >= 2) {
       interface DistantGalaxy {
         gx: number;
@@ -347,21 +370,17 @@ function drawDynamicVoidBackground(
         color: string;
       }
 
-      // Dispersed in upper (y < 130) and lower (y > 310) margins — never on the line playing field!
       const distantGalaxies: DistantGalaxy[] = [
-        // Upper celestial field (y: 50 to 125, safely > 90px away from TRACE_Y)
         { gx: w * 0.11, gy: 56, radius: 23, tilt: -0.35, rotSpeed: 0.0006, arms: 2, color: 'rgba(130, 220, 255, ' },
         { gx: w * 0.34, gy: 112, radius: 26, tilt: 0.45, rotSpeed: -0.0007, arms: 2, color: 'rgba(235, 145, 255, ' },
         { gx: w * 0.58, gy: 52, radius: 27, tilt: -0.22, rotSpeed: 0.0005, arms: 3, color: 'rgba(110, 255, 230, ' },
         { gx: w * 0.81, gy: 108, radius: 22, tilt: 0.32, rotSpeed: -0.0006, arms: 2, color: 'rgba(255, 210, 155, ' },
-        // Lower celestial field (y: 330 to 395, safely > 110px away from TRACE_Y)
         { gx: w * 0.15, gy: 335, radius: 25, tilt: 0.52, rotSpeed: -0.0008, arms: 2, color: 'rgba(145, 205, 255, ' },
         { gx: w * 0.39, gy: 382, radius: 28, tilt: -0.32, rotSpeed: 0.0007, arms: 2, color: 'rgba(255, 155, 215, ' },
         { gx: w * 0.63, gy: 332, radius: 26, tilt: 0.28, rotSpeed: -0.0005, arms: 3, color: 'rgba(95, 245, 215, ' },
         { gx: w * 0.86, gy: 378, radius: 23, tilt: -0.42, rotSpeed: 0.0006, arms: 2, color: 'rgba(245, 185, 255, ' }
       ];
 
-      // Number of distant visible galaxies scales with resolution (2 up to all 8)
       const visibleCount = Math.min(distantGalaxies.length, 2 + Math.floor(resolution * 0.7));
 
       for (let gIdx = 0; gIdx < visibleCount; gIdx++) {
@@ -373,7 +392,6 @@ function drawDynamicVoidBackground(
         ctx.translate(g.gx, g.gy);
         ctx.rotate(g.tilt);
 
-        // Microscopic luminous galactic nucleus
         const nGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, 6);
         nGrad.addColorStop(0, `${g.color}${gAlpha * 2.5})`);
         nGrad.addColorStop(0.5, `${g.color}${gAlpha * 1.2})`);
@@ -383,7 +401,6 @@ function drawDynamicVoidBackground(
         ctx.arc(0, 0, 6, 0, Math.PI * 2);
         ctx.fill();
 
-        // Delicate, see-through logarithmic spiral arms
         ctx.lineWidth = 0.9;
         ctx.strokeStyle = `${g.color}${gAlpha})`;
 
@@ -395,13 +412,11 @@ function drawDynamicVoidBackground(
             const fraction = step / steps;
             const r = 3 + fraction * (g.radius - 3);
             const theta = gRot + armOffset + fraction * 3.6;
-            // Elliptical perspective compression for realistic cosmic tilt
             const px = Math.cos(theta) * r;
             const py = Math.sin(theta) * (r * 0.58);
             if (step === 0) ctx.moveTo(px, py);
             else ctx.lineTo(px, py);
 
-            // Occasional stardust pinprick along the spiral arms
             if (step % 9 === 0 && step > 0 && resolution >= 4) {
               ctx.fillStyle = `${g.color}${gAlpha * 1.8})`;
               ctx.fillRect(px - 0.5, py - 0.5, 1, 1);
@@ -414,121 +429,88 @@ function drawDynamicVoidBackground(
       }
     }
 
-    // 4. INSIDE THE ORION NEBULA (MESSIER 42) — 10" TELESCOPE IMMERSIVE GASEOUS FIELD
-    // Immersive perspective: We are inside the luminous cosmic gas clouds!
-    // Accentuated colors based on a 10" telescope view:
-    // - Phosphorescent [O III] spectral turquoise, electric cyan & seafoam jade mist
-    // - Hydrogen-Alpha & Beta glowing orchid-magenta, vivid rose, coral & interstellar lavender
-    // - Volumetric billows, undulating gossamer filaments & suspended ionization motes
-    const nebAlpha = Math.min(1.0, Math.max(0.18, resolution / 10));
-
-    // A. Volumetric Phosphorescent [O III] Doubly-Ionized Oxygen Mist (Cyan, Turquoise, Seafoam Jade)
-    // Breathing displacement for organic living gaseous movement
+    // A3. Orion Nebula Volumetric [O III] & Hα Luminous Sky Clouds (Translucent Layer)
     const o3BreathX = Math.sin(time * 0.0007) * 22;
     const o3BreathY = Math.cos(time * 0.0009) * 16;
 
-    // Primary [O III] Central Immersion Cloud (Spectral turquoise & emerald jade luminescence)
     const o3MainX = w * 0.42 + o3BreathX;
     const o3MainY = h * 0.38 + o3BreathY;
-    const gradO3Main = ctx.createRadialGradient(
-      o3MainX, o3MainY, 12,
-      o3MainX, o3MainY, 290
-    );
-    gradO3Main.addColorStop(0, `rgba(0, 255, 215, ${0.36 * nebAlpha})`);    // Peak [O III] seafoam teal
-    gradO3Main.addColorStop(0.26, `rgba(20, 235, 255, ${0.28 * nebAlpha})`);  // Electric cyan
-    gradO3Main.addColorStop(0.52, `rgba(45, 215, 185, ${0.16 * nebAlpha})`);  // Phosphorescent jade
-    gradO3Main.addColorStop(0.80, `rgba(10, 155, 185, ${0.06 * nebAlpha})`);  // Outer aquamarine veil
+    const gradO3Main = ctx.createRadialGradient(o3MainX, o3MainY, 12, o3MainX, o3MainY, 290);
+    gradO3Main.addColorStop(0, `rgba(0, 255, 215, ${0.32 * nebAlpha})`);
+    gradO3Main.addColorStop(0.26, `rgba(20, 235, 255, ${0.24 * nebAlpha})`);
+    gradO3Main.addColorStop(0.52, `rgba(45, 215, 185, ${0.14 * nebAlpha})`);
+    gradO3Main.addColorStop(0.80, `rgba(10, 155, 185, ${0.05 * nebAlpha})`);
     gradO3Main.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = gradO3Main;
     ctx.beginPath();
     ctx.arc(o3MainX, o3MainY, 290, 0, Math.PI * 2);
     ctx.fill();
 
-    // Secondary [O III] Flowing Chamber (Mid-Right gaseous pocket)
     const o3SecondX = w * 0.66 - o3BreathX * 0.7;
     const o3SecondY = h * 0.28 - o3BreathY * 0.8;
-    const gradO3Second = ctx.createRadialGradient(
-      o3SecondX, o3SecondY, 10,
-      o3SecondX, o3SecondY, 230
-    );
-    gradO3Second.addColorStop(0, `rgba(35, 245, 225, ${0.26 * nebAlpha})`);
-    gradO3Second.addColorStop(0.38, `rgba(0, 215, 245, ${0.18 * nebAlpha})`);
-    gradO3Second.addColorStop(0.74, `rgba(15, 165, 205, ${0.07 * nebAlpha})`);
+    const gradO3Second = ctx.createRadialGradient(o3SecondX, o3SecondY, 10, o3SecondX, o3SecondY, 230);
+    gradO3Second.addColorStop(0, `rgba(35, 245, 225, ${0.24 * nebAlpha})`);
+    gradO3Second.addColorStop(0.38, `rgba(0, 215, 245, ${0.16 * nebAlpha})`);
+    gradO3Second.addColorStop(0.74, `rgba(15, 165, 205, ${0.06 * nebAlpha})`);
     gradO3Second.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = gradO3Second;
     ctx.beginPath();
     ctx.arc(o3SecondX, o3SecondY, 230, 0, Math.PI * 2);
     ctx.fill();
 
-    // B. Hydrogen-Alpha (Hα) & Beta Luminous Clouds (Orchid-Magenta, Rose, Coral & Interstellar Lavender)
-    // Vast billowing sheets of ionized hydrogen surrounding the observer
     const hAlphaWave = Math.sin(time * 0.0006) * 18;
 
-    // Left Giant Wing Lobe (Deep vivid rose-magenta & lavender)
     const hAlpha1X = w * 0.25 + hAlphaWave;
     const hAlpha1Y = h * 0.32 - hAlphaWave * 0.6;
-    const gradHAlpha1 = ctx.createRadialGradient(
-      hAlpha1X, hAlpha1Y, 15,
-      hAlpha1X, hAlpha1Y, 310
-    );
-    gradHAlpha1.addColorStop(0, `rgba(255, 60, 165, ${0.32 * nebAlpha})`);    // Luminous orchid magenta
-    gradHAlpha1.addColorStop(0.32, `rgba(235, 30, 135, ${0.24 * nebAlpha})`);  // Vivid rose crimson
-    gradHAlpha1.addColorStop(0.62, `rgba(180, 40, 210, ${0.15 * nebAlpha})`);  // Interstellar lavender
-    gradHAlpha1.addColorStop(0.86, `rgba(115, 20, 180, ${0.07 * nebAlpha})`);  // Amethyst edge
+    const gradHAlpha1 = ctx.createRadialGradient(hAlpha1X, hAlpha1Y, 15, hAlpha1X, hAlpha1Y, 310);
+    gradHAlpha1.addColorStop(0, `rgba(255, 60, 165, ${0.28 * nebAlpha})`);
+    gradHAlpha1.addColorStop(0.32, `rgba(235, 30, 135, ${0.20 * nebAlpha})`);
+    gradHAlpha1.addColorStop(0.62, `rgba(180, 40, 210, ${0.13 * nebAlpha})`);
+    gradHAlpha1.addColorStop(0.86, `rgba(115, 20, 180, ${0.06 * nebAlpha})`);
     gradHAlpha1.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = gradHAlpha1;
     ctx.beginPath();
     ctx.arc(hAlpha1X, hAlpha1Y, 310, 0, Math.PI * 2);
     ctx.fill();
 
-    // Lower Billowing Gas Canopy (Below coordinate line, enveloping the bottom viewport)
     const hAlpha2X = w * 0.46 - hAlphaWave;
     const hAlpha2Y = h * 0.75 + hAlphaWave * 0.5;
-    const gradHAlpha2 = ctx.createRadialGradient(
-      hAlpha2X, hAlpha2Y, 15,
-      hAlpha2X, hAlpha2Y, 290
-    );
-    gradHAlpha2.addColorStop(0, `rgba(245, 50, 150, ${0.28 * nebAlpha})`);
-    gradHAlpha2.addColorStop(0.36, `rgba(200, 35, 190, ${0.20 * nebAlpha})`);
-    gradHAlpha2.addColorStop(0.70, `rgba(135, 25, 200, ${0.11 * nebAlpha})`);
+    const gradHAlpha2 = ctx.createRadialGradient(hAlpha2X, hAlpha2Y, 15, hAlpha2X, hAlpha2Y, 290);
+    gradHAlpha2.addColorStop(0, `rgba(245, 50, 150, ${0.25 * nebAlpha})`);
+    gradHAlpha2.addColorStop(0.36, `rgba(200, 35, 190, ${0.18 * nebAlpha})`);
+    gradHAlpha2.addColorStop(0.70, `rgba(135, 25, 200, ${0.09 * nebAlpha})`);
     gradHAlpha2.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = gradHAlpha2;
     ctx.beginPath();
     ctx.arc(hAlpha2X, hAlpha2Y, 290, 0, Math.PI * 2);
     ctx.fill();
 
-    // Upper Sweeping Veil (Above coordinate line, stretching across upper heavens)
     const hAlpha3X = w * 0.52 + hAlphaWave * 0.8;
     const hAlpha3Y = h * 0.17;
-    const gradHAlpha3 = ctx.createRadialGradient(
-      hAlpha3X, hAlpha3Y, 12,
-      hAlpha3X, hAlpha3Y, 250
-    );
-    gradHAlpha3.addColorStop(0, `rgba(225, 45, 180, ${0.24 * nebAlpha})`);
-    gradHAlpha3.addColorStop(0.42, `rgba(165, 35, 215, ${0.15 * nebAlpha})`);
+    const gradHAlpha3 = ctx.createRadialGradient(hAlpha3X, hAlpha3Y, 12, hAlpha3X, hAlpha3Y, 250);
+    gradHAlpha3.addColorStop(0, `rgba(225, 45, 180, ${0.22 * nebAlpha})`);
+    gradHAlpha3.addColorStop(0.42, `rgba(165, 35, 215, ${0.13 * nebAlpha})`);
     gradHAlpha3.addColorStop(1, 'rgba(0, 0, 0, 0)');
     ctx.fillStyle = gradHAlpha3;
     ctx.beginPath();
     ctx.arc(hAlpha3X, hAlpha3Y, 250, 0, Math.PI * 2);
     ctx.fill();
 
-    // C. Undulating Gossamer Filaments & Gaseous Ribbons (Organic Ionization Shockfronts)
-    // Flowing gaseous currents that undulate through 3D space as if floating inside the cloud
+    // A4. Undulating Gossamer Filaments (Res >= 2)
     if (resolution >= 2) {
       ctx.save();
       const numFilaments = Math.min(6, 2 + Math.floor(resolution * 0.45));
       for (let f = 0; f < numFilaments; f++) {
         const fTime = time * 0.0008 + f * 1.35;
         const fBaseY = (f % 2 === 0) ? (h * 0.20 + f * 22) : (h * 0.74 - f * 20);
-        // Ensure filaments don't directly crowd the center line
         if (Math.abs(fBaseY - TRACE_Y) < 32) continue;
 
         const fAlpha = (0.05 + Math.sin(fTime) * 0.02 + resolution * 0.008) * nebAlpha;
         const fColor = f % 3 === 0
-          ? `rgba(0, 255, 215, ${fAlpha})`   // Phosphorescent [O III] cyan
+          ? `rgba(0, 255, 215, ${fAlpha})`
           : f % 3 === 1
-          ? `rgba(255, 75, 175, ${fAlpha})`  // H-alpha orchid rose
-          : `rgba(185, 60, 255, ${fAlpha})`; // Interstellar lavender
+          ? `rgba(255, 75, 175, ${fAlpha})`
+          : `rgba(185, 60, 255, ${fAlpha})`;
 
         ctx.strokeStyle = fColor;
         ctx.lineWidth = 16 + f * 6;
@@ -547,15 +529,195 @@ function drawDynamicVoidBackground(
       }
       ctx.restore();
     }
+  }
 
-    // D. Drifting Nebular Stardust Motes & Suspended Ion Bubbles
-    // Ambient particles suspended inside the gas cloud drifting slowly across our field of view
+  // =============================================================
+  // LAYER B: PERSISTENT BIT 1–8 GENERATED PIXEL WORLD
+  // =============================================================
+
+  // BIT 1+: 1-BIT MONOCHROME PIXEL HORIZON & SEED COORDINATES
+  if (effectiveBits >= 1) {
+    ctx.fillStyle = 'rgba(24, 89, 38, 0.45)';
+    for (let x = 0; x < w; x += 12) {
+      ctx.fillRect(x, horizonY, 8, 2);
+    }
+
+    ctx.fillStyle = 'rgba(51, 255, 102, 0.7)';
+    const seedPoints = [
+      { x: Math.floor((w * 0.16) / 4) * 4, y: 48 },
+      { x: Math.floor((w * 0.36) / 4) * 4, y: 72 },
+      { x: Math.floor((w * 0.68) / 4) * 4, y: 40 },
+      { x: Math.floor((w * 0.86) / 4) * 4, y: 64 },
+    ];
+    seedPoints.forEach(pt => ctx.fillRect(pt.x, pt.y, 3, 3));
+  }
+
+  // BIT 2+: 2-BIT 4-SHADE STEPPED PERSPECTIVE FLOOR & PIXEL STARS
+  if (effectiveBits >= 2) {
+    ctx.fillStyle = 'rgba(28, 85, 40, 0.26)';
+    for (let fy = horizonY + 8; fy < h; fy += 12) {
+      const stepH = fy > horizonY + 60 ? 3 : 2;
+      ctx.fillRect(0, fy, w, stepH);
+    }
+
+    for (let s = 0; s < 8; s++) {
+      const sx = Math.floor(((s * 116 + 24) % w) / 4) * 4;
+      const sy = Math.floor(((s * 41 + 16) % 130) / 4) * 4;
+      const blink = (Math.sin(time * 0.003 + s * 1.5) + 1) * 0.5;
+      if (blink > 0.35) {
+        ctx.fillStyle = 'rgba(85, 255, 153, 0.55)';
+        ctx.fillRect(sx, sy, 2, 2);
+      }
+    }
+  }
+
+  // BIT 3+: 3-BIT PIXEL CONSTELLATION NODES (8 COLORS)
+  if (effectiveBits >= 3) {
+    const cNodes = [
+      { x: Math.floor((w * 0.14) / 4) * 4, y: 56 },
+      { x: Math.floor((w * 0.28) / 4) * 4, y: 36 },
+      { x: Math.floor((w * 0.44) / 4) * 4, y: 68 },
+      { x: Math.floor((w * 0.60) / 4) * 4, y: 44 },
+      { x: Math.floor((w * 0.76) / 4) * 4, y: 80 },
+      { x: Math.floor((w * 0.90) / 4) * 4, y: 48 },
+    ];
+
+    ctx.fillStyle = 'rgba(51, 204, 153, 0.22)';
+    for (let n = 0; n < cNodes.length - 1; n++) {
+      const n1 = cNodes[n];
+      const n2 = cNodes[n + 1];
+      const steps = Math.max(Math.abs(n2.x - n1.x), Math.abs(n2.y - n1.y)) / 4;
+      for (let st = 0; st <= steps; st++) {
+        const px = Math.floor((n1.x + (n2.x - n1.x) * (st / steps)) / 4) * 4;
+        const py = Math.floor((n1.y + (n2.y - n1.y) * (st / steps)) / 4) * 4;
+        ctx.fillRect(px, py, 2, 2);
+      }
+    }
+
+    ctx.fillStyle = 'rgba(85, 255, 170, 0.7)';
+    cNodes.forEach(node => {
+      ctx.fillRect(node.x - 2, node.y - 4, 4, 8);
+      ctx.fillRect(node.x - 4, node.y - 2, 8, 4);
+    });
+  }
+
+  // BIT 5+ SKY NEBULA: 5-BIT DITHERED PIXEL NEBULA IN UPPER SKY
+  if (effectiveBits >= 5) {
+    ctx.fillStyle = 'rgba(15, 65, 40, 0.26)';
+    const nebWidth = Math.floor((w * 0.6) / 8) * 8;
+    const nebStart = Math.floor((w * 0.2) / 8) * 8;
+    for (let nx = nebStart; nx < nebStart + nebWidth; nx += 8) {
+      for (let ny = 20; ny < 120; ny += 8) {
+        if ((nx / 8 + ny / 8) % 2 === 0) {
+          ctx.fillRect(nx, ny, 4, 4);
+        }
+      }
+    }
+  }
+
+  // BIT 6+: 6-BIT DUAL PIXEL PERSPECTIVE GRID & PIXEL SUNRISE (BEHIND MOUNTAINS)
+  if (effectiveBits >= 6) {
+    ctx.fillStyle = 'rgba(25, 90, 50, 0.18)';
+    for (let cy = 8; cy < 110; cy += 16) {
+      ctx.fillRect(0, cy, w, 2);
+    }
+
+    const cx = Math.floor((w / 2) / 4) * 4;
+    const cy = 164;
+    const sunR = 24;
+    ctx.fillStyle = 'rgba(45, 170, 85, 0.22)';
+    for (let dy = -sunR; dy <= sunR; dy += 4) {
+      const span = Math.floor(Math.sqrt(Math.max(0, sunR * sunR - dy * dy)) / 4) * 4;
+      if (span > 0 && Math.abs(dy) % 8 !== 0) {
+        ctx.fillRect(cx - span, cy + dy, span * 2, 3);
+      }
+    }
+  }
+
+  // BIT 7+: 7-BIT STEPPED PIXEL AURORA BANDS
+  if (effectiveBits >= 7) {
+    for (let ax = 0; ax < w; ax += 8) {
+      const step1 = Math.floor((Math.sin(ax * 0.012 + time * 0.0018) * 20 + 24) / 4) * 4;
+      const step2 = Math.floor((Math.sin(ax * 0.018 + time * 0.0024 + 1.2) * 16 + 18) / 4) * 4;
+
+      ctx.fillStyle = 'rgba(51, 230, 170, 0.12)';
+      ctx.fillRect(ax, 72 - step1, 6, step1);
+
+      ctx.fillStyle = 'rgba(150, 90, 240, 0.09)';
+      ctx.fillRect(ax, 96 - step2, 6, step2);
+    }
+  }
+
+  // BIT 4+: 4-BIT CHUNKY STEPPED PIXEL MOUNTAINS & PARALLAX DUST MOTES
+  // Placed after sky layers so the mountains sit in front of the Resolution sky effects
+  if (effectiveBits >= 4) {
+    for (let mx = 0; mx < w; mx += 8) {
+      const peakHeight = Math.floor((Math.sin(mx * 0.015) * 16 + Math.cos(mx * 0.03) * 10) / 4) * 4;
+      const colHeight = Math.max(4, 24 + peakHeight);
+      if (subPart === 2 && resolution >= 1) {
+        // Occlude deep-sky nebula behind the mountain ridge while keeping Bit 8 base tone
+        ctx.fillStyle = 'rgba(2, 32, 21, 0.78)';
+        ctx.fillRect(mx, 168 - colHeight, 8, colHeight);
+      }
+      ctx.fillStyle = 'rgba(25, 95, 45, 0.32)';
+      ctx.fillRect(mx, 168 - colHeight, 8, colHeight);
+    }
+
+    ctx.fillStyle = 'rgba(102, 255, 178, 0.45)';
+    for (let p = 0; p < 16; p++) {
+      const px = Math.floor(((p * 88 + time * 0.02) % w) / 4) * 4;
+      const py = Math.floor(((p * 37 + 12) % 135) / 4) * 4;
+      ctx.fillRect(px, py, 2, 2);
+    }
+  }
+
+  // BIT 5+ RISING MOTES: 14 FLOATING 3X3 PIXEL DATA PACKETS
+  if (effectiveBits >= 5) {
+    ctx.fillStyle = 'rgba(102, 230, 180, 0.45)';
+    for (let m = 0; m < 14; m++) {
+      const mx = Math.floor(((m * 68 + Math.sin(time * 0.001 + m) * 16) % w) / 4) * 4;
+      const my = Math.floor(((h - ((time * 0.03 + m * 32) % h))) / 4) * 4;
+      if (my < 160 || my > 280) {
+        ctx.fillRect(mx, my, 3, 3);
+      }
+    }
+  }
+
+  // BIT 8+: 8-BIT FULL VGA PIXEL CYBER-EXPANSE (HILLS & SPARKLING STAR CROSSES)
+  if (effectiveBits >= 8) {
+    for (let hx = 0; hx < w; hx += 8) {
+      const hillH = Math.floor((Math.sin(hx * 0.008 + 1) * 20 + 22) / 4) * 4;
+      if (subPart === 2 && resolution >= 1) {
+        ctx.fillStyle = 'rgba(2, 32, 21, 0.75)';
+        ctx.fillRect(hx, 168 - hillH, 8, hillH);
+      }
+      ctx.fillStyle = 'rgba(50, 180, 95, 0.22)';
+      ctx.fillRect(hx, 168 - hillH, 8, hillH);
+    }
+
+    for (let cs = 0; cs < 24; cs++) {
+      const sx = Math.floor(((cs * 77 + 19) % w) / 4) * 4;
+      const sy = Math.floor(((cs * 43 + 11) % 120) / 4) * 4;
+      const blink = (Math.sin(time * 0.004 + cs * 1.8) + 1) * 0.5;
+      ctx.fillStyle = cs % 2 === 0 ? `rgba(102, 230, 255, ${0.4 + blink * 0.5})` : `rgba(160, 255, 180, ${0.3 + blink * 0.6})`;
+      ctx.fillRect(sx, sy - 2, 2, 6);
+      ctx.fillRect(sx - 2, sy, 6, 2);
+    }
+  }
+
+  // =============================================================
+  // LAYER C: FOREGROUND RESOLUTION EFFECTS (IN FRONT OF MOUNTAINS)
+  // Rendered in Part Two when Resolution >= 1.
+  // =============================================================
+  if (subPart === 2 && resolution >= 1) {
+    const nebAlpha = Math.min(0.85, (resolution / 10) * 0.85);
+
+    // C1. Drifting Nebular Stardust Motes & Suspended Ion Bubbles (Res >= 2)
     if (resolution >= 2) {
       const moteCount = 20 + resolution * 4;
       for (let m = 0; m < moteCount; m++) {
         const mSpeed = 0.0003 + (m % 4) * 0.00015;
         const mProgress = (time * mSpeed + m * 0.089) % 1;
-        // Floating drift in 3D cloud
         const mx = (w * 0.08 + mProgress * (w * 0.88) + (m % 5) * 37) % w;
         const my = ((m * 31.7 + Math.sin(time * 0.001 + m) * 18) % h);
 
@@ -563,12 +725,12 @@ function drawDynamicVoidBackground(
           const mPulse = (Math.sin(time * 0.004 + m * 2.1) + 1) * 0.5;
           const mAlpha = (0.16 + mPulse * 0.5) * nebAlpha;
           const mColor = m % 4 === 0
-            ? `rgba(0, 255, 220, ${mAlpha})`  // [O III] cyan mote
+            ? `rgba(0, 255, 220, ${mAlpha})`
             : m % 4 === 1
-            ? `rgba(255, 110, 190, ${mAlpha})` // H-alpha rose mote
+            ? `rgba(255, 110, 190, ${mAlpha})`
             : m % 4 === 2
-            ? `rgba(200, 120, 255, ${mAlpha})` // Violet ion mote
-            : `rgba(255, 240, 180, ${mAlpha})`;// Golden starlight mote
+            ? `rgba(200, 120, 255, ${mAlpha})`
+            : `rgba(255, 240, 180, ${mAlpha})`;
           ctx.fillStyle = mColor;
           const mSize = (m % 6 === 0 && resolution >= 5) ? 2.5 : 1.5;
           ctx.beginPath();
@@ -578,40 +740,33 @@ function drawDynamicVoidBackground(
       }
     }
 
-    // 5. Emerging Quantum Subatomic Particle Streams (Streaming leftward from far-right core)
-    if (resolution >= 1) {
-      const particleCount = 18 + resolution * 5;
-      for (let p = 0; p < particleCount; p++) {
-        // Particles burst outward from nucleon core on far right across the screen to the left
-        const pSpeed = (0.0006 + (p % 5) * 0.0003) * (1 + resolution * 0.1);
-        const pProgress = ((time * pSpeed + p * 0.073) % 1);
-        const pAngle = (p * 2.399) + time * 0.0004;
-        const pDist = 25 + pProgress * (w * 0.85);
-        // Drifts leftward across the playing field
-        const px = (nuclearCenterX - Math.cos(pAngle) * pDist + w * 2) % w;
-        const py = (nuclearCenterY + Math.sin(pAngle) * (pDist * 0.32) + h) % h;
+    // C2. Emerging Quantum Subatomic Particle Streams (Res >= 1)
+    const particleCount = 18 + resolution * 5;
+    for (let p = 0; p < particleCount; p++) {
+      const pSpeed = (0.0006 + (p % 5) * 0.0003) * (1 + resolution * 0.1);
+      const pProgress = ((time * pSpeed + p * 0.073) % 1);
+      const pAngle = (p * 2.399) + time * 0.0004;
+      const pDist = 25 + pProgress * (w * 0.85);
+      const px = (nuclearCenterX - Math.cos(pAngle) * pDist + w * 2) % w;
+      const py = (nuclearCenterY + Math.sin(pAngle) * (pDist * 0.32) + h) % h;
 
-        // Skip direct corridor obstruction
-        if (Math.abs(py - TRACE_Y) > 22) {
-          const pSize = (p % 3 === 0) ? 3 : 2;
-          const pColor = p % 3 === 0
-            ? 'rgba(0, 255, 230, 0.65)'  // Electron beta radiation (Cyan)
-            : p % 3 === 1
-            ? 'rgba(255, 90, 200, 0.55)'  // Antineutrino / W-boson trail (Electric Magenta)
-            : 'rgba(255, 220, 70, 0.6)';  // Proton quark core (Nuclear Gold)
-          ctx.fillStyle = pColor;
-          ctx.fillRect(Math.floor(px / 2) * 2, Math.floor(py / 2) * 2, pSize, pSize);
-        }
+      if (Math.abs(py - TRACE_Y) > 22) {
+        const pSize = (p % 3 === 0) ? 3 : 2;
+        const pColor = p % 3 === 0
+          ? 'rgba(0, 255, 230, 0.65)'
+          : p % 3 === 1
+          ? 'rgba(255, 90, 200, 0.55)'
+          : 'rgba(255, 220, 70, 0.6)';
+        ctx.fillStyle = pColor;
+        ctx.fillRect(Math.floor(px / 2) * 2, Math.floor(py / 2) * 2, pSize, pSize);
       }
     }
 
-    // 6. THE NUCLEON CORE (Res >= 2): Spawns in far right of screen where boss spawns!
-    // Proton decaying into an escaping electron (beta decay / quark flavor transition)
+    // C3. The Nucleon Core at Far Right (Res >= 2)
     if (resolution >= 2) {
       const corePulse = (Math.sin(time * 0.006) + 1) * 0.5;
       const coreRadius = 20 + corePulse * 7 + Math.min(12, resolution * 1.2);
-      
-      // Radiant nuclear glow
+
       const grad = ctx.createRadialGradient(
         nuclearCenterX, nuclearCenterY, 3,
         nuclearCenterX, nuclearCenterY, coreRadius * 2.2
@@ -625,7 +780,6 @@ function drawDynamicVoidBackground(
       ctx.arc(nuclearCenterX, nuclearCenterY, coreRadius * 2.2, 0, Math.PI * 2);
       ctx.fill();
 
-      // Rotating Quark Triplets within the decaying proton
       const quarkRot = time * 0.0035;
       for (let q = 0; q < 3; q++) {
         const qAngle = quarkRot + (q * Math.PI * 2) / 3;
@@ -638,7 +792,6 @@ function drawDynamicVoidBackground(
         ctx.arc(qx, qy, 2.5, 0, Math.PI * 2);
         ctx.fill();
 
-        // Strong force gluon bonds linking the quarks
         const nextQAngle = quarkRot + ((q + 1) * Math.PI * 2) / 3;
         const nextQx = nuclearCenterX + Math.cos(nextQAngle) * qDist;
         const nextQy = nuclearCenterY + Math.sin(nextQAngle) * qDist;
@@ -650,7 +803,6 @@ function drawDynamicVoidBackground(
         ctx.stroke();
       }
 
-      // Escaping Electron Orbit Spiral (Small & contained right around the core)
       ctx.strokeStyle = 'rgba(0, 255, 255, 0.35)';
       ctx.lineWidth = 1.2;
       ctx.beginPath();
@@ -665,7 +817,7 @@ function drawDynamicVoidBackground(
       ctx.stroke();
     }
 
-    // 7. Scanline Refresh Bands (Scales with Frame Rate from 15 FPS to 240 FPS)
+    // C4. Scanline Refresh Bands (Scales with Frame Rate from 15 FPS to 240 FPS)
     const scanInterval = Math.max(3, 14 - resolution);
     const scanAlpha = Math.max(0.03, 0.14 - resolution * 0.01);
     ctx.fillStyle = `rgba(0, 245, 255, ${scanAlpha})`;
@@ -675,26 +827,21 @@ function drawDynamicVoidBackground(
       }
     }
 
-    // 8. Sector Indicators along the Line (Resolution 6+) — HIGH-CONTRAST & HIGH-VISIBILITY
-    // Designed with dark-tinted filter viewports, glowing boundary fences, and prominent high-contrast badges
+    // C5. Sector Indicators along the Line (Resolution 6+)
     const sectorY = 85;
     const sectorH = h - 170;
 
-    // Harmonic Slit: Center 240 to 430
     if (resolution >= 6) {
       const isPlayerHere = playerX >= 240 && playerX < 430;
-      // High-contrast translucent dark backdrop + emerald tint
       ctx.fillStyle = isPlayerHere ? 'rgba(0, 35, 18, 0.65)' : 'rgba(0, 15, 8, 0.45)';
       ctx.fillRect(240, sectorY, 190, sectorH);
       ctx.fillStyle = isPlayerHere ? 'rgba(0, 255, 136, 0.20)' : 'rgba(0, 255, 136, 0.12)';
       ctx.fillRect(240, sectorY, 190, sectorH);
 
-      // Glowing Neon Boundaries
       ctx.strokeStyle = isPlayerHere ? '#00ffaa' : 'rgba(0, 255, 136, 0.65)';
       ctx.lineWidth = isPlayerHere ? 2.5 : 1.5;
       ctx.strokeRect(240, sectorY, 190, sectorH);
 
-      // Header Pill Badge with Dark Backdrop Plate
       const badgeW = 160;
       ctx.fillStyle = 'rgba(0, 0, 0, 0.90)';
       ctx.fillRect(248, sectorY + 8, badgeW, 20);
@@ -707,21 +854,17 @@ function drawDynamicVoidBackground(
       ctx.fillText(isPlayerHere ? '⚡ HARMONIC SLIT [2X ACTIVE]' : '⚡ HARMONIC SLIT [2X YIELD]', 254, sectorY + 22);
     }
 
-    // Attenuation Zone: Left 80 to 240
     if (resolution >= 7) {
       const isPlayerHere = playerX >= 80 && playerX < 240;
-      // High-contrast translucent dark backdrop + cobalt tint
       ctx.fillStyle = isPlayerHere ? 'rgba(0, 25, 45, 0.65)' : 'rgba(0, 10, 25, 0.45)';
       ctx.fillRect(80, sectorY, 160, sectorH);
       ctx.fillStyle = isPlayerHere ? 'rgba(0, 170, 255, 0.20)' : 'rgba(0, 170, 255, 0.12)';
       ctx.fillRect(80, sectorY, 160, sectorH);
 
-      // Glowing Neon Boundaries
       ctx.strokeStyle = isPlayerHere ? '#33ccff' : 'rgba(0, 170, 255, 0.65)';
       ctx.lineWidth = isPlayerHere ? 2.5 : 1.5;
       ctx.strokeRect(80, sectorY, 160, sectorH);
 
-      // Header Pill Badge with Dark Backdrop Plate
       const badgeW = 148;
       ctx.fillStyle = 'rgba(0, 0, 0, 0.90)';
       ctx.fillRect(88, sectorY + 8, badgeW, 20);
@@ -734,21 +877,17 @@ function drawDynamicVoidBackground(
       ctx.fillText(isPlayerHere ? '🛡️ ATTENUATION [SLOW ACTIVE]' : '🛡️ ATTENUATION ZONE [1X]', 94, sectorY + 22);
     }
 
-    // Emitter Maw: Right 430 to 620
     if (resolution >= 8) {
       const isPlayerHere = playerX >= 430 && playerX < 620;
-      // High-contrast translucent dark backdrop + solar amber tint
       ctx.fillStyle = isPlayerHere ? 'rgba(45, 20, 0, 0.65)' : 'rgba(25, 10, 0, 0.45)';
       ctx.fillRect(430, sectorY, 190, sectorH);
       ctx.fillStyle = isPlayerHere ? 'rgba(255, 136, 0, 0.22)' : 'rgba(255, 136, 0, 0.14)';
       ctx.fillRect(430, sectorY, 190, sectorH);
 
-      // Glowing Neon Boundaries
       ctx.strokeStyle = isPlayerHere ? '#ffaa33' : 'rgba(255, 136, 0, 0.65)';
       ctx.lineWidth = isPlayerHere ? 2.5 : 1.5;
       ctx.strokeRect(430, sectorY, 190, sectorH);
 
-      // Header Pill Badge with Dark Backdrop Plate
       const badgeW = 160;
       ctx.fillStyle = 'rgba(0, 0, 0, 0.90)';
       ctx.fillRect(438, sectorY + 8, badgeW, 20);
@@ -761,7 +900,7 @@ function drawDynamicVoidBackground(
       ctx.fillText(isPlayerHere ? '🔥 EMITTER MAW [4X ACTIVE]' : '🔥 EMITTER MAW [FAST / 4X]', 444, sectorY + 22);
     }
 
-    // 9. Resolution 9 Boss: Dimensional Vortex & Target Sector Spotlight
+    // C6. Resolution 9 Boss: Dimensional Vortex & Target Sector Spotlight
     if (resolution >= 9) {
       let targetX = 240;
       let targetW = 190;
@@ -776,7 +915,6 @@ function drawDynamicVoidBackground(
         isPlayerInTarget = playerX >= 430 && playerX < 620;
       }
 
-      // Vertical focus beam with high-contrast golden pulsating energy
       const beamPulse = (Math.sin(time * 0.008) + 1) * 0.5;
       ctx.fillStyle = `rgba(255, 230, 80, ${0.16 + beamPulse * 0.16})`;
       ctx.fillRect(targetX, 40, targetW, h - 80);
@@ -784,7 +922,6 @@ function drawDynamicVoidBackground(
       ctx.lineWidth = isPlayerInTarget ? 3 : 2;
       ctx.strokeRect(targetX, 40, targetW, h - 80);
 
-      // Floating High-Contrast Banner with Dark Backing Plate
       const bannerW = targetW - 16;
       ctx.fillStyle = 'rgba(0, 0, 0, 0.94)';
       ctx.fillRect(targetX + 8, 46, bannerW, 28);
@@ -805,9 +942,8 @@ function drawDynamicVoidBackground(
       ctx.textBaseline = 'alphabetic';
     }
 
-    // 10. Resolution 10: Master Transcendence Complete — Full Orion Nebula Climax
+    // C7. Resolution 10: Master Transcendence Complete — Synchrotron Arcs
     if (resolution >= 10) {
-      // Supercharged synchrotron arcs sweeping across the cosmic nebula
       for (let arc = 0; arc < 4; arc++) {
         const arcPhase = time * 0.0035 + (arc * Math.PI) / 2;
         const arcY = TRACE_Y + Math.sin(arcPhase) * (h * 0.35);
@@ -819,257 +955,29 @@ function drawDynamicVoidBackground(
         ctx.stroke();
       }
     }
-
-    // Environmental Navigation & Polarizer Guides: Blended directly into Part Two Subatomic & Orion Nebula field
-    if (resolution >= 2) {
-      drawDragMoveGuide(ctx, w, h, currentBits, time, 2, resolution);
-    }
-    drawPolarizerTapGuide(ctx, w, h, currentBits, time, 2, resolution);
-    return;
-  }
-
-  // If 0 bits purchased (or before N): pure black screen! Total acoustic void.
-  if (currentBits <= 0) {
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, w, h);
-    return;
-  }
-
-  // Base pixel void background fill
-  const voidBases: Record<number, string> = {
-    1: '#000402',
-    2: '#000703',
-    3: '#000b05',
-    4: '#000e07',
-    5: '#01120a',
-    6: '#01160d',
-    7: '#021a11',
-    8: '#022015',
-    9: '#051216', // Diminished tainted palette
-    10: '#031422', // Deep celestial navy for full transcendence
-  };
-  ctx.fillStyle = voidBases[Math.min(10, currentBits)] || '#01120a';
-  ctx.fillRect(0, 0, w, h);
-
-  const horizonY = 276; // Below oscilloscope corridor (TRACE_Y = 220)
-  const pxSize = 4;     // Standard 4px pixel block unit
-
-  // -------------------------------------------------------------
-  // BIT 1+: 1-BIT MONOCHROME PIXEL HORIZON & SEED COORDINATES
-  // -------------------------------------------------------------
-  if (currentBits >= 1) {
-    ctx.fillStyle = 'rgba(24, 89, 38, 0.45)';
-    // Chunky pixel dashed datum line across the horizon
-    for (let x = 0; x < w; x += 12) {
-      ctx.fillRect(x, horizonY, 8, 2);
-    }
-
-    // 4 stationary 2x2 monochrome pixel coordinate points in upper sky
-    ctx.fillStyle = 'rgba(51, 255, 102, 0.7)';
-    const seedPoints = [
-      { x: Math.floor((w * 0.16) / 4) * 4, y: 48 },
-      { x: Math.floor((w * 0.36) / 4) * 4, y: 72 },
-      { x: Math.floor((w * 0.68) / 4) * 4, y: 40 },
-      { x: Math.floor((w * 0.86) / 4) * 4, y: 64 },
-    ];
-    seedPoints.forEach(pt => ctx.fillRect(pt.x, pt.y, 3, 3));
   }
 
   // -------------------------------------------------------------
-  // BIT 2+: 2-BIT 4-SHADE STEPPED PERSPECTIVE FLOOR & PIXEL STARS
+  // BIT 9 (PART ONE ONLY): THE PRECIPICE — DIMINISHED PIXEL WORLD & CORRUPTED POINT
   // -------------------------------------------------------------
-  if (currentBits >= 2) {
-    ctx.fillStyle = 'rgba(28, 85, 40, 0.26)';
-    // Horizontal stepped floor raster bands
-    for (let fy = horizonY + 8; fy < h; fy += 12) {
-      const stepH = fy > horizonY + 60 ? 3 : 2;
-      ctx.fillRect(0, fy, w, stepH);
-    }
-
-    // 8 subtle twinkling 2x2 pixel stars in upper sky
-    for (let s = 0; s < 8; s++) {
-      const sx = Math.floor(((s * 116 + 24) % w) / 4) * 4;
-      const sy = Math.floor(((s * 41 + 16) % 130) / 4) * 4;
-      const blink = (Math.sin(time * 0.003 + s * 1.5) + 1) * 0.5;
-      if (blink > 0.35) {
-        ctx.fillStyle = 'rgba(85, 255, 153, 0.55)';
-        ctx.fillRect(sx, sy, 2, 2);
-      }
-    }
-  }
-
-  // -------------------------------------------------------------
-  // BIT 3+: 3-BIT PIXEL CONSTELLATION NODES (8 COLORS)
-  // -------------------------------------------------------------
-  if (currentBits >= 3) {
-    const cNodes = [
-      { x: Math.floor((w * 0.14) / 4) * 4, y: 56 },
-      { x: Math.floor((w * 0.28) / 4) * 4, y: 36 },
-      { x: Math.floor((w * 0.44) / 4) * 4, y: 68 },
-      { x: Math.floor((w * 0.60) / 4) * 4, y: 44 },
-      { x: Math.floor((w * 0.76) / 4) * 4, y: 80 },
-      { x: Math.floor((w * 0.90) / 4) * 4, y: 48 },
-    ];
-
-    // Stepped pixel connectors between constellation nodes
-    ctx.fillStyle = 'rgba(51, 204, 153, 0.22)';
-    for (let n = 0; n < cNodes.length - 1; n++) {
-      const n1 = cNodes[n];
-      const n2 = cNodes[n + 1];
-      const steps = Math.max(Math.abs(n2.x - n1.x), Math.abs(n2.y - n1.y)) / 4;
-      for (let st = 0; st <= steps; st++) {
-        const px = Math.floor((n1.x + (n2.x - n1.x) * (st / steps)) / 4) * 4;
-        const py = Math.floor((n1.y + (n2.y - n1.y) * (st / steps)) / 4) * 4;
-        ctx.fillRect(px, py, 2, 2);
-      }
-    }
-
-    // 4x4 Pixel diamond crosses for nodes
-    ctx.fillStyle = 'rgba(85, 255, 170, 0.7)';
-    cNodes.forEach(node => {
-      ctx.fillRect(node.x - 2, node.y - 4, 4, 8);
-      ctx.fillRect(node.x - 4, node.y - 2, 8, 4);
-    });
-  }
-
-  // -------------------------------------------------------------
-  // BIT 4+: 4-BIT CHUNKY STEPPED PIXEL MOUNTAINS (16 COLORS)
-  // -------------------------------------------------------------
-  if (currentBits >= 4) {
-    // Stepped pixel mountain silhouette along horizon (y = 140 to 170, safely above TRACE_Y 220)
-    ctx.fillStyle = 'rgba(25, 95, 45, 0.32)';
-    for (let mx = 0; mx < w; mx += 8) {
-      const peakHeight = Math.floor((Math.sin(mx * 0.015) * 16 + Math.cos(mx * 0.03) * 10) / 4) * 4;
-      const colHeight = Math.max(4, 24 + peakHeight);
-      ctx.fillRect(mx, 168 - colHeight, 8, colHeight);
-    }
-
-    // 16 Parallax drifting 2x2 pixel dust motes
-    ctx.fillStyle = 'rgba(102, 255, 178, 0.45)';
-    for (let p = 0; p < 16; p++) {
-      const px = Math.floor(((p * 88 + time * 0.02) % w) / 4) * 4;
-      const py = Math.floor(((p * 37 + 12) % 135) / 4) * 4;
-      ctx.fillRect(px, py, 2, 2);
-    }
-  }
-
-  // -------------------------------------------------------------
-  // BIT 5+: 5-BIT DITHERED PIXEL NEBULA & RISING MOTES (32 COLORS)
-  // -------------------------------------------------------------
-  if (currentBits >= 5) {
-    // Checkerboard dithered pixel nebula cluster in upper sky
-    ctx.fillStyle = 'rgba(15, 65, 40, 0.26)';
-    const nebWidth = Math.floor((w * 0.6) / 8) * 8;
-    const nebStart = Math.floor((w * 0.2) / 8) * 8;
-    for (let nx = nebStart; nx < nebStart + nebWidth; nx += 8) {
-      for (let ny = 20; ny < 120; ny += 8) {
-        if ((nx / 8 + ny / 8) % 2 === 0) {
-          ctx.fillRect(nx, ny, 4, 4);
-        }
-      }
-    }
-
-    // 14 Floating 3x3 pixel data packets drifting upward
-    ctx.fillStyle = 'rgba(102, 230, 180, 0.45)';
-    for (let m = 0; m < 14; m++) {
-      const mx = Math.floor(((m * 68 + Math.sin(time * 0.001 + m) * 16) % w) / 4) * 4;
-      const my = Math.floor(((h - ((time * 0.03 + m * 32) % h))) / 4) * 4;
-      if (my < 160 || my > 280) { // Keep gameplay corridor clear!
-        ctx.fillRect(mx, my, 3, 3);
-      }
-    }
-  }
-
-  // -------------------------------------------------------------
-  // BIT 6+: 6-BIT DUAL PIXEL PERSPECTIVE GRID & PIXEL SUNRISE (64 COLORS)
-  // -------------------------------------------------------------
-  if (currentBits >= 6) {
-    // Pixelated ceiling raster bars
-    ctx.fillStyle = 'rgba(25, 90, 50, 0.18)';
-    for (let cy = 8; cy < 110; cy += 16) {
-      ctx.fillRect(0, cy, w, 2);
-    }
-
-    // 8-Bit Pixel Sunrise Disk at horizon center
-    const cx = Math.floor((w / 2) / 4) * 4;
-    const cy = 164;
-    const sunR = 24;
-    ctx.fillStyle = 'rgba(45, 170, 85, 0.22)';
-    for (let dy = -sunR; dy <= sunR; dy += 4) {
-      const span = Math.floor(Math.sqrt(Math.max(0, sunR * sunR - dy * dy)) / 4) * 4;
-      if (span > 0 && Math.abs(dy) % 8 !== 0) { // Scanline slit effect
-        ctx.fillRect(cx - span, cy + dy, span * 2, 3);
-      }
-    }
-  }
-
-  // -------------------------------------------------------------
-  // BIT 7+: 7-BIT STEPPED PIXEL AURORA BANDS (128 COLORS)
-  // -------------------------------------------------------------
-  if (currentBits >= 7) {
-    // Stepped pixel columns of aurora ribbons in cyan, violet, and emerald
-    for (let ax = 0; ax < w; ax += 8) {
-      const step1 = Math.floor((Math.sin(ax * 0.012 + time * 0.0018) * 20 + 24) / 4) * 4;
-      const step2 = Math.floor((Math.sin(ax * 0.018 + time * 0.0024 + 1.2) * 16 + 18) / 4) * 4;
-
-      ctx.fillStyle = 'rgba(51, 230, 170, 0.12)';
-      ctx.fillRect(ax, 72 - step1, 6, step1);
-
-      ctx.fillStyle = 'rgba(150, 90, 240, 0.09)';
-      ctx.fillRect(ax, 96 - step2, 6, step2);
-    }
-  }
-
-  // -------------------------------------------------------------
-  // BIT 8+: 8-BIT FULL VGA PIXEL CYBER-EXPANSE (256 COLORS)
-  // -------------------------------------------------------------
-  if (currentBits >= 8) {
-    // Layered pixel hills in the background
-    ctx.fillStyle = 'rgba(50, 180, 95, 0.22)';
-    for (let hx = 0; hx < w; hx += 8) {
-      const hillH = Math.floor((Math.sin(hx * 0.008 + 1) * 20 + 22) / 4) * 4;
-      ctx.fillRect(hx, 168 - hillH, 8, hillH);
-    }
-
-    // Sparkling 3x3 pixel star crosses
-    for (let cs = 0; cs < 24; cs++) {
-      const sx = Math.floor(((cs * 77 + 19) % w) / 4) * 4;
-      const sy = Math.floor(((cs * 43 + 11) % 120) / 4) * 4;
-      const blink = (Math.sin(time * 0.004 + cs * 1.8) + 1) * 0.5;
-      ctx.fillStyle = cs % 2 === 0 ? `rgba(102, 230, 255, ${0.4 + blink * 0.5})` : `rgba(160, 255, 180, ${0.3 + blink * 0.6})`;
-      ctx.fillRect(sx, sy - 2, 2, 6);
-      ctx.fillRect(sx - 2, sy, 6, 2);
-    }
-  }
-
-  // -------------------------------------------------------------
-  // BIT 9: THE PRECIPICE — DIMINISHED PIXEL WORLD & CORRUPTED POINT
-  // "at 9 bits our hero has almost moved to another point but meets the corrupted point
-  // which preventing our hero from occupying another point in space...
-  // 9 Bits should show a diminished version by a scale that makes sense."
-  // -------------------------------------------------------------
-  if (currentBits === 9) {
-    // Diminished pixel darkness veil
+  if (subPart === 1 && currentBits === 9) {
     ctx.fillStyle = 'rgba(16, 4, 14, 0.44)';
     ctx.fillRect(0, 0, w, h);
 
     const destX = Math.floor(TRACE_END / 4) * 4;
     const destY = TRACE_Y;
 
-    // 1. Pixel Destination Beacon (8-bit concentric squares trying to manifest)
     ctx.fillStyle = 'rgba(255, 230, 100, 0.75)';
     ctx.fillRect(destX - 6, destY - 6, 12, 12);
     ctx.fillStyle = 'rgba(80, 220, 255, 0.45)';
     ctx.fillRect(destX - 14, destY - 14, 28, 28);
     ctx.clearRect(destX - 10, destY - 10, 20, 20);
 
-    // 2. CORRUPTED POINT BESIEGING DESTINATION (Chunky pixel thorns & glitch blocks)
     const corruptPulse = Math.floor((Math.sin(time * 0.012) * 6 + 28) / 4) * 4;
     ctx.strokeStyle = '#ff1155';
     ctx.lineWidth = 2;
     ctx.strokeRect(destX - corruptPulse, destY - corruptPulse, corruptPulse * 2, corruptPulse * 2);
 
-    // Stepped pixel spikes radiating from corrupted point
     ctx.fillStyle = '#ff2266';
     const spikeOffsets = [
       { dx: 0, dy: -36 }, { dx: 36, dy: 0 },
@@ -1082,21 +990,18 @@ function drawDynamicVoidBackground(
       ctx.fillRect(destX + Math.floor(sp.dx / 2) - 2, destY + Math.floor(sp.dy / 2) - 2, 4, 4);
     });
 
-    // Flickering pixel glitch bars across horizon
     if (Math.sin(time * 0.02) > 0.4) {
       const glitchY = Math.floor(((Math.sin(time * 0.06) * 0.5 + 0.5) * h) / 4) * 4;
       ctx.fillStyle = 'rgba(255, 30, 80, 0.16)';
       ctx.fillRect(0, glitchY, w, 4);
     }
 
-    // Strained stepped pixel bridge connecting hero and corrupted point
     ctx.fillStyle = 'rgba(255, 50, 90, 0.45)';
     const startX = Math.floor(playerX / 4) * 4;
     for (let bx = startX; bx < destX; bx += 8) {
       ctx.fillRect(bx, destY, 4, 2);
     }
 
-    // Pixel Warning Watermark
     ctx.fillStyle = 'rgba(255, 90, 120, 0.8)';
     ctx.font = '10px monospace';
     ctx.textAlign = 'center';
@@ -1105,25 +1010,21 @@ function drawDynamicVoidBackground(
   }
 
   // -------------------------------------------------------------
-  // BIT 10: FULL & COMPLETE TRANSCENDENT CHANGE (1024 COLORS PIXEL ART)
-  // "10 collected bits should represent a background that represents this full and complete change."
+  // BIT 10 (PART ONE ONLY): FULL & COMPLETE TRANSCENDENT CHANGE
   // -------------------------------------------------------------
-  if (currentBits >= 10) {
-    // 1. Deep Celestial Cosmos
+  if (subPart === 1 && currentBits >= 10) {
     ctx.fillStyle = 'rgba(4, 20, 36, 0.65)';
     ctx.fillRect(0, 0, w, h);
 
-    // 2. Crisp Pixel Lattice Grid across sky and floor
     ctx.fillStyle = 'rgba(80, 240, 255, 0.24)';
     for (let lx = 0; lx <= w; lx += 32) {
       for (let ly = 0; ly <= h; ly += 32) {
-        if (ly < 170 || ly > 270) { // Keep corridor clean
+        if (ly < 170 || ly > 270) {
           ctx.fillRect(lx, ly, 2, 2);
         }
       }
     }
 
-    // 3. Radiant Multi-Hued Pixel Aurora Ribbons
     for (let px = 0; px < w; px += 8) {
       const aur1 = Math.floor((Math.sin(px * 0.009 + time * 0.002) * 24 + 32) / 4) * 4;
       const aur2 = Math.floor((Math.cos(px * 0.014 + time * 0.0016) * 18 + 24) / 4) * 4;
@@ -1135,11 +1036,9 @@ function drawDynamicVoidBackground(
       ctx.fillRect(px, 104 - aur2, 6, aur2);
     }
 
-    // 4. DUAL HARMONIZED PIXEL BEACONS (Hero has Occupied New Point!)
     const destX = Math.floor(TRACE_END / 4) * 4;
     const destY = TRACE_Y;
 
-    // Harmonized stepped pixel bridge of pure light
     const startX = Math.floor(playerX / 4) * 4;
     for (let lx = startX; lx <= destX; lx += 6) {
       const gradColor = lx % 12 === 0 ? '#ffea66' : '#55ffcc';
@@ -1147,14 +1046,12 @@ function drawDynamicVoidBackground(
       ctx.fillRect(lx, destY - 1, 4, 3);
     }
 
-    // Concentric pixel diamond rings radiating from harmonized points
     const ringRad = Math.floor(((time * 0.03) % 48) / 4) * 4 + 8;
     ctx.strokeStyle = 'rgba(255, 230, 100, 0.65)';
     ctx.lineWidth = 2;
     ctx.strokeRect(destX - ringRad, destY - ringRad, ringRad * 2, ringRad * 2);
     ctx.strokeRect(playerX - ringRad * 0.7, destY - ringRad * 0.7, ringRad * 1.4, ringRad * 1.4);
 
-    // 5. Sparkling Pixel Crystals
     for (let cp = 0; cp < 24; cp++) {
       const cpx = Math.floor(((cp * 43 + time * 0.03) % w) / 4) * 4;
       const cpy = Math.floor(((cp * 29 + 14) % h) / 4) * 4;
@@ -1164,7 +1061,6 @@ function drawDynamicVoidBackground(
       }
     }
 
-    // 6. Transcendent Victory Pixel Banner
     ctx.fillStyle = 'rgba(102, 255, 204, 0.9)';
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'center';
@@ -1172,8 +1068,11 @@ function drawDynamicVoidBackground(
     ctx.textAlign = 'start';
   }
 
-  // Right-Thumb Polarizer Tap Guide: Blended directly into Part One retro pixel background
-  drawPolarizerTapGuide(ctx, w, h, currentBits, time, 1, 0);
+  // Environmental Navigation & Polarizer Guides
+  if (subPart === 2 && resolution >= 2) {
+    drawDragMoveGuide(ctx, w, h, currentBits, time, 2, resolution);
+  }
+  drawPolarizerTapGuide(ctx, w, h, currentBits, time, subPart, resolution);
 }
 
 interface Props {
@@ -1286,8 +1185,12 @@ export const DimensionCanvas: React.FC<Props> = ({
       if ((subPartRef.current === 1 || (stateRef.current.act1SubPart || 1) === 1) && (bitsRef.current >= 9 || (stateRef.current.act1Bits || 0) >= 9)) {
         setAct1Phase('boss');
         phaseRef.current = 'boss';
-        setBossHp(MAX_BOSS_1_HP);
-        bossHpRef.current = MAX_BOSS_1_HP;
+        const pilotCount = (gameModeRef.current === 'squad' && teamRoomRef.current)
+          ? Math.max(1, Object.keys(teamRoomRef.current.pilots || {}).length)
+          : 1;
+        const targetMaxBoss1Hp = getBoss1MaxHp(gameModeRef.current, pilotCount);
+        setBossHp(targetMaxBoss1Hp);
+        bossHpRef.current = targetMaxBoss1Hp;
         bossMissesRef.current = 0;
         bossHitFlashRef.current = 0;
       }
@@ -1301,9 +1204,15 @@ export const DimensionCanvas: React.FC<Props> = ({
     }
   }, [isMainMenuOpen]);
 
+  // Bit 10 Post-Boss 1 Mission Briefing Modal (shown once on first death at Bit 10 in Story Mode)
+  const [isBit10BriefingOpen, setIsBit10BriefingOpen] = useState<boolean>(false);
+  const isBit10BriefingOpenRef = useRef<boolean>(false);
+  isBit10BriefingOpenRef.current = isBit10BriefingOpen;
+  const hasSeenBit10BriefingRef = useRef<boolean>(Boolean(gameState.hasSeenBit10Briefing));
+
   // Story intro modal synchronization: pause simulation, purge lingering pulses, and reset integrity
   useEffect(() => {
-    if (isStoryIntroOpen) {
+    if (isStoryIntroOpen || isBit10BriefingOpen) {
       pulsesRef.current = [];
       redErrorZonesRef.current = [];
       spawnCooldownRef.current = 2.0; // 2 seconds safety grace period upon dismissing intro before any pulse spawns!
@@ -1311,7 +1220,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       setIntegrity(100);
       integrityRef.current = 100;
     }
-  }, [isStoryIntroOpen]);
+  }, [isStoryIntroOpen, isBit10BriefingOpen]);
 
   // Act 1 Deep Progression States
   // Phases: 'void' (0D) -> 'point' (N=1, collecting 9 bits) -> 'boss' (line segment) -> 'ray' (rift to 2D)
@@ -1333,7 +1242,7 @@ export const DimensionCanvas: React.FC<Props> = ({
   // Active Polarizer: 1 = Up, -1 = Down (starting modes), 0 = Neutral (unlocked at Bit 8)
   const [playerPolarity, setPlayerPolarity] = useState<-1 | 0 | 1>(1);
 
-  const [bossHp, setBossHp] = useState<number>(MAX_BOSS_1_HP);
+  const [bossHp, setBossHp] = useState<number>(() => getBoss1MaxHp(gameState.gameMode));
   const [integrity, setIntegrity] = useState<number>(100);
 
   // Scroll wheel direction toggle (persisted via settings)
@@ -2070,7 +1979,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       const pilotCount = (gameState.gameMode === 'squad' && teamRoomRef.current)
         ? Math.max(1, Object.keys(teamRoomRef.current.pilots || {}).length)
         : 1;
-      const targetMaxBoss1Hp = gameState.gameMode === 'squad' ? getTeamBossMaxHp(pilotCount) : MAX_BOSS_1_HP;
+      const targetMaxBoss1Hp = getBoss1MaxHp(gameState.gameMode, pilotCount);
       setBossHp(targetMaxBoss1Hp);
       bossHpRef.current = targetMaxBoss1Hp;
       bossMissesRef.current = 0;
@@ -2204,6 +2113,13 @@ export const DimensionCanvas: React.FC<Props> = ({
       damageFlashRef.current = 0;
       screenShakeRef.current = 0;
       playerXRef.current = 240;
+      hasSeenBit10BriefingRef.current = false;
+      isBit10BriefingOpenRef.current = false;
+      setIsBit10BriefingOpen(false);
+    }
+
+    if (gameState.hasSeenBit10Briefing) {
+      hasSeenBit10BriefingRef.current = true;
     }
 
     if (typeof gameState.storyCompletions === 'number') {
@@ -2213,7 +2129,7 @@ export const DimensionCanvas: React.FC<Props> = ({
     }
 
     stateRef.current = gameState;
-  }, [gameState.act1Bits, gameState.act1PurchasedN, gameState.act1Phase, gameState.act1SubPart, gameState.act1Resolution, gameState.overshields, gameState.gameMode, gameState.currentN, gameState.arcadeTime, gameState.totalRuns, gameState.hp, gameState.storyCompletions]);
+  }, [gameState.act1Bits, gameState.act1PurchasedN, gameState.act1Phase, gameState.act1SubPart, gameState.act1Resolution, gameState.overshields, gameState.gameMode, gameState.currentN, gameState.arcadeTime, gameState.totalRuns, gameState.hp, gameState.storyCompletions, gameState.hasSeenBit10Briefing]);
 
   // Refs for requestAnimationFrame loop
   const stateRef = useRef(gameState);
@@ -2600,7 +2516,7 @@ export const DimensionCanvas: React.FC<Props> = ({
             runPulsesRef.current = 0;
             mathBurstStepRef.current = 0;
             spawnCooldownRef.current = 0;
-            onLogAction(`DESTINATION LOCKED BY CORRUPTED SOVEREIGN! Squad Arcade boss fight begins (${maxBossHp} HP)!`);
+            onLogAction(`DESTINATION LOCKED BY [JEF]! Squad Arcade boss fight begins (${maxBossHp} HP)!`);
           }
           onUpdateState(prev => ({
             ...prev,
@@ -2668,7 +2584,7 @@ export const DimensionCanvas: React.FC<Props> = ({
             onLogAction("✦ BIT 6 TRANSITION: Math Rock (Medium Difficulty) engaged!");
             addCombatText("⚡ MATH ROCK (MEDIUM)!", playerXRef.current, 190, '#ffe655');
           } else if (newBits === 9) {
-            onLogAction("✦ BIT 9 CLIMAX: Cycling 2 (Rock & Techno - Hard Difficulty) & Corrupted Sovereign engaged!");
+            onLogAction("✦ BIT 9 CLIMAX: Cycling 2 (Rock & Techno - Hard Difficulty) & [JEF] engaged!");
             addCombatText("⚡ CYCLING 2 (HARD)!", playerXRef.current, 190, '#ff4466');
           }
         }
@@ -2683,7 +2599,8 @@ export const DimensionCanvas: React.FC<Props> = ({
           bossHitFlashRef.current = 0;
           runPulsesRef.current = 0;
           onUpdateState(prev => ({ ...prev, act1Phase: 'line_segment' }));
-          onLogAction(`DESTINATION LOCKED BY CORRUPTED SOVEREIGN! Boss fight begins (${maxBossHp} HP)!`);
+          const boss1Name = (gameModeRef.current === 'arcade' || gameModeRef.current === 'squad') ? '[JEF]' : 'CORRUPTED SOVEREIGN';
+          onLogAction(`DESTINATION LOCKED BY ${boss1Name}! Boss fight begins (${maxBossHp} HP)!`);
         }
       }
       return;
@@ -2853,8 +2770,8 @@ export const DimensionCanvas: React.FC<Props> = ({
     playerXRef.current = 240;
     runPulsesRef.current = 0;
     runTimeRef.current = 0;
-    setBossHp(MAX_BOSS_1_HP);
-    bossHpRef.current = MAX_BOSS_1_HP;
+    setBossHp(STORY_MAX_BOSS_1_HP);
+    bossHpRef.current = STORY_MAX_BOSS_1_HP;
     bossMissesRef.current = 0;
     bossHitFlashRef.current = 0;
     setBoss2Hp(MAX_BOSS_2_HP);
@@ -2864,6 +2781,10 @@ export const DimensionCanvas: React.FC<Props> = ({
     currentGenreRef.current = 'slow_waltz';
     currentZoneRef.current = 'easy';
     soundEngine.setMusicPacing('slow_waltz', 'easy');
+
+    hasSeenBit10BriefingRef.current = false;
+    isBit10BriefingOpenRef.current = false;
+    setIsBit10BriefingOpen(false);
 
     onUpdateState(prev => ({
       ...prev,
@@ -2875,6 +2796,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       act1Resolution: 0,
       act1Phase: 'void',
       overshields: 0,
+      hasSeenBit10Briefing: false,
       resources: {
         hertz: 0,
         volts: 0,
@@ -3136,7 +3058,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       resources: { hertz: 0, volts: 0, baud: 0 },
     }));
 
-    onLogAction("🕹️ ARCADE MODE ENGAGED: Starting from Bit 1 with 1 Life! Scales to Medium at Bit 6, gets hard at 9 (Boss 1); conquer Corrupted Sovereign for victory!");
+    onLogAction("🕹️ ARCADE MODE ENGAGED: Starting from Bit 1 with 1 Life! Scales to Medium at Bit 6, gets hard at 9 (Boss 1); conquer [JEF] for victory!");
   };
 
   const handleRestartSquadArcade = async () => {
@@ -3176,7 +3098,7 @@ export const DimensionCanvas: React.FC<Props> = ({
 
     const currentB = Math.max(1, bitsRef.current);
     const isBoss = phaseRef.current === 'boss' || currentB >= 9;
-    const stageName = isBoss ? 'Boss 1: Corrupted Sovereign (Bit 9)' : `Bit ${currentB}`;
+    const stageName = isBoss ? 'Boss 1: [JEF] (Bit 9)' : `Bit ${currentB}`;
     const stageNum = isBoss ? 9.5 : currentB;
     const finalTime = speedrunTimeRef.current;
 
@@ -3308,7 +3230,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       let stageName = !hasNRef.current ? '0D Void (Pre-N=1)' : `Bit ${currentB}`;
       let stageNum = !hasNRef.current ? 0 : currentB;
       if (isPart1Boss) {
-        stageName = `Boss 1: Corrupted Sovereign (Bit 9)`;
+        stageName = `Boss 1: [JEF] (Bit 9)`;
         stageNum = 9.5;
       } else if (currentPart === 2) {
         stageNum = 10 + currentR;
@@ -3448,8 +3370,29 @@ export const DimensionCanvas: React.FC<Props> = ({
     }
 
     if (subPartRef.current === 2) {
-      // Phase 2: Frame Rate / Resolution Progression (1 to 10)
       const curRes = Math.max(0, resolutionRef.current || 0);
+      const isStoryModeActive = !gameModeRef.current || gameModeRef.current === 'story' || gameModeRef.current === 'normal';
+
+      // On the first death at Bit 10 (curRes === 0 in Story Mode), show the Bit 10 Mission Briefing instead of the death screen.
+      // Continuing from this briefing compiles Res 1 for free and immediately starts the next run at Res = 1.
+      if (isStoryModeActive && (curRes === 0 || (!hasSeenBit10BriefingRef.current && !stateRef.current.hasSeenBit10Briefing))) {
+        hasSeenBit10BriefingRef.current = true;
+        isBit10BriefingOpenRef.current = true;
+        setIsBit10BriefingOpen(true);
+        deathScreenRef.current = null;
+        setDeathScreen(null);
+        onUpdateState(prev => ({
+          ...prev,
+          hasSeenBit10Briefing: true,
+        }));
+        onLogAction(
+          `Bit 10 coordinate reached. Collected +${hzGained} HZ, +${vGained} V, +${baudGained} Bd. Opening new mission briefing (Free Res 1: Shields compilation on continue)!`
+        );
+        pulsesRef.current = [];
+        return;
+      }
+
+      // Phase 2: Frame Rate / Resolution Progression (1 to 10)
       const nextResIdx = Math.min(RESOLUTION_UPGRADES.length - 1, curRes);
       const upgrade = RESOLUTION_UPGRADES[nextResIdx];
       const isBoss2Locked = curRes >= 9;
@@ -3466,15 +3409,15 @@ export const DimensionCanvas: React.FC<Props> = ({
         upgradeName: upgrade.name,
         upgradeDesc: `${upgrade.fps} · ${upgrade.desc}`,
         message: isBoss2Locked
-          ? `PERIMETER COLLAPSED.\nCOLLECTED: +${hzGained} HZ, +${vGained} V, +${baudGained} FLUX.\nBANKED: ${currentTotalHz} HZ, ${currentTotalV} V, ${currentTotalBaud} FLUX.\nFINAL OBJECTIVE: DEFEAT BOSS 2 (FRACTURE SOVEREIGN) TO COMPILE RESOLUTION 10 (240 FPS)!`
-          : `PERIMETER COLLAPSED.\nCOLLECTED: +${hzGained} HZ, +${vGained} V, +${baudGained} FLUX.\nBANKED: ${currentTotalHz} HZ, ${currentTotalV} V, ${currentTotalBaud} FLUX.\nCOMPILE ${upgrade.name}?`,
+          ? `PERIMETER COLLAPSED.\nCOLLECTED: +${hzGained} HZ, +${vGained} V, +${baudGained} Bd.\nBANKED: ${currentTotalHz} HZ, ${currentTotalV} V, ${currentTotalBaud} Bd.\nFINAL OBJECTIVE: DEFEAT BOSS 2 (FRACTURE SOVEREIGN) TO COMPILE RESOLUTION 10 (240 FPS)!`
+          : `PERIMETER COLLAPSED.\nCOLLECTED: +${hzGained} HZ, +${vGained} V, +${baudGained} Bd.\nBANKED: ${currentTotalHz} HZ, ${currentTotalV} V, ${currentTotalBaud} Bd.\nCOMPILE ${upgrade.name}?`,
       };
       deathScreenRef.current = screen;
       setDeathScreen(screen);
       onLogAction(
         isBoss2Locked
           ? `Resolution perimeter collapsed. Final objective: Defeat Boss 2 (Fracture Sovereign) to compile Resolution 10 (240 FPS)!`
-          : `Resolution perimeter collapsed. Collected +${hzGained} Hz, +${vGained} V, +${baudGained} Flux. Banked: ${currentTotalHz} Hz, ${currentTotalV} V, ${currentTotalBaud} Flux. Compile ${upgrade.name}?`
+          : `Resolution perimeter collapsed. Collected +${hzGained} HZ, +${vGained} V, +${baudGained} Bd. Banked: ${currentTotalHz} HZ, ${currentTotalV} V, ${currentTotalBaud} Bd. Compile ${upgrade.name}?`
       );
     } else if (!isAct1PurchasedN) {
       // Phase 0: Compile N (Free of charge)
@@ -3591,8 +3534,9 @@ export const DimensionCanvas: React.FC<Props> = ({
     soundEngine.setBossMusic(false);
     troughTrainActiveRef.current = false;
     bossMissesRef.current = 0;
-    setBossHp(MAX_BOSS_1_HP);
-    bossHpRef.current = MAX_BOSS_1_HP;
+    const targetMaxBoss1Hp = getBoss1MaxHp(gameModeRef.current);
+    setBossHp(targetMaxBoss1Hp);
+    bossHpRef.current = targetMaxBoss1Hp;
     setBoss2Hp(MAX_BOSS_2_HP);
     boss2HpRef.current = MAX_BOSS_2_HP;
     bossTargetTimerRef.current = 0;
@@ -3608,8 +3552,8 @@ export const DimensionCanvas: React.FC<Props> = ({
     if ((subPartRef.current === 1 || stateRef.current.act1SubPart === 1) && (bitsRef.current >= 9 || stateRef.current.act1Bits >= 9)) {
       setAct1Phase('boss');
       phaseRef.current = 'boss';
-      setBossHp(MAX_BOSS_1_HP);
-      bossHpRef.current = MAX_BOSS_1_HP;
+      setBossHp(targetMaxBoss1Hp);
+      bossHpRef.current = targetMaxBoss1Hp;
       bossMissesRef.current = 0;
       bossHitFlashRef.current = 0;
     }
@@ -3680,8 +3624,9 @@ export const DimensionCanvas: React.FC<Props> = ({
         } else if (nextBits === 9) {
           setAct1Phase('boss');
           phaseRef.current = 'boss';
-          setBossHp(MAX_BOSS_1_HP);
-          bossHpRef.current = MAX_BOSS_1_HP;
+          const targetMaxBoss1Hp = getBoss1MaxHp(gameModeRef.current);
+          setBossHp(targetMaxBoss1Hp);
+          bossHpRef.current = targetMaxBoss1Hp;
           bossMissesRef.current = 0;
           bossHitFlashRef.current = 0;
           onUpdateState(prev => ({ ...prev, act1Phase: 'line_segment' }));
@@ -3692,12 +3637,14 @@ export const DimensionCanvas: React.FC<Props> = ({
           subPartRef.current = 2;
           setResolution(0);
           resolutionRef.current = 0;
+          hasSeenBit10BriefingRef.current = false;
           onUpdateState(prev => ({
             ...prev,
             act1Phase: 'point',
             act1SubPart: 2,
             act1Resolution: 0,
             currentN: 2,
+            hasSeenBit10Briefing: false,
           }));
           onLogAction("✦ 10TH BIT COMPILED! PART ONE COMPLETE! Dimensional Revelation: You discover the secretly gathered DIRECTIONAL FLUX (Baud). Welcome to Part Two: Frame Rate & Resolution!");
         }
@@ -4109,7 +4056,7 @@ export const DimensionCanvas: React.FC<Props> = ({
       }
 
       // When at main menu or reading story intro briefing, halt entity simulation & canvas redraw
-      if (isMainMenuOpenRef.current || isStoryIntroOpenRef.current) {
+      if (isMainMenuOpenRef.current || isStoryIntroOpenRef.current || isBit10BriefingOpenRef.current) {
         ctx.restore();
         animId = requestAnimationFrame(render);
         return;
@@ -4193,6 +4140,8 @@ export const DimensionCanvas: React.FC<Props> = ({
         // ==========================================
         const isRoundOver = Boolean(
           isRoundEndedRef.current ||
+          isBit10BriefingOpenRef.current ||
+          isBit10BriefingOpen ||
           deathScreenRef.current ||
           deathScreen ||
           survivalDeathModalRef.current ||
@@ -4219,7 +4168,7 @@ export const DimensionCanvas: React.FC<Props> = ({
               const pilotCount = (gameModeRef.current === 'squad' && teamRoomRef.current)
                 ? Math.max(1, Object.keys(teamRoomRef.current.pilots || {}).length)
                 : 1;
-              const targetMaxBoss1Hp = gameModeRef.current === 'squad' ? getTeamBossMaxHp(pilotCount) : MAX_BOSS_1_HP;
+              const targetMaxBoss1Hp = getBoss1MaxHp(gameModeRef.current, pilotCount);
               if (bossHpRef.current < targetMaxBoss1Hp && (!teamRoomRef.current?.sharedState?.isBossActive)) {
                 bossHpRef.current = targetMaxBoss1Hp;
                 setBossHp(targetMaxBoss1Hp);
@@ -4240,13 +4189,27 @@ export const DimensionCanvas: React.FC<Props> = ({
           // In Part 1 Boss fight (or Survival Boss 1): boss pulls player toward right!
           if ((gameModeRef.current !== 'survival' && phase === 'boss' && subPartRef.current === 1) || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
             if (!isGhostRef.current && respawnInvulnTimerRef.current <= 0) {
-              // If player incorrectly polarizes more than 1 projectile (bossMissesRef.current > 1),
-              // gravitational suction accelerates irreversibly, dragging player into the singularity!
-              const pullRate = bossMissesRef.current > 1 ? 140 : bossMissesRef.current === 1 ? 26 : 14;
+              // Normalized proximity from starting point (240) to singularity horizon (TRACE_END - 24)
+              const bossProximity = Math.max(
+                0,
+                Math.min(1, (playerXRef.current - 240) / Math.max(1, (TRACE_END - 24) - 240))
+              );
+              // Base pull starts at 14 px/s and accelerates as the player is drawn closer to the singularity.
+              // Missed polarizations permanently step up the pull tier without being reset by reflected waves.
+              const pullRate =
+                bossMissesRef.current > 1
+                  ? 140
+                  : bossMissesRef.current === 1
+                  ? 26 * (1 + bossProximity * 0.85)
+                  : 14 * (1 + bossProximity * 1.20);
               playerXRef.current = Math.min(TRACE_END - 20, playerXRef.current + dt * pullRate);
 
               if (playerXRef.current >= TRACE_END - 24) {
-                triggerDeathRef.current("SUCKED INTO CORRUPTED SINGULARITY: More than 1 failed polarization caused irreversible gravitational collapse!");
+                const collapseReason =
+                  bossMissesRef.current > 1
+                    ? "SUCKED INTO CORRUPTED SINGULARITY: More than 1 failed polarization caused irreversible gravitational collapse!"
+                    : "SUCKED INTO CORRUPTED SINGULARITY: Gravitational pull overwhelmed your position before the Sovereign was harmonized!";
+                triggerDeathRef.current(collapseReason);
               }
             }
           }
@@ -5042,6 +5005,78 @@ export const DimensionCanvas: React.FC<Props> = ({
           // Render Boss Node (Part One Boss Phase or Survival Boss 1)
           if ((gameModeRef.current !== 'survival' && phase === 'boss') || (gameModeRef.current === 'survival' && activeSurvivalBossRef.current === 'boss1')) {
             const bossFlash = bossHitFlashRef.current > 0;
+            const bossProximity = Math.max(
+              0,
+              Math.min(1, (playerX - 240) / Math.max(1, (TRACE_END - 24) - 240))
+            );
+            const pullTier = bossMissesRef.current;
+
+            // 1. Proximity Danger Pulse & Gravitational Event Horizon Aura
+            if (bossProximity > 0.35 || pullTier > 0) {
+              const dangerIntensity = Math.min(1, Math.max(bossProximity, pullTier * 0.45));
+              const pulseFreq = 0.008 + dangerIntensity * 0.014;
+              const dangerPulse = (Math.sin(time * pulseFreq) + 1) * 0.5;
+              const horizonAlpha = (0.08 + dangerIntensity * 0.22) * (0.65 + dangerPulse * 0.35);
+
+              ctx.save();
+              const dangerGrad = ctx.createRadialGradient(
+                TRACE_END,
+                TRACE_Y,
+                6,
+                TRACE_END,
+                TRACE_Y,
+                75 + dangerIntensity * 95
+              );
+              dangerGrad.addColorStop(0, `rgba(255, 34, 85, ${Math.min(0.65, horizonAlpha * 2.2)})`);
+              dangerGrad.addColorStop(0.55, `rgba(255, 120, 40, ${horizonAlpha})`);
+              dangerGrad.addColorStop(1, 'rgba(255, 17, 68, 0)');
+              ctx.fillStyle = dangerGrad;
+              ctx.fillRect(Math.max(TRACE_START, playerX - 20), TRACE_Y - 95, TRACE_END - Math.max(TRACE_START, playerX - 20) + 60, 190);
+
+              // Pulsing crimson/amber singularity compression rings
+              const ringCount = pullTier > 1 ? 3 : 2;
+              for (let rIdx = 0; rIdx < ringCount; rIdx++) {
+                const ringPhase = ((time * (0.0018 + dangerIntensity * 0.0016) + rIdx / ringCount) % 1);
+                const ringRadius = (1 - ringPhase) * (44 + dangerIntensity * 48) + 8;
+                ctx.strokeStyle = rIdx % 2 === 0
+                  ? `rgba(255, 34, 85, ${ringPhase * (0.35 + dangerIntensity * 0.45)})`
+                  : `rgba(255, 170, 51, ${ringPhase * (0.3 + dangerIntensity * 0.4)})`;
+                ctx.lineWidth = 1.5 + dangerIntensity * 1.2;
+                ctx.strokeRect(TRACE_END - ringRadius, TRACE_Y - ringRadius, ringRadius * 2, ringRadius * 2);
+              }
+              ctx.restore();
+            }
+
+            // 2. Inward-Streaming Gravitational Suction Particles & Streaks
+            const spanDist = Math.max(24, TRACE_END - playerX);
+            const streamSpeed = (0.00055 + bossProximity * 0.00095) * (pullTier > 1 ? 2.6 : pullTier === 1 ? 1.45 : 1);
+            const streakCount = 16;
+            ctx.save();
+            for (let sIdx = 0; sIdx < streakCount; sIdx++) {
+              const seed = (sIdx * 0.61803398875) % 1;
+              const progress = (time * streamSpeed + seed) % 1;
+              // Quadratic ease-in so particles visibly accelerate as they near the singularity
+              const accelProgress = progress * progress;
+              const sx = playerX + accelProgress * spanDist;
+              const spreadFactor = 1 - accelProgress * 0.82;
+              const offsetBand = ((sIdx % 5) - 2) * 11 * spreadFactor + Math.sin(time * 0.006 + sIdx * 1.7) * 4 * spreadFactor;
+              const sy = TRACE_Y + offsetBand;
+              const streakLen = Math.min(28, 6 + accelProgress * (14 + bossProximity * 16 + pullTier * 6));
+              const alpha = Math.min(0.95, 0.22 + accelProgress * 0.72);
+
+              ctx.strokeStyle = sIdx % 3 === 0
+                ? `rgba(255, 180, 70, ${alpha})`
+                : sIdx % 2 === 0
+                ? `rgba(255, 45, 95, ${alpha})`
+                : `rgba(85, 255, 153, ${alpha * 0.85})`;
+              ctx.lineWidth = accelProgress > 0.7 ? 2.2 : 1.5;
+              ctx.beginPath();
+              ctx.moveTo(Math.max(playerX, sx - streakLen), sy);
+              ctx.lineTo(sx, sy);
+              ctx.stroke();
+            }
+            ctx.restore();
+
             ctx.fillStyle = bossFlash ? '#ffffff' : '#33ff66';
             ctx.shadowColor = bossFlash ? '#ffffff' : '#33ff66';
             ctx.shadowBlur = bossFlash ? 24 : 14;
@@ -5055,13 +5090,32 @@ export const DimensionCanvas: React.FC<Props> = ({
             // Line segment between player and boss solidifies with bright energy
             const segGrad = ctx.createLinearGradient(playerX, TRACE_Y, TRACE_END, TRACE_Y);
             segGrad.addColorStop(0, '#55ff99');
-            segGrad.addColorStop(1, '#ff3366');
+            segGrad.addColorStop(Math.max(0.2, 1 - bossProximity * 0.65), '#ffaa33');
+            segGrad.addColorStop(1, '#ff2255');
             ctx.strokeStyle = segGrad;
-            ctx.lineWidth = 3;
+            ctx.lineWidth = 3 + bossProximity * 2.2;
             ctx.beginPath();
             ctx.moveTo(playerX, TRACE_Y);
             ctx.lineTo(TRACE_END, TRACE_Y);
             ctx.stroke();
+
+            // Proximity danger telemetry warning when pulled close or after missed waves
+            if (bossProximity > 0.55 || pullTier > 0) {
+              const warnBlink = (Math.sin(time * 0.018) + 1) * 0.5;
+              ctx.save();
+              ctx.fillStyle = pullTier > 1 || bossProximity > 0.78
+                ? `rgba(255, 34, 85, ${0.7 + warnBlink * 0.3})`
+                : `rgba(255, 170, 51, ${0.65 + warnBlink * 0.35})`;
+              ctx.font = 'bold 9px monospace';
+              ctx.textAlign = 'center';
+              const pullLabel = pullTier > 1
+                ? '⚠️ SINGULARITY COLLAPSE IMMINENT'
+                : bossProximity > 0.75
+                ? '⚠️ CRITICAL GRAVITY HORIZON'
+                : '⚡ GRAVITATIONAL PULL ACCELERATING';
+              ctx.fillText(pullLabel, (playerX + TRACE_END) / 2, TRACE_Y + 34);
+              ctx.restore();
+            }
 
             // Floating Boss 1 Health Bar
             const barW = 90;
@@ -5077,7 +5131,9 @@ export const DimensionCanvas: React.FC<Props> = ({
             const boss1PilotCount = (gameModeRef.current === 'squad' && teamRoomRef.current)
               ? Math.max(1, Object.keys(teamRoomRef.current.pilots || {}).length)
               : 1;
-            const currentMaxBoss1Hp = gameModeRef.current === 'squad' ? getTeamBossMaxHp(boss1PilotCount) : MAX_BOSS_1_HP;
+            const currentMaxBoss1Hp = gameModeRef.current === 'survival'
+              ? MAX_BOSS_1_HP
+              : getBoss1MaxHp(gameModeRef.current, boss1PilotCount);
             const hpPct = Math.max(0, Math.min(1, bossHpRef.current / currentMaxBoss1Hp));
             ctx.fillStyle = hpPct > 0.5 ? '#33ff66' : hpPct > 0.25 ? '#ffaa33' : '#ff2255';
             ctx.fillRect(barX, barY, hpPct * barW, barH);
@@ -5085,7 +5141,8 @@ export const DimensionCanvas: React.FC<Props> = ({
             ctx.fillStyle = '#ff6688';
             ctx.font = 'bold 9px monospace';
             ctx.textAlign = 'center';
-            ctx.fillText(`SOVEREIGN [${Math.round(hpPct * 100)}%]`, TRACE_END, barY - 4);
+            const boss1BarLabel = (gameModeRef.current === 'arcade' || gameModeRef.current === 'squad') ? '[JEF]' : 'SOVEREIGN';
+            ctx.fillText(`${boss1BarLabel} [${Math.round(hpPct * 100)}%]`, TRACE_END, barY - 4);
             ctx.textAlign = 'start';
           }
 
@@ -5468,6 +5525,30 @@ export const DimensionCanvas: React.FC<Props> = ({
           const overshieldText = overshieldsRef.current > 0 ? ` | 🛡️ +${overshieldsRef.current * 20} HP` : '';
           ctx.fillStyle = roundedIntegrity < 35 ? '#ff3355' : roundedIntegrity < 65 ? '#ffaa33' : '#33ff66';
 
+          const drawColoredResourceText = (
+            text: string,
+            startX: number,
+            y: number,
+            baseColor = '#88ffaa'
+          ) => {
+            const parts = text.split(/([+]?\d+\s*(?:HZ|Hz|V|Bd|BD)\b|\b(?:HZ|Hz|V|Bd|BD)\b)/g);
+            let curX = startX;
+            for (const part of parts) {
+              if (!part) continue;
+              if (/(?:HZ|Hz)$/.test(part)) {
+                ctx.fillStyle = '#33ff66';
+              } else if (/V$/.test(part)) {
+                ctx.fillStyle = '#ff4455';
+              } else if (/(?:Bd|BD)$/.test(part)) {
+                ctx.fillStyle = '#38bdf8';
+              } else {
+                ctx.fillStyle = baseColor;
+              }
+              ctx.fillText(part, curX, y);
+              curX += ctx.measureText(part).width;
+            }
+          };
+
           if (subPartRef.current === 2) {
             const sectorName = playerX < 240 ? 'ATTENUATION (1X)' : playerX < 430 ? 'HARMONIC SLIT (2X)' : 'EMITTER MAW (4X)';
             if (w < 640) {
@@ -5478,12 +5559,11 @@ export const DimensionCanvas: React.FC<Props> = ({
               const squadBaud = isTeamSpeedrun ? ((teamRoomRef.current?.sharedState?.totalBaud || 0) + pendingSquadBaudRef.current) : 0;
 
               const harvestText = isTeamSpeedrun
-                ? `SQUAD BANK: ${squadHz} Hz | ${squadV} V | ${squadBaud} Flux  [Target: Res ${Math.min(10, resolutionRef.current + 1)}] (You: +${runHzRef.current} Hz / +${runVoltsRef.current} V)`
-                : `HARVEST: +${runHzRef.current} Hz | +${runVoltsRef.current} V | +${runBaudRef.current} Flux  [Target: Res ${Math.min(10, resolutionRef.current + 1)}]`;
+                ? `SQUAD BANK: ${squadHz} HZ | ${squadV} V | ${squadBaud} Bd  [Target: Res ${Math.min(10, resolutionRef.current + 1)}] (You: +${runHzRef.current} HZ / +${runVoltsRef.current} V)`
+                : `HARVEST: +${runHzRef.current} HZ | +${runVoltsRef.current} V | +${runBaudRef.current} Bd  [Target: Res ${Math.min(10, resolutionRef.current + 1)}]`;
               ctx.fillText(`INTEGRITY: ${barStr} ${roundedIntegrity}%${overshieldText} | [${sectorName}] | ${shortPol}`, hudX, h - 26);
-              ctx.fillStyle = '#88ffaa';
               ctx.font = '9.5px monospace';
-              ctx.fillText(harvestText, hudX, h - 12);
+              drawColoredResourceText(harvestText, hudX, h - 12);
             } else {
               const isTeamSpeedrun = gameModeRef.current === 'squad' && Boolean(teamRoomRef.current);
               const squadHz = isTeamSpeedrun ? ((teamRoomRef.current?.sharedState?.totalHz || 0) + pendingSquadHzRef.current) : 0;
@@ -5491,12 +5571,11 @@ export const DimensionCanvas: React.FC<Props> = ({
               const squadBaud = isTeamSpeedrun ? ((teamRoomRef.current?.sharedState?.totalBaud || 0) + pendingSquadBaudRef.current) : 0;
 
               const harvestText = isTeamSpeedrun
-                ? `SQUAD BANK: ${squadHz} Hz | ${squadV} V | ${squadBaud} Flux  [Target: Res ${Math.min(10, resolutionRef.current + 1)}] (You: +${runHzRef.current} Hz / +${runVoltsRef.current} V)`
-                : `RUN HARVEST: +${runHzRef.current} Hz | +${runVoltsRef.current} V | +${runBaudRef.current} Flux  [Target: Res ${Math.min(10, resolutionRef.current + 1)}]`;
+                ? `SQUAD BANK: ${squadHz} HZ | ${squadV} V | ${squadBaud} Bd  [Target: Res ${Math.min(10, resolutionRef.current + 1)}] (You: +${runHzRef.current} HZ / +${runVoltsRef.current} V)`
+                : `RUN HARVEST: +${runHzRef.current} HZ | +${runVoltsRef.current} V | +${runBaudRef.current} Bd  [Target: Res ${Math.min(10, resolutionRef.current + 1)}]`;
               ctx.fillText(`INTEGRITY: ${barStr} ${roundedIntegrity}%${overshieldText} | SECTOR: [${sectorName}] | POLARIZER: [ ${shortPol} ]`, hudX, h - 26);
-              ctx.fillStyle = '#88ffaa';
               ctx.font = '10px monospace';
-              ctx.fillText(harvestText, hudX, h - 12);
+              drawColoredResourceText(harvestText, hudX, h - 12);
             }
           } else {
             // Part 1 / Standard / Void: ALWAYS show barStr and roundedIntegrity%
@@ -5508,19 +5587,19 @@ export const DimensionCanvas: React.FC<Props> = ({
 
             ctx.font = w < 640 ? '10px monospace' : '11px monospace';
             ctx.fillText(`INTEGRITY: ${barStr} ${roundedIntegrity}%${overshieldText} | ${stageDesc} | POL: [ ${shortPol} ]`, hudX, h - 26);
-            ctx.fillStyle = '#88ffaa';
             ctx.font = w < 640 ? '9.5px monospace' : '10px monospace';
             const targetB = Math.min(9, currentBits + 1);
             const targetInfo = isArcadeOrSquad && phase === 'boss'
-              ? '[SOVEREIGN BOSS ENGAGED]'
+              ? '[[JEF] BOSS ENGAGED]'
               : isArcadeOrSquad && ARCADE_BIT_UNLOCK_COSTS[targetB]
-              ? `[Target: Bit ${targetB} (${ARCADE_BIT_UNLOCK_COSTS[targetB].costHz * squadScale} Hz / ${ARCADE_BIT_UNLOCK_COSTS[targetB].costV * squadScale} V${targetB === 9 ? ' -> Boss' : ''})]`
+              ? `[Target: Bit ${targetB} (${ARCADE_BIT_UNLOCK_COSTS[targetB].costHz * squadScale} HZ / ${ARCADE_BIT_UNLOCK_COSTS[targetB].costV * squadScale} V${targetB === 9 ? ' -> [JEF]' : ''})]`
               : `[Target: Bit ${Math.min(10, currentBits + 1)}]`;
 
+            const bdPart = (currentBits >= 8 || runBaudRef.current > 0) ? ` | +${runBaudRef.current} Bd` : '';
             const harvestText = isTeamSpeedrun
-              ? `SQUAD BANK: ${squadHz} Hz | ${squadV} V  ${targetInfo} (You: +${runHzRef.current} Hz / +${runVoltsRef.current} V)`
-              : `RUN HARVEST: +${runHzRef.current} Hz | +${runVoltsRef.current} V  ${targetInfo}`;
-            ctx.fillText(harvestText, hudX, h - 12);
+              ? `SQUAD BANK: ${squadHz} HZ | ${squadV} V  ${targetInfo} (You: +${runHzRef.current} HZ / +${runVoltsRef.current} V)`
+              : `RUN HARVEST: +${runHzRef.current} HZ | +${runVoltsRef.current} V${bdPart}  ${targetInfo}`;
+            drawColoredResourceText(harvestText, hudX, h - 12);
           }
         } else if (phase === 'ray') {
           // SUB-PHASE 3: BECOMING A RAY (90° FOLD)
@@ -5714,7 +5793,6 @@ export const DimensionCanvas: React.FC<Props> = ({
               const dmg = 15;
               soundEngine.playBossDamageChord(1);
               bossHitFlashRef.current = 1;
-              bossMissesRef.current = 0; // Reset misses on hit
               addCombatText('-15 HP', TRACE_END - 10, TRACE_Y - 32, '#55ff99');
               const nextBoss1Hp = Math.max(0, bossHpRef.current - dmg);
               bossHpRef.current = nextBoss1Hp;
@@ -5723,6 +5801,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                 damageTeamBoss(teamRoomRef.current.code, 1, dmg);
               }
               if (nextBoss1Hp <= 0) {
+                bossMissesRef.current = 0;
                 soundEngine.setBossMusic(false);
                 soundEngine.playCadenceResolution();
                 if (gameModeRef.current === 'survival') {
@@ -5732,8 +5811,9 @@ export const DimensionCanvas: React.FC<Props> = ({
                   survivalResourcesRef.current.hz += 50;
                   survivalResourcesRef.current.volts += 50;
                 } else if (gameModeRef.current === 'arcade' || gameModeRef.current === 'squad') {
-                  // Arcade & Squad Arcade modes END in Victory at the first boss (Corrupted Sovereign)!
+                  // Arcade & Squad Arcade modes END in Victory at the first boss ([JEF])!
                   isRoundEndedRef.current = true;
+                  addCombatText('✦ [JEF] CONQUERED! ✦', TRACE_END, TRACE_Y - 30, '#55ff99');
                   const finalTime = gameModeRef.current === 'squad' ? speedrunTimeRef.current : arcadeTimeRef.current;
                   const lives = gameModeRef.current === 'squad' ? 1 : arcadeLivesRef.current;
                   const arcModal = {
@@ -5749,10 +5829,10 @@ export const DimensionCanvas: React.FC<Props> = ({
                     if (teamRoomRef.current) {
                       syncSharedProgress(teamRoomRef.current.code, {
                         boss1Hp: 0,
-                        lastAction: 'Corrupted Sovereign Conquered! Squad Arcade Completed ★',
+                        lastAction: '[JEF] Conquered! Squad Arcade Completed ★',
                       });
                     }
-                    onLogAction(`👑 SQUAD ARCADE VICTORY! Conquered Corrupted Sovereign in ${formatTime(finalTime)}!`);
+                    onLogAction(`👑 SQUAD ARCADE VICTORY! Conquered [JEF] in ${formatTime(finalTime)}!`);
                   } else {
                     onUpdateState(prev => {
                       const curBestTime = prev.highScores?.arcadeBestTime || 0;
@@ -5760,11 +5840,11 @@ export const DimensionCanvas: React.FC<Props> = ({
                       return {
                         ...prev,
                         arcadeTime: finalTime,
-                        arcadeFurthestStage: 'Victory! (Boss 1 Conquered)',
+                        arcadeFurthestStage: 'Victory! ([JEF] Conquered)',
                         arcadeFurthestStageNum: 9.5,
                         highScores: {
                           ...prev.highScores,
-                          arcadeBestStage: 'Victory! (Boss 1 Conquered)',
+                          arcadeBestStage: 'Victory! ([JEF] Conquered)',
                           arcadeBestStageNum: 9.5,
                           arcadeBestTime: isNewBest ? finalTime : curBestTime,
                         },
@@ -5772,7 +5852,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                     });
                     arcadeTotalHzRef.current += 50;
                     saveRunRecord('arcade', {
-                      stageName: 'Boss 1 Conquered ★',
+                      stageName: '[JEF] Conquered ★',
                       stageNum: 9.5,
                       bit: 9,
                       duration: finalTime,
@@ -5780,7 +5860,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                       completed: true,
                       isVictory: true,
                     });
-                    onLogAction(`👑 ARCADE VICTORY! Conquered Corrupted Sovereign in ${formatTime(finalTime)} with ${lives} lives remaining! Recorded in Vault.`);
+                    onLogAction(`👑 ARCADE VICTORY! Conquered [JEF] in ${formatTime(finalTime)} with ${lives} lives remaining! Recorded in Vault.`);
                   }
                 } else {
                   // Story / Speedrun mode Boss 1 victory! Clear boss hazards & award transcendence to N=2
@@ -5799,6 +5879,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                   setAct1Phase('point');
                   phaseRef.current = 'point';
                   runPulsesRef.current = 0;
+                  hasSeenBit10BriefingRef.current = false;
 
                   onUpdateState(prev => ({
                     ...prev,
@@ -5808,6 +5889,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                     act1Phase: 'point',
                     currentN: 2,
                     hp: 100,
+                    hasSeenBit10Briefing: false,
                     resources: {
                       ...prev.resources,
                       baud: prev.resources.baud + 25,
@@ -5863,7 +5945,6 @@ export const DimensionCanvas: React.FC<Props> = ({
                   flushSquadResources();
                 }
                 checkAutoPurchasesRef.current();
-                bossMissesRef.current = 0;
                 const isPreRes6 = subPartRef.current !== 2 || resolutionRef.current < 6;
                 const hitSparkColor = (!hasN || currentBits === 0)
                   ? '#ffffff'
@@ -5926,7 +6007,6 @@ export const DimensionCanvas: React.FC<Props> = ({
                   flushSquadResources();
                 }
                 checkAutoPurchasesRef.current();
-                bossMissesRef.current = 0;
                 addSparks(playerX, TRACE_Y, (!hasN || currentBits === 0) ? '#ffffff' : '#ff66aa', currentBits >= 8 ? 24 : 14);
                 p.reflected = true;
                 p.speed = Math.abs(p.speed) * 1.4;
@@ -5986,7 +6066,6 @@ export const DimensionCanvas: React.FC<Props> = ({
                   flushSquadResources();
                 }
                 checkAutoPurchasesRef.current();
-                bossMissesRef.current = 0;
                 setRunBaud(runBaudRef.current);
 
                 // Heal up to max 100 HP, or add Overshield if in Part Two (Res >= 1)
@@ -6144,10 +6223,13 @@ export const DimensionCanvas: React.FC<Props> = ({
           const boss1PilotCount = (gameModeRef.current === 'squad' && teamRoomRef.current)
             ? Math.max(1, Object.keys(teamRoomRef.current.pilots || {}).length)
             : 1;
-          const currentMaxBoss1Hp = gameModeRef.current === 'squad' ? getTeamBossMaxHp(boss1PilotCount) : MAX_BOSS_1_HP;
+          const currentMaxBoss1Hp = gameModeRef.current === 'survival'
+            ? MAX_BOSS_1_HP
+            : getBoss1MaxHp(gameModeRef.current, boss1PilotCount);
           ctx.fillStyle = '#ff4466';
           ctx.font = '13px monospace';
-          ctx.fillText(`SOVEREIGN: ${Math.round((bossHpRef.current / currentMaxBoss1Hp) * 100)}%`, w - 180, 26);
+          const topBoss1Label = (gameModeRef.current === 'arcade' || gameModeRef.current === 'squad') ? '[JEF]' : 'SOVEREIGN';
+          ctx.fillText(`${topBoss1Label}: ${Math.round((bossHpRef.current / currentMaxBoss1Hp) * 100)}%`, w - 180, 26);
         }
 
       // Update Particles (white explosion pixels in 0D Void & N=1, colored/quantized in 1-bit+)
@@ -6501,8 +6583,50 @@ export const DimensionCanvas: React.FC<Props> = ({
         {/* DEATH / LEVEL-UP SCREEN OVERLAY */}
         {deathScreen && (
           <div className="absolute inset-0 bg-black/92 backdrop-blur-md flex flex-col items-center justify-center p-3 sm:p-6 text-center font-mono z-30 animate-in fade-in duration-200 overflow-y-auto">
-            <div className="max-w-md w-full max-h-[92vh] overflow-y-auto my-auto border border-emerald-500/80 bg-neutral-950/95 p-4 sm:p-6 rounded-xl shadow-2xl shadow-emerald-950/50 space-y-3 sm:space-y-4">
-              <div className="text-rose-400 font-bold text-lg sm:text-xl tracking-wider">
+            <div className="relative max-w-md w-full max-h-[92vh] overflow-y-auto my-auto border border-emerald-500/80 bg-neutral-950/95 p-4 sm:p-6 rounded-xl shadow-2xl shadow-emerald-950/50 space-y-3 sm:space-y-4">
+              {(gameState.gameMode === 'story' || gameState.gameMode === 'squad' || gameState.hasCompletedStory || onOpenMainMenu) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (deathBufferSeconds > 0) return;
+                    if (gameState.gameMode === 'squad' && teamRoomRef.current) {
+                      const myId = getLocalPilotId();
+                      voteToContinueRun(teamRoomRef.current.code, myId, false);
+                      pauseAndSaveTeamRun(teamRoomRef.current.code, {
+                        act1Bits: bitsRef.current,
+                        act1Resolution: resolutionRef.current,
+                        act1SubPart: subPartRef.current,
+                        speedrunTime: speedrunTimeRef.current,
+                        runNumber: speedrunRunsRef.current,
+                        totalHz: (teamRoomRef.current.sharedState?.totalHz || 0) + pendingSquadHzRef.current,
+                        totalV: (teamRoomRef.current.sharedState?.totalV || 0) + pendingSquadVRef.current,
+                        totalBaud: (teamRoomRef.current.sharedState?.totalBaud || 0) + pendingSquadBaudRef.current,
+                      });
+                      saveLastSpeedrunRoomCode(teamRoomRef.current.code);
+                    }
+                    isRoundEndedRef.current = true;
+                    setDeathScreen(null);
+                    deathScreenRef.current = null;
+                    setIntegrity(100);
+                    integrityRef.current = 100;
+                    isGhostRef.current = false;
+                    setIsGhost(false);
+                    onUpdateState(prev => ({ ...prev, carrierActive: false }));
+                    if (onOpenMainMenu) onOpenMainMenu();
+                  }}
+                  disabled={deathBufferSeconds > 0}
+                  className={`absolute top-3 right-3 sm:top-4 sm:right-4 px-2.5 py-1.5 rounded-lg text-[10px] transition-all font-mono font-bold flex items-center justify-center gap-1 border ${
+                    deathBufferSeconds > 0
+                      ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
+                      : 'bg-neutral-900 hover:bg-neutral-800 text-amber-300 border-amber-600/60 active:scale-95 cursor-pointer'
+                  }`}
+                >
+                  <Sparkles className="w-3 h-3 text-amber-400" />
+                  <span>MAIN MENU</span>
+                </button>
+              )}
+
+              <div className="text-rose-400 font-bold text-lg sm:text-xl tracking-wider px-20">
                 OH NO YOU DIED.
               </div>
 
@@ -6513,17 +6637,14 @@ export const DimensionCanvas: React.FC<Props> = ({
                     <span>DE-COHERENCE IS PROGRESS</span>
                   </div>
                   <div className="text-[10px] text-neutral-300 leading-snug">
-                    Dissolving in the void is the intended calibration cycle! Your energy has been safely banked. The first two compiles are subsidized at 0 HZ / 0 V to establish your visual matrix.
+                    Dissolving in the void is the intended calibration cycle! Your energy has been safely banked. The first two compiles are subsidized at <span className="text-[#33ff66] font-bold">0 HZ</span> / <span className="text-[#ff4455] font-bold">0 V</span> to establish your visual matrix.
                   </div>
                 </div>
               )}
 
               <div className="text-xs text-neutral-300 leading-relaxed bg-black/70 p-3 rounded-lg border border-neutral-800 text-left space-y-1.5">
-                <div>• Collected this run: <span className="text-cyan-400 font-bold">+{deathScreen.collectedHz} HZ</span> and <span className="text-rose-400 font-bold">+{deathScreen.collectedV} V</span>.</div>
-                <div>• Available reserves: <span className="text-cyan-300 font-bold">{gameState.resources.hertz} HZ</span> and <span className="text-rose-300 font-bold">{gameState.resources.volts} V</span>.</div>
-                {deathScreen.collectedBaud !== undefined && deathScreen.collectedBaud > 0 && (
-                  <div>• Directional Flux (Bd): <span className="text-amber-400 font-bold">+{deathScreen.collectedBaud} BD</span> | Total: <span className="text-amber-300 font-bold">{gameState.resources.baud} BD</span></div>
-                )}
+                <div>• Collected this run: <span className="text-[#33ff66] font-bold">+{deathScreen.collectedHz} HZ</span> and <span className="text-[#ff4455] font-bold">+{deathScreen.collectedV} V</span>{deathScreen.collectedBaud !== undefined && deathScreen.collectedBaud > 0 ? <> and <span className="text-[#38bdf8] font-bold">+{deathScreen.collectedBaud} Bd</span></> : null}.</div>
+                <div>• Available reserves: <span className="text-[#33ff66] font-bold">{gameState.resources.hertz} HZ</span> and <span className="text-[#ff4455] font-bold">{gameState.resources.volts} V</span>{(subPart === 2 || gameState.resources.baud > 0) ? <> and <span className="text-[#38bdf8] font-bold">{gameState.resources.baud} Bd</span></> : null}.</div>
                 {(gameState.gameMode === 'speedrun' || gameState.gameMode === 'squad') && (
                   <div className="flex items-center justify-between text-xs text-cyan-300 font-mono py-0.5 border-t border-neutral-800">
                     <span className="text-neutral-400 font-bold">{gameState.gameMode === 'squad' ? '👥 Squad Timer (Frozen):' : '⚡ Speedrun Timer (Frozen):'}</span>
@@ -6557,7 +6678,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                       💀 SQUAD WIPE · CHECKPOINT SAVED (RUN #{speedrunRunsRef.current})
                     </span>
                     <span className="text-xs text-neutral-400 font-mono">
-                      Saved: {subPartRef.current === 2 ? `Part 2 (Resolution ${resolutionRef.current})` : `Part 1 (Bit ${bitsRef.current})`} · Squad Bank: {(teamRoomRef.current?.sharedState?.totalHz || 0) + pendingSquadHzRef.current} Hz / {(teamRoomRef.current?.sharedState?.totalV || 0) + pendingSquadVRef.current} V
+                      Saved: {subPartRef.current === 2 ? `Part 2 (Resolution ${resolutionRef.current})` : `Part 1 (Bit ${bitsRef.current})`} · Squad Bank: <span className="text-[#33ff66] font-bold">{(teamRoomRef.current?.sharedState?.totalHz || 0) + pendingSquadHzRef.current} HZ</span> / <span className="text-[#ff4455] font-bold">{(teamRoomRef.current?.sharedState?.totalV || 0) + pendingSquadVRef.current} V</span>
                     </span>
                     <span className="text-[11px] text-emerald-400 font-mono">
                       Select READY UP to resume with squad, or RETURN TO PILOT ROOM!
@@ -6576,15 +6697,17 @@ export const DimensionCanvas: React.FC<Props> = ({
                 ) : (deathScreen.target === 'bit' && deathScreen.costHz === 0 && deathScreen.costV === 0) ? (
                   <span className="text-emerald-300 font-bold">COMPILE BIT 1 (FREE)?</span>
                 ) : deathScreen.target === 'resolution' ? (
-                  resolution >= 9 ? (
+                  (deathScreen.currentResolution ?? resolution) >= 9 ? (
                     <span className="text-amber-300 font-mono">BOSS 2 ENCOUNTER: DEFEAT FRACTURE SOVEREIGN TO UNLOCK RESOLUTION 10 (240 FPS)</span>
+                  ) : ((deathScreen.currentResolution ?? resolution) === 0 && (deathScreen.costBaud || 0) === 0 && deathScreen.costHz === 0 && deathScreen.costV === 0) ? (
+                    <span className="text-emerald-300 font-bold">COMPILE RESOLUTION 1 (FREE)?</span>
                   ) : (
-                    <span>SPEND {deathScreen.costBaud} BD, {deathScreen.costHz} HZ & {deathScreen.costV} V TO COMPILE RESOLUTION {resolution + 1}?</span>
+                    <span>SPEND <span className="text-[#38bdf8]">{deathScreen.costBaud} Bd</span>, <span className="text-[#33ff66]">{deathScreen.costHz} HZ</span> &amp; <span className="text-[#ff4455]">{deathScreen.costV} V</span> TO COMPILE RESOLUTION {(deathScreen.currentResolution ?? resolution) + 1}?</span>
                   )
                 ) : bits >= 9 ? (
                   <span className="text-amber-300 font-mono">BOSS 1 ENCOUNTER: DEFEAT CORRUPTED SOVEREIGN TO UNLOCK BIT 10</span>
                 ) : (
-                  <span>SPEND {deathScreen.costHz} HZ AND {deathScreen.costV} V TO COMPILE? ({bits}/10 BITS)</span>
+                  <span>SPEND <span className="text-[#33ff66]">{deathScreen.costHz} HZ</span> AND <span className="text-[#ff4455]">{deathScreen.costV} V</span> TO COMPILE? ({bits}/10 BITS)</span>
                 )}
               </div>
 
@@ -6665,7 +6788,11 @@ export const DimensionCanvas: React.FC<Props> = ({
                       <span>{deathScreen.target === 'resolution' ? 'CHALLENGE BOSS 2' : 'CHALLENGE BOSS 1'}</span>
                     </button>
                   ) : (() => {
-                    const isFreeCompile = deathScreen.target === 'N' || (deathScreen.target === 'bit' && deathScreen.costHz === 0 && deathScreen.costV === 0);
+                    const targetResNum = (deathScreen.currentResolution ?? resolution) + 1;
+                    const isFreeCompile =
+                      deathScreen.target === 'N' ||
+                      (deathScreen.target === 'bit' && deathScreen.costHz === 0 && deathScreen.costV === 0) ||
+                      (deathScreen.target === 'resolution' && targetResNum === 1 && (deathScreen.costBaud || 0) === 0 && deathScreen.costHz === 0 && deathScreen.costV === 0);
                     return (
                       <div className="flex flex-col items-center gap-1.5 w-full sm:w-auto">
                         <button
@@ -6695,10 +6822,10 @@ export const DimensionCanvas: React.FC<Props> = ({
                           <span>
                             {deathScreen.target === 'N'
                               ? 'COMPILE 1 N (FREE)'
+                              : deathScreen.target === 'resolution'
+                              ? `COMPILE RES ${targetResNum}${isFreeCompile ? ' (FREE)' : ''}`
                               : isFreeCompile
                               ? 'COMPILE BIT 1 (FREE)'
-                              : deathScreen.target === 'resolution'
-                              ? `COMPILE RES ${resolution + 1}`
                               : `COMPILE BIT ${bits + 1}`}
                           </span>
                         </button>
@@ -6800,65 +6927,6 @@ export const DimensionCanvas: React.FC<Props> = ({
                   </button>
                 )}
 
-                {/* MAIN MENU (available across all modes including Squad Co-Op) */}
-                {(gameState.gameMode === 'story' || gameState.gameMode === 'squad' || gameState.hasCompletedStory || onOpenMainMenu) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (deathBufferSeconds > 0) return;
-                      if (gameState.gameMode === 'squad' && teamRoomRef.current) {
-                        const myId = getLocalPilotId();
-                        voteToContinueRun(teamRoomRef.current.code, myId, false);
-                        pauseAndSaveTeamRun(teamRoomRef.current.code, {
-                          act1Bits: bitsRef.current,
-                          act1Resolution: resolutionRef.current,
-                          act1SubPart: subPartRef.current,
-                          speedrunTime: speedrunTimeRef.current,
-                          runNumber: speedrunRunsRef.current,
-                          totalHz: (teamRoomRef.current.sharedState?.totalHz || 0) + pendingSquadHzRef.current,
-                          totalV: (teamRoomRef.current.sharedState?.totalV || 0) + pendingSquadVRef.current,
-                          totalBaud: (teamRoomRef.current.sharedState?.totalBaud || 0) + pendingSquadBaudRef.current,
-                        });
-                        saveLastSpeedrunRoomCode(teamRoomRef.current.code);
-                      }
-                      isRoundEndedRef.current = true;
-                      setDeathScreen(null);
-                      deathScreenRef.current = null;
-                      setIntegrity(100);
-                      integrityRef.current = 100;
-                      isGhostRef.current = false;
-                      setIsGhost(false);
-                      onUpdateState(prev => ({ ...prev, carrierActive: false }));
-                      if (onOpenMainMenu) onOpenMainMenu();
-                    }}
-                    disabled={deathBufferSeconds > 0}
-                    className={`w-full sm:w-auto px-4 py-3 rounded-lg text-xs transition-all font-mono font-bold flex items-center justify-center gap-1.5 border ${
-                      deathBufferSeconds > 0
-                        ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
-                        : 'bg-neutral-900 hover:bg-neutral-800 text-amber-300 border-amber-600/60 active:scale-95 cursor-pointer'
-                    }`}
-                  >
-                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                    <span>MAIN MENU</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (deathBufferSeconds > 0) return;
-                    setIsOptionsMenuOpen(true);
-                  }}
-                  disabled={deathBufferSeconds > 0}
-                  className={`w-full sm:w-auto px-4 py-3 rounded-lg text-xs transition-all font-mono font-bold flex items-center justify-center gap-1.5 border ${
-                    deathBufferSeconds > 0
-                      ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
-                      : 'bg-neutral-900 hover:bg-neutral-800 text-cyan-300 border-cyan-600/60 active:scale-95 cursor-pointer'
-                  }`}
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  <span>OPTIONS</span>
-                </button>
               </div>
 
               {Math.abs(gameState.resources.volts - gameState.resources.hertz) >= 20 && (
@@ -6886,12 +6954,44 @@ export const DimensionCanvas: React.FC<Props> = ({
                   }`}
                 >
                   <Zap className="w-4 h-4 text-purple-400" />
-                  <span>HARMONIZE RESERVES (Equalize {gameState.resources.hertz} Hz ⇄ {gameState.resources.volts} V)</span>
+                  <span>HARMONIZE RESERVES (Equalize <span className="text-[#33ff66] font-bold">{gameState.resources.hertz} HZ</span> ⇄ <span className="text-[#ff4455] font-bold">{gameState.resources.volts} V</span>)</span>
                 </button>
               )}
             </div>
           </div>
         )}
+
+        {/* BIT 10 POST-SOVEREIGN MISSION BRIEFING MODAL (SHOWN ONCE ON FIRST DEATH AT BIT 10) */}
+        <StoryIntroModal
+          isOpen={isBit10BriefingOpen}
+          variant="bit10"
+          onClose={() => {
+            isBit10BriefingOpenRef.current = false;
+            setIsBit10BriefingOpen(false);
+            hasSeenBit10BriefingRef.current = true;
+            const upgrade = RESOLUTION_UPGRADES[0];
+            setSubPart(2);
+            subPartRef.current = 2;
+            setBits(10);
+            bitsRef.current = 10;
+            setResolution(1);
+            resolutionRef.current = 1;
+            onUpdateState(prev => ({
+              ...prev,
+              currentN: 2,
+              act1PurchasedN: true,
+              act1Bits: 10,
+              act1SubPart: 2,
+              act1Resolution: Math.max(prev.act1Resolution || 0, 1),
+              hasSeenBit10Briefing: true,
+            }));
+            soundEngine.playCompileLevelUp('standard');
+            onLogAction(`COMPILED ${upgrade.name} (${upgrade.fps})! ${upgrade.desc}`);
+            onLogAction("RESOLUTION 1 COMPILED: Overshields unlocked! Squares at 100 HP grant +20 Overshield (up to 10 stacks / 300 effective HP).");
+            deathBufferSecondsRef.current = 0;
+            void handleContinueAfterDeath();
+          }}
+        />
 
         {/* STORY / CANONICAL FINAL BOSS COMPLETION MODAL */}
         {storyCompleteModal && (
@@ -7086,9 +7186,30 @@ export const DimensionCanvas: React.FC<Props> = ({
         {/* SURVIVAL DEATH SUMMARY MODAL */}
         {survivalDeathModal && (
           <div className="absolute inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-            <div className="bg-neutral-900 border-2 border-rose-500 rounded-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto my-auto p-5 sm:p-6 text-center shadow-2xl shadow-rose-950/80 animate-in fade-in zoom-in-95 duration-200">
+            <div className="relative bg-neutral-900 border-2 border-rose-500 rounded-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto my-auto p-5 sm:p-6 text-center shadow-2xl shadow-rose-950/80 animate-in fade-in zoom-in-95 duration-200">
+              <button
+                type="button"
+                onClick={() => {
+                  if (deathBufferSeconds > 0) return;
+                  setSurvivalDeathModal(null);
+                  survivalDeathModalRef.current = null;
+                  isRoundEndedRef.current = false;
+                  integrityRef.current = 100;
+                  setIntegrity(100);
+                  if (onOpenMainMenu) onOpenMainMenu();
+                }}
+                disabled={deathBufferSeconds > 0}
+                className={`absolute top-3 right-3 sm:top-4 sm:right-4 px-2.5 py-1.5 font-mono text-[10px] rounded-lg border transition-all font-bold flex items-center justify-center gap-1 ${
+                  deathBufferSeconds > 0
+                    ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
+                    : 'bg-neutral-900 hover:bg-neutral-800 text-amber-300 border-amber-600/60 active:scale-95 cursor-pointer'
+                }`}
+              >
+                <Sparkles className="w-3 h-3 text-amber-400" />
+                <span>MAIN MENU</span>
+              </button>
               <div className="text-3xl mb-2">⚔️ 💥 ⚔️</div>
-              <h2 className="text-xl sm:text-2xl font-black font-mono text-rose-400 tracking-wider mb-2">
+              <h2 className="text-xl sm:text-2xl font-black font-mono text-rose-400 tracking-wider mb-2 px-16">
                 SURVIVAL MISSION TERMINATED
               </h2>
               <p className="text-xs sm:text-sm text-neutral-300 font-mono mb-6">
@@ -7139,43 +7260,6 @@ export const DimensionCanvas: React.FC<Props> = ({
                 >
                   <span>⚔️ RETRY SURVIVAL</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (deathBufferSeconds > 0) return;
-                    setSurvivalDeathModal(null);
-                    survivalDeathModalRef.current = null;
-                    isRoundEndedRef.current = false;
-                    integrityRef.current = 100;
-                    setIntegrity(100);
-                    if (onOpenMainMenu) onOpenMainMenu();
-                  }}
-                  disabled={deathBufferSeconds > 0}
-                  className={`py-3 px-4 font-mono text-xs rounded-xl border transition-all font-bold flex items-center justify-center gap-1.5 ${
-                    deathBufferSeconds > 0
-                      ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
-                      : 'bg-neutral-900 hover:bg-neutral-800 text-amber-300 border-amber-600/60 cursor-pointer'
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>MAIN MENU</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (deathBufferSeconds > 0) return;
-                    setIsOptionsMenuOpen(true);
-                  }}
-                  disabled={deathBufferSeconds > 0}
-                  className={`py-3 px-4 font-mono text-xs rounded-xl border transition-all font-bold flex items-center justify-center gap-1.5 ${
-                    deathBufferSeconds > 0
-                      ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
-                      : 'bg-neutral-900 hover:bg-neutral-800 text-cyan-300 border-cyan-600/60 cursor-pointer'
-                  }`}
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  <span>OPTIONS</span>
-                </button>
               </div>
             </div>
           </div>
@@ -7184,9 +7268,30 @@ export const DimensionCanvas: React.FC<Props> = ({
         {/* ARCADE / SQUAD ARCADE MODE KILL SCREEN MODAL */}
         {arcadeKillModal && (
           <div className="absolute inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-            <div className="bg-[#120f1a] border-2 border-purple-500 rounded-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto my-auto p-5 sm:p-6 text-center shadow-2xl shadow-purple-950/90 animate-in fade-in zoom-in-95 duration-200 space-y-3 sm:space-y-4">
+            <div className="relative bg-[#120f1a] border-2 border-purple-500 rounded-2xl max-w-lg w-full max-h-[92vh] overflow-y-auto my-auto p-5 sm:p-6 text-center shadow-2xl shadow-purple-950/90 animate-in fade-in zoom-in-95 duration-200 space-y-3 sm:space-y-4">
+              <button
+                type="button"
+                onClick={() => {
+                  if (deathBufferSeconds > 0) return;
+                  setArcadeKillModal(null);
+                  arcadeKillModalRef.current = null;
+                  isRoundEndedRef.current = false;
+                  integrityRef.current = 100;
+                  setIntegrity(100);
+                  if (onOpenMainMenu) onOpenMainMenu();
+                }}
+                disabled={deathBufferSeconds > 0}
+                className={`absolute top-3 right-3 sm:top-4 sm:right-4 px-2.5 py-1.5 font-mono text-[10px] rounded-lg border transition-all font-bold flex items-center justify-center gap-1 ${
+                  deathBufferSeconds > 0
+                    ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
+                    : 'bg-neutral-900 hover:bg-neutral-800 text-amber-300 border-amber-600/60 active:scale-95 cursor-pointer'
+                }`}
+              >
+                <Sparkles className="w-3 h-3 text-amber-400" />
+                <span>MAIN MENU</span>
+              </button>
               <div className="text-3xl animate-pulse">{gameState.gameMode === 'squad' ? '👥 💀 🕹️' : '🕹️ 💀 🕹️'}</div>
-              <h2 className="text-xl sm:text-2xl font-black font-mono text-purple-400 tracking-wider">
+              <h2 className="text-xl sm:text-2xl font-black font-mono text-purple-400 tracking-wider px-16">
                 {gameState.gameMode === 'squad' ? 'SQUAD ARCADE WIPED — GAME OVER' : 'ARCADE RUN TERMINATED'}
               </h2>
               <div className="text-xs text-neutral-300 font-mono leading-relaxed bg-black/60 p-4 rounded-xl border border-neutral-800 text-left space-y-2">
@@ -7263,43 +7368,6 @@ export const DimensionCanvas: React.FC<Props> = ({
                     <span>PILOT ROOM</span>
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (deathBufferSeconds > 0) return;
-                    setArcadeKillModal(null);
-                    arcadeKillModalRef.current = null;
-                    isRoundEndedRef.current = false;
-                    integrityRef.current = 100;
-                    setIntegrity(100);
-                    if (onOpenMainMenu) onOpenMainMenu();
-                  }}
-                  disabled={deathBufferSeconds > 0}
-                  className={`py-3 px-4 font-mono text-xs rounded-xl border transition-all font-bold flex items-center justify-center gap-1.5 ${
-                    deathBufferSeconds > 0
-                      ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
-                      : 'bg-neutral-900 hover:bg-neutral-800 text-amber-300 border-amber-600/60 cursor-pointer'
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>MAIN MENU</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (deathBufferSeconds > 0) return;
-                    setIsOptionsMenuOpen(true);
-                  }}
-                  disabled={deathBufferSeconds > 0}
-                  className={`py-3 px-4 font-mono text-xs rounded-xl border transition-all font-bold flex items-center justify-center gap-1.5 ${
-                    deathBufferSeconds > 0
-                      ? 'bg-neutral-900 text-neutral-600 border-neutral-800 cursor-not-allowed opacity-60'
-                      : 'bg-neutral-900 hover:bg-neutral-800 text-cyan-300 border-cyan-600/60 cursor-pointer'
-                  }`}
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  <span>OPTIONS</span>
-                </button>
               </div>
             </div>
           </div>
@@ -7327,7 +7395,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                   </span>
                 </div>
                 <div className="pt-2 border-t border-neutral-800 text-[11px] text-emerald-400 font-bold">
-                  Corrupted Sovereign conquered across escalating Arcade difficulty (Bits 1–9 · Cycling 2 Hard)!
+                  [JEF] conquered across escalating Arcade difficulty (Bits 1–9 · Cycling 2 Hard)!
                 </div>
                 {gameState.gameMode !== 'squad' && Boolean(userSettingsRef.current?.controls?.devToolsEnabled) && (
                   <div className="text-[10px] font-mono text-amber-400 bg-amber-950/50 border border-amber-600/40 rounded p-1.5 text-center font-bold">

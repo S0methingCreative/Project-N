@@ -585,7 +585,7 @@ export async function createSpeedrunRoom(
     initials: pilotInitials,
     color: pilotColor,
     isHost: true,
-    isReady: true,
+    isReady: false,
     integrity: 100,
     isKnocked: false,
     x: 0.5,
@@ -720,6 +720,7 @@ export async function joinSpeedrunRoom(
       ...existing,
       initials: pilotInitials,
       color: pilotColor,
+      isReady: baseRoom.status === 'lobby' ? false : Boolean(existing.isReady),
       lastHeartbeat: now,
       slotIndex: typeof existing.slotIndex === 'number' ? existing.slotIndex : existing.isHost ? 0 : 1,
       joinedAt: existing.joinedAt || now,
@@ -775,7 +776,7 @@ export async function joinSpeedrunRoom(
     initials: pilotInitials,
     color: pilotColor,
     isHost: false,
-    isReady: true,
+    isReady: false,
     integrity: 100,
     isKnocked: false,
     x: 0.5,
@@ -1747,6 +1748,7 @@ export async function returnToPilotRoom(
     }
     if (local.pilots) {
       for (const p of Object.values(local.pilots)) {
+        p.isReady = false;
         p.readyToContinue = false;
         p.integrity = 100;
         p.isKnocked = false;

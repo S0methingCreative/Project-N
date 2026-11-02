@@ -60,6 +60,7 @@ const DEFAULT_GAME_STATE: GameState = {
   deathScreen: null,
   totalRuns: 1,
   hasCompletedStory: false,
+  hasSeenBit10Briefing: false,
   storyCompletions: 0,
   gameMode: 'story',
 };
@@ -364,6 +365,7 @@ export default function App() {
           gameMode: 'story',
           totalRuns: gameState.totalRuns,
           hasCompletedStory: gameState.hasCompletedStory,
+          hasSeenBit10Briefing: Boolean(gameState.hasSeenBit10Briefing),
           storyCompletions: gameState.storyCompletions || 0,
         };
         localStorage.setItem(STORY_SAVE_KEY, JSON.stringify(storyToSave));
@@ -465,6 +467,7 @@ export default function App() {
             act1Resolution: 0,
             currentN: 2,
             engineCompilePercent: 100,
+            hasSeenBit10Briefing: false,
           };
         }
         return {
@@ -534,6 +537,7 @@ export default function App() {
           gameMode: 'story',
           totalRuns: (gameState.totalRuns || 1) + 1,
           hasCompletedStory: gameState.hasCompletedStory,
+          hasSeenBit10Briefing: false,
           highScores: gameState.highScores || loadSavedHighScores(),
           act: 1,
           currentN: 0,
@@ -907,6 +911,8 @@ export default function App() {
               activeRoom={teamRoom}
               setActiveRoom={setTeamRoom}
               initialCode={initialRoomCode}
+              userSettings={userSettings}
+              onUpdateSettings={handleUpdateSettings}
             />
           </React.Suspense>
         )}

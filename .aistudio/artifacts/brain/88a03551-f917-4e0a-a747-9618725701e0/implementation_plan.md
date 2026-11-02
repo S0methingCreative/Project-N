@@ -1,90 +1,107 @@
-# Story Mode Mission Briefing & Free Compile Progression Tutorial
+# Persistent Bit 8 Landscape & Depth-Layered Resolution Background
 
-## Overview
-Implement an authentic retro phosphor terminal boot screen for new Story Mode campaigns, dynamically personalized with the pilot's callsign. The briefing clearly introduces the narrative context, the dual-zone tap-right polarity control mechanic, and explicitly normalizes dying as the core roguelite progression loop ("De-coherence is progress"). In addition, make the first two Story Mode compiles (N = 1 and Bit 1) completely free (0 Hz, 0 V) and highlight the compile button with a glowing phosphor border and pulsing arrow indicator to guide new players.
+Restores the background to the exact Bit 8 pixel landscape immediately upon defeating the first boss (`Res = 0`), maintains the full Bit 1–8 generated world through the end of Story Mode, and integrates the Resolution (`Res 1–10`) cosmic and subatomic visual upgrades into a depth-ordered scene where sky phenomena appear behind the pixel mountains and foreground particle/telemetry effects appear in front.
 
----
+## User Review & Critical Decisions
 
-## User Clarifications Incorporated
-- **Trigger**: Appears on new Story runs (with an accessible "Skip Briefing" option).
-- **Presentation**: Retro typewriter boot terminal with tap-to-reveal / fast-forward capability.
-- **Tutorial Guidance**: Glowing phosphor border and pulsing arrow indicator highlighting the first two free compiles in the compile screen.
+> [!IMPORTANT]
+> The following design decisions have been confirmed and govern the Part Two background rendering architecture:
 
----
-
-## Detailed Implementation Steps
-
-### 1. Retro Mission Briefing Modal (`src/components/StoryIntroModal.tsx`)
-Create a dedicated CRT phosphor terminal component with:
-- **Visual Aesthetic**:
-  - Deep vector black background with subtle scanline / CRT vignette effects.
-  - Glowing phosphor green/cyan monospaced vector typography (`text-emerald-400` / `text-cyan-300`).
-  - Terminal header displaying system status: `SYSTEM BOOT // PROJECT N-DIMENSIONAL COMPILER`.
-- **Dynamic Content & Callsign**:
-  - Read active player callsign via `getPlayerCode()` (defaults to `PIL` if not yet configured).
-  - Terminal script structured to match the user's brief:
-    ```text
-    > GREETINGS INTERDIMENSIONAL TRAVELER.
-    > PILOT CALLSIGN [XXX] LOCKED IN.
-    > INITIALIZING PROJECT N-DIMENSIONAL COMPILER...
-    >
-    > PRIMARY MISSION:
-    > Synchronize polarizer to match incoming waves (crest) and troughs
-    > to collect HZ and V frequencies. Compile bits to power the visual matrix.
-    >
-    > CONTROL TELEMETRY:
-    > Tap the RIGHT SIDE of your screen to invert polarity in sync with incoming signals.
-    >
-    > CORE PROTOCOL — DE-COHERENCE IS PROGRESS:
-    > Dissolution is not failure. It is the intended calibration cycle.
-    > Each collapse returns your collected HZ & V to bank permanent dimensional upgrades.
-    >
-    > INITIAL SUBSIDY:
-    > Your first two compiles (N = 1 and Bit 1) are subsidized (0 HZ, 0 V)
-    > to establish your initial dimensional foothold.
-    >
-    > Level up and ascend to conquer the first dimension.
-    ```
-- **Interactivity**:
-  - Typewriter text reveal with character/line cadence and soft terminal click sound.
-  - Tapping anywhere accelerates / immediately reveals all text.
-  - Distinct `[SKIP BRIEFING]` button in the top corner and an `[ENGAGE MISSION]` action button upon completion.
+- **Confirmed Decision 1 — Base Canvas Color in Part Two**: Keep the Bit 8 deep emerald-void base color (`#022015`) throughout Part Two (`Res 0–10`) and layer all Resolution cosmic/nebula effects translucently so the Bit 1–8 palette remains cohesive.
+- **Confirmed Decision 2 — Depth-Ordered Scene Layering**: Place deep-sky Resolution additions (distant cosmic stars, rotating spiral galaxies, and Orion Nebula volumetric clouds/filaments) **behind** the Bit 4 chunky pixel mountains and Bit 8 layered pixel hills, while rendering foreground Resolution additions (stardust motes, subatomic particle streams, the far-right Nucleon Core, scanline refresh sweeps, and sector markers) **in front** of the terrain.
+- **Confirmed Decision 3 — Pure Bit 8 Reset at `Res = 0`**: Immediately after defeating Corrupted Sovereign (`subPart === 2, resolution === 0`), render strictly the Bit 1–8 background with zero Resolution overlays until `Res 1` is compiled.
 
 ---
 
-### 2. Story Mode Lifecycle Integration (`src/App.tsx` & `src/components/DimensionCanvas.tsx`)
-- In `src/App.tsx` and `src/components/DimensionCanvas.tsx`:
-  - When a user starts a fresh Story campaign (from `MainMenuModal` with `forceNew=true` or when starting Story with 0 bits and 0 N), show the `StoryIntroModal`.
-  - When the user presses `[ENGAGE MISSION]` or `[SKIP BRIEFING]`, dismiss the modal and seamlessly activate carrier audio and start wave generation.
-  - Ensure existing story runs (resumed runs) bypass the intro unless explicitly starting a new campaign.
+## 1. Overview & Core Concept
+
+- **What It Does**: Unifies the visual progression of Story Mode so the 8-bit world built by the player during Part One (Bits 1–8) is never discarded in Part Two. Instead, defeating the Bit 10 boss clears the temporary boss/transcendence overlays back to the pure Bit 8 landscape at `Res = 0`, and each compiled Resolution (`Res 1` to `Res 10`) progressively enriches that same world with deep-sky cosmic phenomena behind the mountains and subatomic/frame-rate effects in the foreground.
+- **Target Audience / Persona**: Story Mode players progressing from the Bit era into the Resolution era who expect visual continuity and cumulative world-building.
+- **Key Value**: Preserves the player's earned Bit 1–8 visual milestones all the way to the finale while creating natural parallax depth between the retro pixel terrain and the high-resolution cosmic awakening.
 
 ---
 
-### 3. First Two Compiles Free & Highlight Guidance (`src/components/DimensionCanvas.tsx`)
-- **Cost Adjustment for First Two Compiles**:
-  - **Compile 1 (N = 1)**: Currently free (`costHz: 0, costV: 0`). Retained as 0 Hz, 0 V.
-  - **Compile 2 (Bit 1)**: In Story Mode, update the upgrade cost check so Bit 1 is subsidized at `0 Hz, 0 V` (instead of 1 Hz, 1 V), fulfilling the user requirement that the first two compiles are completely free.
-- **Visual Highlight on Compile Screen**:
-  - In `DimensionCanvas.tsx` inside the death/compile overlay (`deathScreen`):
-    - Identify when the player is on Compile 1 (`target === 'N'`) or Compile 2 (`target === 'bit' && bits === 0`).
-    - Render an animated pulsing phosphor border around the compile button (`ring-2 ring-emerald-400 animate-pulse shadow-lg shadow-emerald-500/50`).
-    - Display a pulsing arrow indicator above/inside the button: `▲ TUTORIAL: TAP TO COMPILE (FREE) ▲`.
-    - Provide a reassuring contextual message: `De-coherence banked your energy! Tap compile to materialize your graphics engine.`
+## 2. User Experience & Visual Design
+
+- **Key User Flows**:
+  1. **Bits 1–8 (Part One Build-Up)**: Each Bit adds its signature pixel layer (horizon datum, stepped floor, constellations, mountains, dithered nebula, pixel sunrise, aurora ribbons, and layered hills with star crosses).
+  2. **Bits 9–10 (Boss Encounter & Victory)**: Bit 9 applies the diminished corrupted veil and siege spikes; Bit 10 shows the harmonized beacon celebration until Boss 1 is defeated.
+  3. **Post-Boss Transition (`Res = 0`)**: As soon as Boss 1 is defeated and Part Two begins at `Res = 0`, the temporary Bit 9/10 overlays clear and the canvas returns to the exact, unadulterated **Bit 8** pixel landscape.
+  4. **Resolution Awakening (`Res 1` – `Res 10`)**: As the player compiles `Res 1` through `Res 10`, deep-space stars, spiral galaxies, and translucent Orion Nebula clouds emerge in the sky behind the pixel mountain range, while subatomic particle streams, the Nucleon Core, frame-rate scanlines, and sector telemetry render in the foreground over the scene.
+- **Visual Identity & Theme**:
+  - *Aesthetic Direction*: Cumulative retro-to-cosmic synthesis — chunky 8-bit pixel topography anchored against translucent volumetric nebula clouds and relativistic subatomic telemetry.
+  - *Color Palette & Mood*: Dominant Bit 8 emerald-void canvas (`#022015`), phosphor-green pixel horizon and mountains (`rgba(25, 95, 45, 0.32)` / `rgba(50, 180, 95, 0.22)`), layered with translucent `[O III]` cyan-jade (`rgba(0, 235, 220, ...)`) and `Hα` crimson-magenta (`rgba(245, 45, 135, ...)`) nebular gasses.
 
 ---
 
-## Verification & Testing Plan
-1. **New Story Run Flow**:
-   - Launch Story Mode from Main Menu -> Confirm the terminal typewriter sequence boots up.
-   - Test tap-to-reveal (instant text completion) and "Skip Briefing" button.
-   - Verify dynamic callsign interpolation (`[PIL]` or registered 3-letter FTC code).
-2. **Control & Gameplay Education**:
-   - Verify instructions for right-side tap to invert polarity are clear.
-   - Verify that upon player collision / collapse in the 0D void, death screen cleanly explains death is progress.
-3. **Free Compile 1 & 2 Verification**:
-   - At death in 0D Void: Compile N = 1 is 0 HZ / 0 V and displays the glowing phosphor highlight and pulsing arrow indicator.
-   - Upon compiling N = 1 and entering Bit 0: dying prompts Bit 1 compile at 0 HZ / 0 V with the glowing phosphor highlight and pulsing arrow indicator.
-   - At Bit 1+: Verify Bit 2 costs regular resources (2 Hz, 2 V) without the tutorial pulsing ring.
-4. **Code Quality**:
-   - Run `lint_applet` (`tsc --noEmit`) to verify zero syntax/type errors.
-   - Run `compile_applet` (`npm run build`) to ensure successful Vite bundling.
+## 3. Key Product Decisions & Trade-Offs
+
+- **Decision 1: Unified Painter's Algorithm Pipeline Instead of Separate Part 1 / Part 2 Branches**
+  - *Chosen Approach*: Replace the early-return `subPart === 2` background branch with a single unified depth-sorted rendering pipeline where `effectiveBits = subPart === 2 ? 8 : currentBits`.
+  - *Why*: Guarantees zero code duplication for the Bit 1–8 layers, ensures `Res = 0` is 100% identical to Bit 8, and allows sky-level `Res 1–10` effects to be drawn between the Bit sky layers and the Bit mountain/hill silhouettes.
+  - *Alternatives Considered*: Drawing all `Res` layers after all `Bit` layers, which was passed over because nebula clouds and distant galaxies would wash over the pixel mountain silhouettes instead of sitting naturally in the sky behind them.
+
+---
+
+## 4. Technical Architecture & Data Strategy *(Technical Reference)*
+
+- **Architecture & Component Diagram**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                   Dynamic Void Background Renderer                      │
+│            (effectiveBits = subPart === 2 ? 8 : currentBits)            │
+└───────────────────────────────────┬─────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 1. Base Canvas Fill                                                     │
+│    • Part 1: voidBases[currentBits]  |  Part 2: voidBases[8] (#022015)  │
+└───────────────────────────────────┬─────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 2. Bit Sky & Horizon Foundation (Bits 1–3, 5–7)                         │
+│    • Bit 1 Horizon Datum & Seed Coordinates                             │
+│    • Bit 2 Stepped Perspective Floor & Twinkling Pixel Stars            │
+│    • Bit 3 Pixel Constellation Nodes & Connectors                       │
+│    • Bit 5 Checkerboard Dithered Sky Nebula                             │
+│    • Bit 6 Ceiling Raster Bars & 8-Bit Horizon Sunrise Disk             │
+│    • Bit 7 Stepped Pixel Aurora Ribbons                                 │
+└───────────────────────────────────┬─────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 3. Deep-Sky Resolution Layer (Only when subPart === 2 && res >= 1)      │
+│    • Distant Cosmic Pinpoint Starfield (Res 1+)                         │
+│    • Rotating Translucent Spiral Galaxies (Res 2+)                      │
+│    • Orion Nebula Volumetric Clouds & Gossamer Filaments (Res 1+ / 2+)  │
+└───────────────────────────────────┬─────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 4. Midground Pixel Terrain & Mote Layer (Bits 4, 5, 8)                  │
+│    • Bit 4 Chunky Stepped Pixel Mountains (occludes sky nebula edges)   │
+│    • Bit 8 Layered Foreground Pixel Hills & 3x3 Sparkling Star Crosses  │
+│    • Bit 4 Drifting Dust Motes & Bit 5 Rising Data Packets              │
+└───────────────────────────────────┬─────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 5. Foreground Resolution & Part 1 Event Layer                           │
+│    • If Part 1 (Bit 9 / 10): Corrupted Siege Veil or Transcendence Grid │
+│    • If Part 2 (Res >= 1):                                              │
+│      - Nebular Stardust Motes (Res 2+)                                  │
+│      - Subatomic Particle Stream (Res 1+) & Nucleon Core (Res 2+)       │
+│      - Frame-Rate Scanline Sweep (15–240 FPS)                           │
+│      - Sector Telemetry (Res 6–8), Spotlight (Res 9), Arcs (Res 10)     │
+│    • Contextual Touch Guides (Polarizer Tap & Drag-Move Guides)         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Data Model & State**:
+  - Uses existing `subPart` (`1 | 2`), `currentBits` (`0..10`), and `resolution` (`0..10`) parameters passed to the background rendering routine.
+  - When `subPart === 2`, `effectiveBits` evaluates to `8`, locking in all Bit 1–8 layers while bypassing the Bit 9 and Bit 10 special event overlays.
+- **Interactive Component & State Mapping**:
+  - **Boss 1 Defeat (`subPart` transitions `1 -> 2`, `resolution = 0`)**: The renderer immediately switches `effectiveBits` from `10` to `8` and skips all `resolution >= 1` layers, returning the visual field to the exact Bit 8 state.
+  - **Mission Briefing Continue / Resolution Upgrades (`resolution = 1..10`)**: Each increment of `resolution` activates the corresponding deep-sky and foreground Resolution passes around the persistent Bit 8 terrain through the end of Story Mode.

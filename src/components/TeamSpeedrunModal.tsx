@@ -15,6 +15,8 @@ import {
   X,
   RefreshCw,
   Sparkles,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import {
   SpeedrunRoom,
@@ -40,6 +42,8 @@ import {
   getPlayerCode,
   renderInitialsBadge,
 } from '../utils/pilotProfile';
+import { soundEngine } from '../audio/soundEngine';
+import { UserSettings, loadUserSettings, saveUserSettings } from '../utils/settings';
 
 interface TeamSpeedrunModalProps {
   isOpen: boolean;
@@ -48,6 +52,8 @@ interface TeamSpeedrunModalProps {
   activeRoom: SpeedrunRoom | null;
   setActiveRoom: (room: SpeedrunRoom | null) => void;
   initialCode?: string | null;
+  userSettings?: UserSettings;
+  onUpdateSettings?: (settings: UserSettings) => void;
 }
 
 export const TeamSpeedrunModal: React.FC<TeamSpeedrunModalProps> = ({
@@ -57,6 +63,8 @@ export const TeamSpeedrunModal: React.FC<TeamSpeedrunModalProps> = ({
   activeRoom,
   setActiveRoom,
   initialCode,
+  userSettings,
+  onUpdateSettings,
 }) => {
   const savedRoomCode = getLastSpeedrunRoomCode();
   const [roomCodeInput, setRoomCodeInput] = useState<string>(initialCode || savedRoomCode || '');
@@ -188,10 +196,31 @@ export const TeamSpeedrunModal: React.FC<TeamSpeedrunModalProps> = ({
 
   const pilotsList = getSortedPilots(activeRoom?.pilots, activeRoom?.hostPilotId);
   const pilotCount = Math.max(1, pilotsList.length);
+  const readyCount = pilotsList.filter(p => p.isReady).length;
+  const allPilotsReady = pilotsList.length > 0 && readyCount === pilotsList.length;
   const resourceScale = getTeamResourceScale(pilotCount);
   const bossHp = getTeamBossMaxHp(pilotCount);
   const isHost = activeRoom ? activeRoom.hostPilotId === localPilotId : false;
   const myPilot = activeRoom ? activeRoom.pilots[localPilotId] : null;
+
+  const currentSettings = userSettings || loadUserSettings();
+  const isMuted = Boolean(currentSettings.audio.muteAll);
+
+  const handleToggleMuteAll = () => {
+    const base = userSettings || loadUserSettings();
+    const updated: UserSettings = {
+      ...base,
+      audio: {
+        ...base.audio,
+        muteAll: !base.audio.muteAll,
+      },
+    };
+    saveUserSettings(updated);
+    soundEngine.applyAudioSettings(updated.audio);
+    if (onUpdateSettings) {
+      onUpdateSettings(updated);
+    }
+  };
 
   const hasSavedProgress = Boolean(
     activeRoom && (
@@ -218,19 +247,24 @@ export const TeamSpeedrunModal: React.FC<TeamSpeedrunModalProps> = ({
                   1–4 PILOTS
                 </span>
               </h2>
-              <p className="text-xs text-zinc-400 font-mono">
-                Squad Arcade Mode (Bits 1–9) · 1:1 Resource &amp; Boss HP Scaling · 5s Ghost Respawn · 1 Wipe = Game Over
-              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={onClose}
-              className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-amber-300 border border-amber-600/60 text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
-              title="Return to Main Menu"
+              onClick={handleToggleMuteAll}
+              className={`px-3 py-1.5 rounded-lg border text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+                isMuted
+                  ? 'bg-rose-950/60 hover:bg-rose-900/70 text-rose-300 border-rose-500/60'
+                  : 'bg-zinc-900 hover:bg-zinc-800 text-cyan-300 border-cyan-500/50'
+              }`}
+              title={isMuted ? 'Unmute Audio' : 'Mute All Audio'}
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>MAIN MENU</span>
+              {isMuted ? (
+                <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+              ) : (
+                <Volume2 className="w-3.5 h-3.5 text-cyan-400" />
+              )}
+              <span>{isMuted ? 'MUTED' : 'MUTE'}</span>
             </button>
             <button
               onClick={onClose}
@@ -341,22 +375,22 @@ export const TeamSpeedrunModal: React.FC<TeamSpeedrunModalProps> = ({
                   <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800">
                     <div className="text-zinc-500">1 PILOT</div>
                     <div className="text-cyan-400 font-bold text-sm">1× Resources</div>
-                    <div className="text-[11px] text-zinc-400">180 HP Boss</div>
+                    <div className="text-[11px] text-zinc-400">180 HP [JEF]</div>
                   </div>
                   <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800">
                     <div className="text-zinc-500">2 PILOTS</div>
                     <div className="text-cyan-400 font-bold text-sm">2× Resources</div>
-                    <div className="text-[11px] text-zinc-400">360 HP Boss</div>
+                    <div className="text-[11px] text-zinc-400">360 HP [JEF]</div>
                   </div>
                   <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800">
                     <div className="text-zinc-500">3 PILOTS</div>
                     <div className="text-cyan-400 font-bold text-sm">3× Resources</div>
-                    <div className="text-[11px] text-zinc-400">540 HP Boss</div>
+                    <div className="text-[11px] text-zinc-400">540 HP [JEF]</div>
                   </div>
                   <div className="p-2.5 rounded-lg bg-zinc-950/80 border border-zinc-800">
                     <div className="text-zinc-500">4 PILOTS</div>
                     <div className="text-cyan-400 font-bold text-sm">4× Resources</div>
-                    <div className="text-[11px] text-zinc-400">720 HP Boss</div>
+                    <div className="text-[11px] text-zinc-400">720 HP [JEF]</div>
                   </div>
                 </div>
                 <div className="text-[11px] text-zinc-400 leading-normal font-mono border-t border-zinc-800/80 pt-2 flex flex-col gap-1">
@@ -510,7 +544,7 @@ export const TeamSpeedrunModal: React.FC<TeamSpeedrunModalProps> = ({
                   <div className="text-sm font-bold text-cyan-400">{resourceScale}× Requirements</div>
                 </div>
                 <div>
-                  <div className="text-[10px] text-zinc-500 uppercase">Boss 1 Health (1:1)</div>
+                  <div className="text-[10px] text-zinc-500 uppercase">[JEF] Health (1:1)</div>
                   <div className="text-sm font-bold text-amber-400">{bossHp} HP (180×{pilotCount})</div>
                 </div>
                 <div>
@@ -521,32 +555,40 @@ export const TeamSpeedrunModal: React.FC<TeamSpeedrunModalProps> = ({
 
               {/* Host / Pilot Ready & Launch Controls */}
               <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
-                {!isHost && (
-                  <button
-                    onClick={handleToggleReady}
-                    className={`w-full sm:w-1/2 py-3 px-4 rounded-xl font-mono font-bold text-sm tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                      myPilot?.isReady
-                        ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border border-zinc-600'
-                        : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
-                    }`}
-                  >
-                    <Check className="w-4 h-4" />
-                    <span>{myPilot?.isReady ? 'SET UNREADY' : 'MARK READY'}</span>
-                  </button>
-                )}
+                <button
+                  onClick={handleToggleReady}
+                  className={`w-full sm:w-auto sm:min-w-[160px] py-3 px-4 rounded-xl font-mono font-bold text-sm tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                    myPilot?.isReady
+                      ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border border-zinc-600'
+                      : 'bg-emerald-600 text-white hover:bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]'
+                  }`}
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{myPilot?.isReady ? 'SET UNREADY' : 'MARK READY'}</span>
+                </button>
 
                 {isHost ? (
                   <button
                     onClick={handleLaunchSquad}
-                    disabled={loading}
-                    className="w-full py-3 px-6 rounded-xl font-mono font-black text-sm tracking-wider bg-gradient-to-r from-cyan-500 to-emerald-500 text-black hover:opacity-95 active:scale-[0.98] transition-all flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(6,182,212,0.4)] cursor-pointer"
+                    disabled={loading || !allPilotsReady}
+                    className={`w-full flex-1 py-3 px-5 rounded-xl font-mono font-black text-sm tracking-wider transition-all flex items-center justify-center gap-2 ${
+                      allPilotsReady
+                        ? 'bg-gradient-to-r from-cyan-500 to-emerald-500 text-black hover:opacity-95 active:scale-[0.98] shadow-[0_0_25px_rgba(6,182,212,0.4)] cursor-pointer'
+                        : 'bg-zinc-900 text-zinc-500 border border-zinc-800 cursor-not-allowed'
+                    }`}
                   >
                     <Play className="w-4 h-4 fill-current" />
-                    <span>LAUNCH SQUAD ARCADE ({pilotCount} PILOT{pilotCount > 1 ? 'S' : ''})</span>
+                    <span>
+                      {allPilotsReady
+                        ? `LAUNCH SQUAD ARCADE (${pilotCount} PILOT${pilotCount > 1 ? 'S' : ''})`
+                        : `WAITING FOR READY (${readyCount}/${pilotCount})`}
+                    </span>
                   </button>
                 ) : (
-                  <div className="w-full sm:w-1/2 text-center text-xs font-mono text-zinc-400 p-3 bg-zinc-900/60 rounded-xl border border-zinc-800">
-                    Waiting for Host to launch Squad Arcade session (Bit 1)...
+                  <div className="w-full flex-1 text-center text-xs font-mono text-zinc-400 p-3 bg-zinc-900/60 rounded-xl border border-zinc-800">
+                    {allPilotsReady
+                      ? 'All pilots READY! Waiting for Host to launch...'
+                      : `Waiting for all pilots to mark READY (${readyCount}/${pilotCount})...`}
                   </div>
                 )}
 

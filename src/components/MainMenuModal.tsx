@@ -513,9 +513,16 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                     )}
                   </div>
                   <p className="text-[11px] text-neutral-300 font-mono mt-0.5">
-                    {storyProgress?.hasSave
-                      ? `Part ${storyProgress.act1SubPart} • N=${storyProgress.currentN} • ${storyProgress.act1Bits}/10 Bits • Res ${storyProgress.act1Resolution}/10`
-                      : '0D Void → Full Dimensionality'}
+                    {storyProgress?.hasSave ? (
+                      <>
+                        Part {storyProgress.act1SubPart} • N={storyProgress.currentN} • {storyProgress.act1Bits}/10 Bits • Res {storyProgress.act1Resolution}/10 •{' '}
+                        <span className="text-[#33ff66] font-bold">{storyProgress.resources.hertz} HZ</span>{' '}
+                        <span className="text-[#ff4455] font-bold">{storyProgress.resources.volts} V</span>{' '}
+                        <span className="text-[#38bdf8] font-bold">{storyProgress.resources.baud} Bd</span>
+                      </>
+                    ) : (
+                      '0D Void → Full Dimensionality'
+                    )}
                   </p>
                 </div>
               </div>
@@ -654,7 +661,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[10px] text-neutral-300 font-mono">
-                    Starts at Bit 1 with 1 Life. Health refills to 100% on each Bit completion. Completes at First Boss.
+                    Starts at Bit 1 with 1 Life. Health refills to 100% on each Bit completion. Completes at [JEF].
                   </p>
                 </div>
                 <div className="mt-2 pt-1.5 border-t border-neutral-800 flex items-center justify-between text-[10px] text-purple-400 font-bold">
@@ -788,7 +795,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[10px] text-neutral-300 font-mono">
-                    Multiplayer room. Link beams with squadmates, coordinate polarities &amp; defeat sovereigns together.
+                    Multiplayer room. Link beams with squadmates, coordinate polarities &amp; defeat [JEF] together.
                   </p>
                 </div>
                 <div className="mt-2 pt-1.5 border-t border-neutral-800 flex items-center justify-between text-[10px]">
@@ -831,7 +838,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                         isCreativeSpaceUnlocked ? 'text-emerald-300' : 'text-neutral-200'
                       }`}
                     >
-                      CREATIVE SPACE · LINE &amp; BEAT ETCH-A-SKETCH
+                      CREATIVE SPACE
                     </span>
                     <span
                       className={`px-2 py-0.5 rounded text-[10px] font-mono font-black uppercase tracking-wider border ${
