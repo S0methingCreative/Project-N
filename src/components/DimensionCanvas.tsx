@@ -6630,7 +6630,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                 OH NO YOU DIED.
               </div>
 
-              {(deathScreen.target === 'N' || (deathScreen.target === 'bit' && deathScreen.costHz === 0 && deathScreen.costV === 0)) && (
+              {(deathScreen.target === 'N' || (deathScreen.target === 'bit' && bits === 0 && deathScreen.costHz === 0 && deathScreen.costV === 0)) && (
                 <div className="text-[11px] text-emerald-300 bg-emerald-950/70 border border-emerald-500/60 p-2.5 rounded-lg text-left space-y-1">
                   <div className="font-bold flex items-center gap-1.5 text-emerald-400">
                     <Sparkles className="w-3.5 h-3.5 text-emerald-300 animate-pulse" />
@@ -6671,45 +6671,45 @@ export const DimensionCanvas: React.FC<Props> = ({
                 )}
               </div>
 
-              <div className="text-emerald-300 font-bold text-xs sm:text-sm">
-                {gameState.gameMode === 'squad' ? (
-                  <div className="flex flex-col gap-1 items-center">
-                    <span className="text-cyan-300 font-mono font-bold">
-                      💀 SQUAD WIPE · CHECKPOINT SAVED (RUN #{speedrunRunsRef.current})
-                    </span>
-                    <span className="text-xs text-neutral-400 font-mono">
-                      Saved: {subPartRef.current === 2 ? `Part 2 (Resolution ${resolutionRef.current})` : `Part 1 (Bit ${bitsRef.current})`} · Squad Bank: <span className="text-[#33ff66] font-bold">{(teamRoomRef.current?.sharedState?.totalHz || 0) + pendingSquadHzRef.current} HZ</span> / <span className="text-[#ff4455] font-bold">{(teamRoomRef.current?.sharedState?.totalV || 0) + pendingSquadVRef.current} V</span>
-                    </span>
-                    <span className="text-[11px] text-emerald-400 font-mono">
-                      Select READY UP to resume with squad, or RETURN TO PILOT ROOM!
-                    </span>
-                  </div>
-                ) : gameState.gameMode === 'speedrun' ? (
-                  (deathScreen.target === 'resolution' && resolution >= 9) ? (
-                    <span className="text-amber-300 font-mono">BOSS 2 ENCOUNTER: DEFEAT FRACTURE SOVEREIGN TO UNLOCK RESOLUTION 10 (240 FPS)</span>
-                  ) : (deathScreen.target === 'bit' && bits >= 9) ? (
-                    <span className="text-amber-300 font-mono">BOSS 1 ENCOUNTER: DEFEAT CORRUPTED SOVEREIGN TO UNLOCK BIT 10</span>
-                  ) : (
-                    <span className="text-cyan-300 font-mono">SPEEDRUN RUN #{speedrunRunsRef.current} · RESUME THE CLOCK TO CONTINUE</span>
-                  )
-                ) : deathScreen.target === 'N' ? (
-                  <span className="text-emerald-300 font-bold">COMPILE N = 1 (FREE)?</span>
-                ) : (deathScreen.target === 'bit' && deathScreen.costHz === 0 && deathScreen.costV === 0) ? (
-                  <span className="text-emerald-300 font-bold">COMPILE BIT 1 (FREE)?</span>
-                ) : deathScreen.target === 'resolution' ? (
-                  (deathScreen.currentResolution ?? resolution) >= 9 ? (
-                    <span className="text-amber-300 font-mono">BOSS 2 ENCOUNTER: DEFEAT FRACTURE SOVEREIGN TO UNLOCK RESOLUTION 10 (240 FPS)</span>
-                  ) : ((deathScreen.currentResolution ?? resolution) === 0 && (deathScreen.costBaud || 0) === 0 && deathScreen.costHz === 0 && deathScreen.costV === 0) ? (
-                    <span className="text-emerald-300 font-bold">COMPILE RESOLUTION 1 (FREE)?</span>
-                  ) : (
-                    <span>SPEND <span className="text-[#38bdf8]">{deathScreen.costBaud} Bd</span>, <span className="text-[#33ff66]">{deathScreen.costHz} HZ</span> &amp; <span className="text-[#ff4455]">{deathScreen.costV} V</span> TO COMPILE RESOLUTION {(deathScreen.currentResolution ?? resolution) + 1}?</span>
-                  )
-                ) : bits >= 9 ? (
-                  <span className="text-amber-300 font-mono">BOSS 1 ENCOUNTER: DEFEAT CORRUPTED SOVEREIGN TO UNLOCK BIT 10</span>
-                ) : (
-                  <span>SPEND <span className="text-[#33ff66]">{deathScreen.costHz} HZ</span> AND <span className="text-[#ff4455]">{deathScreen.costV} V</span> TO COMPILE? ({bits}/10 BITS)</span>
-                )}
-              </div>
+              {!(gameState.gameMode === 'story' && deathScreen.target === 'bit' && bits >= 9) && (
+                <div className="text-emerald-300 font-bold text-xs sm:text-sm">
+                  {gameState.gameMode === 'squad' ? (
+                    <div className="flex flex-col gap-1 items-center">
+                      <span className="text-cyan-300 font-mono font-bold">
+                        💀 SQUAD WIPE · CHECKPOINT SAVED (RUN #{speedrunRunsRef.current})
+                      </span>
+                      <span className="text-xs text-neutral-400 font-mono">
+                        Saved: {subPartRef.current === 2 ? `Part 2 (Resolution ${resolutionRef.current})` : `Part 1 (Bit ${bitsRef.current})`} · Squad Bank: <span className="text-[#33ff66] font-bold">{(teamRoomRef.current?.sharedState?.totalHz || 0) + pendingSquadHzRef.current} HZ</span> / <span className="text-[#ff4455] font-bold">{(teamRoomRef.current?.sharedState?.totalV || 0) + pendingSquadVRef.current} V</span>
+                      </span>
+                      <span className="text-[11px] text-emerald-400 font-mono">
+                        Select READY UP to resume with squad, or RETURN TO PILOT ROOM!
+                      </span>
+                    </div>
+                  ) : gameState.gameMode === 'speedrun' ? (
+                    (deathScreen.target === 'resolution' && resolution >= 9) ? (
+                      <span className="text-amber-300 font-mono">BOSS 2 ENCOUNTER: DEFEAT FRACTURE SOVEREIGN TO UNLOCK RESOLUTION 10 (240 FPS)</span>
+                    ) : (deathScreen.target === 'bit' && bits >= 9) ? (
+                      <span className="text-amber-300 font-mono">BOSS 1 ENCOUNTER: DEFEAT CORRUPTED SOVEREIGN TO UNLOCK BIT 10</span>
+                    ) : (
+                      <span className="text-cyan-300 font-mono">SPEEDRUN RUN #{speedrunRunsRef.current} · RESUME THE CLOCK TO CONTINUE</span>
+                    )
+                  ) : deathScreen.target === 'N' ? (
+                    <span className="text-emerald-300 font-bold">COMPILE N = 1 (FREE)?</span>
+                  ) : (deathScreen.target === 'bit' && bits === 0 && deathScreen.costHz === 0 && deathScreen.costV === 0) ? (
+                    <span className="text-emerald-300 font-bold">COMPILE BIT 1 (FREE)?</span>
+                  ) : deathScreen.target === 'resolution' ? (
+                    (deathScreen.currentResolution ?? resolution) >= 9 ? (
+                      <span className="text-amber-300 font-mono">BOSS 2 ENCOUNTER: DEFEAT FRACTURE SOVEREIGN TO UNLOCK RESOLUTION 10 (240 FPS)</span>
+                    ) : ((deathScreen.currentResolution ?? resolution) === 0 && (deathScreen.costBaud || 0) === 0 && deathScreen.costHz === 0 && deathScreen.costV === 0) ? (
+                      <span className="text-emerald-300 font-bold">COMPILE RESOLUTION 1 (FREE)?</span>
+                    ) : (
+                      <span>SPEND <span className="text-[#38bdf8]">{deathScreen.costBaud} Bd</span>, <span className="text-[#33ff66]">{deathScreen.costHz} HZ</span> &amp; <span className="text-[#ff4455]">{deathScreen.costV} V</span> TO COMPILE RESOLUTION {(deathScreen.currentResolution ?? resolution) + 1}?</span>
+                    )
+                  ) : bits >= 9 ? null : (
+                    <span>SPEND <span className="text-[#33ff66]">{deathScreen.costHz} HZ</span> AND <span className="text-[#ff4455]">{deathScreen.costV} V</span> TO COMPILE? ({bits}/10 BITS)</span>
+                  )}
+                </div>
+              )}
 
               {/* 1-SECOND ACCIDENTAL CLICK BUFFER: subtle small indicator while buttons are greyed out */}
               {deathBufferSeconds > 0 && (
@@ -6791,7 +6791,7 @@ export const DimensionCanvas: React.FC<Props> = ({
                     const targetResNum = (deathScreen.currentResolution ?? resolution) + 1;
                     const isFreeCompile =
                       deathScreen.target === 'N' ||
-                      (deathScreen.target === 'bit' && deathScreen.costHz === 0 && deathScreen.costV === 0) ||
+                      (deathScreen.target === 'bit' && bits === 0 && deathScreen.costHz === 0 && deathScreen.costV === 0) ||
                       (deathScreen.target === 'resolution' && targetResNum === 1 && (deathScreen.costBaud || 0) === 0 && deathScreen.costHz === 0 && deathScreen.costV === 0);
                     return (
                       <div className="flex flex-col items-center gap-1.5 w-full sm:w-auto">
