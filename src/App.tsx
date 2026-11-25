@@ -319,7 +319,8 @@ export default function App() {
         if (
           target instanceof HTMLInputElement ||
           target instanceof HTMLTextAreaElement ||
-          target?.isContentEditable
+          target?.isContentEditable ||
+          document.querySelector('[data-initials-modal="true"]')
         ) {
           return;
         }

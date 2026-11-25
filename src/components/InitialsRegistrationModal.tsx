@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Shield, Check, AlertCircle, X, ChevronUp, ChevronDown, Sparkles, Loader2 } from 'lucide-react';
-import { checkCodeAvailability, registerPlayerCode, isBannedInitials } from '../services/leaderboardService';
+import { checkCodeAvailability, registerPlayerCode, isBannedInitials, setPlayerCode } from '../services/leaderboardService';
 import { soundEngine } from '../audio/soundEngine';
 
 const VALID_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
@@ -26,6 +26,8 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
   const [availability, setAvailability] = useState<{ available: boolean; reason?: string } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const debounceTimerRef = useRef<number | null>(null);
+  const checkRequestIdRef = useRef<number>(0);
+  const submittingRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -36,47 +38,98 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
       }
       setActiveSlot(0);
       setAvailability(null);
+      setIsSubmitting(false);
+      submittingRef.current = false;
     }
   }, [isOpen, currentCode]);
 
-  // Debounced real-time Firestore check
+  const cycleChar = useCallback((slotIdx: number, delta: number) => {
+    soundEngine.playCadenceResolution();
+    setLetters((prev) => {
+      const next = [...prev];
+      const curChar = next[slotIdx] || 'A';
+      const curIdx = VALID_CHARS.indexOf(curChar);
+      const nextIdx = (curIdx + delta + VALID_CHARS.length) % VALID_CHARS.length;
+      next[slotIdx] = VALID_CHARS[nextIdx];
+      return next;
+    });
+  }, []);
+
+  const handleConfirm = useCallback(async () => {
+    if (submittingRef.current) return;
+    const fullCode = letters.join('').toUpperCase();
+    if (fullCode.length !== 3 || isBannedInitials(fullCode)) return;
+
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    try {
+      // Immediately persist locally so the code is guaranteed locked in
+      setPlayerCode(fullCode);
+      await registerPlayerCode(fullCode);
+    } catch (err) {
+      console.warn('[InitialsRegistrationModal] Non-blocking registration warning:', err);
+    } finally {
+      try {
+        soundEngine.playCadenceResolution();
+      } catch {}
+      submittingRef.current = false;
+      setIsSubmitting(false);
+      onCodeRegistered(fullCode);
+      if (onClose) onClose();
+    }
+  }, [letters, onCodeRegistered, onClose]);
+
+  const handleConfirmRef = useRef(handleConfirm);
+  handleConfirmRef.current = handleConfirm;
+
+  // Debounced real-time Firestore check with cancellation against stale responses
   useEffect(() => {
     if (!isOpen) return;
 
     const fullCode = letters.join('').toUpperCase();
+    const requestId = ++checkRequestIdRef.current;
+
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+
     if (fullCode.length !== 3) {
+      setChecking(false);
       setAvailability(null);
       return;
     }
 
     if (isBannedInitials(fullCode)) {
-      if (debounceTimerRef.current) {
-        window.clearTimeout(debounceTimerRef.current);
-      }
       setChecking(false);
       setAvailability({ available: false, reason: `Pilot code "${fullCode}" is prohibited.` });
       return;
     }
 
-    if (debounceTimerRef.current) {
-      window.clearTimeout(debounceTimerRef.current);
-    }
-
+    let cancelled = false;
     setChecking(true);
     debounceTimerRef.current = window.setTimeout(async () => {
       try {
         const res = await checkCodeAvailability(fullCode, currentCode);
-        setAvailability(res);
+        if (!cancelled && checkRequestIdRef.current === requestId) {
+          setAvailability(res);
+        }
       } catch {
-        setAvailability({ available: true });
+        if (!cancelled && checkRequestIdRef.current === requestId) {
+          setAvailability({ available: true });
+        }
       } finally {
-        setChecking(false);
+        if (!cancelled && checkRequestIdRef.current === requestId) {
+          setChecking(false);
+        }
       }
-    }, 280);
+    }, 220);
 
     return () => {
+      cancelled = true;
       if (debounceTimerRef.current) {
         window.clearTimeout(debounceTimerRef.current);
+        debounceTimerRef.current = null;
       }
     };
   }, [letters, isOpen, currentCode]);
@@ -96,7 +149,7 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
       if (e.key === 'Enter') {
         e.preventDefault();
         if (availability?.available && !checking && !isSubmitting) {
-          handleConfirm();
+          void handleConfirmRef.current();
         }
         return;
       }
@@ -152,36 +205,9 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, activeSlot, availability, checking, isSubmitting, isEditing, onClose]);
+  }, [isOpen, activeSlot, availability, checking, isSubmitting, isEditing, onClose, cycleChar]);
 
   if (!isOpen) return null;
-
-  const cycleChar = (slotIdx: number, delta: number) => {
-    soundEngine.playCadenceResolution();
-    setLetters((prev) => {
-      const next = [...prev];
-      const curChar = next[slotIdx] || 'A';
-      const curIdx = VALID_CHARS.indexOf(curChar);
-      const nextIdx = (curIdx + delta + VALID_CHARS.length) % VALID_CHARS.length;
-      next[slotIdx] = VALID_CHARS[nextIdx];
-      return next;
-    });
-  };
-
-  const handleConfirm = async () => {
-    const fullCode = letters.join('').toUpperCase();
-    if (fullCode.length !== 3 || isBannedInitials(fullCode)) return;
-
-    setIsSubmitting(true);
-    try {
-      await registerPlayerCode(fullCode);
-      soundEngine.playCadenceResolution();
-      onCodeRegistered(fullCode);
-      if (onClose) onClose();
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const fullCode = letters.join('').toUpperCase();
 
@@ -189,10 +215,11 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md select-none font-mono animate-in fade-in duration-200"
+      data-initials-modal="true"
+      className="fixed inset-0 z-[110] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md select-none font-mono animate-in fade-in duration-200 overflow-y-auto touch-pan-y"
     >
       <div
-        className="relative w-full max-w-md bg-[#090c15] border border-amber-500/70 rounded-2xl shadow-2xl shadow-amber-950/80 p-5 sm:p-6 flex flex-col gap-4 text-white overflow-hidden"
+        className="relative w-full max-w-md max-h-[92dvh] overflow-y-auto my-auto bg-[#090c15] border border-amber-500/70 rounded-2xl shadow-2xl shadow-amber-950/80 p-5 sm:p-6 flex flex-col gap-4 text-white"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Subtle glow header */}
@@ -220,7 +247,7 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-400 hover:text-white transition-colors cursor-pointer touch-manipulation"
               aria-label="Close"
             >
               <X className="w-4 h-4" />
@@ -248,7 +275,7 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
                 <button
                   type="button"
                   onClick={() => cycleChar(idx, -1)}
-                  className="p-1 rounded-md bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                  className="p-1.5 rounded-md bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-400 hover:text-white transition-colors cursor-pointer touch-manipulation"
                   title="Previous character"
                 >
                   <ChevronUp className="w-4 h-4" />
@@ -256,7 +283,7 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
 
                 <div
                   onClick={() => setActiveSlot(idx)}
-                  className={`w-16 h-20 sm:w-20 sm:h-24 rounded-xl flex items-center justify-center text-3xl sm:text-4xl font-black font-mono tracking-widest cursor-pointer transition-all border-2 ${
+                  className={`w-16 h-20 sm:w-20 sm:h-24 rounded-xl flex items-center justify-center text-3xl sm:text-4xl font-black font-mono tracking-widest cursor-pointer transition-all border-2 touch-manipulation ${
                     isActive
                       ? 'bg-amber-500/20 border-amber-400 text-amber-200 shadow-lg shadow-amber-500/30 ring-2 ring-amber-400/30 scale-105'
                       : 'bg-neutral-900/80 border-neutral-700 text-white hover:border-neutral-500'
@@ -268,7 +295,7 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
                 <button
                   type="button"
                   onClick={() => cycleChar(idx, 1)}
-                  className="p-1 rounded-md bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-400 hover:text-white transition-colors cursor-pointer"
+                  className="p-1.5 rounded-md bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-400 hover:text-white transition-colors cursor-pointer touch-manipulation"
                   title="Next character"
                 >
                   <ChevronDown className="w-4 h-4" />
@@ -311,7 +338,7 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
               type="button"
               onClick={onClose}
               disabled={isSubmitting}
-              className="px-4 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 font-bold text-xs cursor-pointer transition-colors"
+              className="px-4 py-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 text-neutral-300 font-bold text-xs cursor-pointer transition-colors touch-manipulation"
             >
               CANCEL
             </button>
@@ -319,9 +346,9 @@ export const InitialsRegistrationModal: React.FC<InitialsRegistrationModalProps>
 
           <button
             type="button"
-            onClick={handleConfirm}
+            onClick={() => void handleConfirm()}
             disabled={!availability?.available || checking || isSubmitting}
-            className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2 ${
+            className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer touch-manipulation flex items-center justify-center gap-2 ${
               availability?.available && !checking && !isSubmitting
                 ? 'bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-black shadow-lg shadow-amber-950 font-black'
                 : 'bg-neutral-800 text-neutral-500 border border-neutral-700 cursor-not-allowed'

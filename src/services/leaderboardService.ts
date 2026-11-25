@@ -223,6 +223,34 @@ function loadFromLocalCache(key: string, fallback: any) {
 // ---------------------------------------------------------------------------
 // UNIQUE CODE CHECK & REGISTRATION
 // ---------------------------------------------------------------------------
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve(fallback);
+      }
+    }, ms);
+
+    promise
+      .then((val) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(val);
+        }
+      })
+      .catch(() => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(fallback);
+        }
+      });
+  });
+}
+
 export async function checkCodeAvailability(
   code: string,
   currentCode?: string
@@ -240,37 +268,35 @@ export async function checkCodeAvailability(
     return { available: true };
   }
 
-  try {
-    // 1. Check players registry in Firestore
-    const playerRef = doc(db, 'players', clean);
-    const playerSnap = await getDoc(playerRef);
-    if (playerSnap.exists()) {
-      return { available: false, reason: `Pilot code "${clean}" is already registered by another player.` };
-    }
-
-    // 2. Check across existing leaderboard collections in real-time
-    const checks = [
-      getDocs(query(collection(db, 'leaderboards_story'), limit(25))),
-      getDocs(query(collection(db, 'leaderboards_arcade'), limit(25))),
-      getDocs(query(collection(db, 'leaderboards_speedrun'), limit(25))),
-      getDocs(query(collection(db, 'leaderboards_survival'), limit(25))),
-    ];
-    const results = await Promise.all(checks);
-    for (const snap of results) {
-      for (const d of snap.docs) {
-        const data = d.data();
-        if (data.initials === clean) {
-          return { available: false, reason: `Pilot code "${clean}" is already in use on global leaderboards.` };
-        }
-      }
-    }
-
-    return { available: true };
-  } catch (err) {
-    console.warn('Real-time code availability check fallback:', err);
-    // Offline / fallback verification against local storage cache
+  if (isFirestoreQuotaExhausted()) {
     return { available: true };
   }
+
+  const checkRemote = async (): Promise<{ available: boolean; reason?: string }> => {
+    try {
+      // Targeted 2-doc check against players registry and consolidated story leaderboard
+      const [playerSnap, storySnap] = await Promise.all([
+        getDoc(doc(db, 'players', clean)),
+        getDoc(doc(db, 'leaderboards_story', clean)),
+      ]);
+
+      if (playerSnap.exists()) {
+        return { available: false, reason: `Pilot code "${clean}" is already registered by another player.` };
+      }
+
+      if (storySnap.exists()) {
+        return { available: false, reason: `Pilot code "${clean}" is already in use on global leaderboards.` };
+      }
+
+      return { available: true };
+    } catch (err: any) {
+      if (isQuotaError(err)) markFirestoreQuotaExhausted();
+      console.warn('Real-time code availability check fallback:', err);
+      return { available: true };
+    }
+  };
+
+  return withTimeout(checkRemote(), 2500, { available: true });
 }
 
 export const RESOLUTION_FPS_MAP: Record<number, string> = {
@@ -383,9 +409,14 @@ export async function registerPlayerCode(code: string): Promise<boolean> {
   const initialStoryPayload: StoryScoreEntry = getLocalPlayerStoryProgression(clean);
 
   // 1. Immediately seed into local story cache so they appear on the scoreboard right away
-  const curCached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
-  const updatedCached = consolidateStoryScores([...curCached, initialStoryPayload]);
-  saveToLocalCache('story_scores_v3', updatedCached);
+  try {
+    const rawCached = loadFromLocalCache('story_scores_v3', DEFAULT_STORY_SCORES);
+    const curCached = Array.isArray(rawCached) ? rawCached : DEFAULT_STORY_SCORES;
+    const updatedCached = consolidateStoryScores([...curCached, initialStoryPayload]);
+    saveToLocalCache('story_scores_v3', updatedCached);
+  } catch (cacheErr) {
+    console.warn('registerPlayerCode local cache warning:', cacheErr);
+  }
 
   // In development environment, if handle is blocked, or if Firestore quota is reached, keep registration local only
   if (isFirestoreQuotaExhausted() || isDevelopmentEnvironment() || isBlockedFromLeaderboard(clean)) {
@@ -393,33 +424,47 @@ export async function registerPlayerCode(code: string): Promise<boolean> {
     return true;
   }
 
-  try {
-    const playerRef = doc(db, 'players', clean);
-    const existingPlayer = await getDoc(playerRef);
-    if (!existingPlayer.exists()) {
-      await setDoc(playerRef, {
-        code: clean,
-        createdAt: new Date().toISOString(),
-      });
-    }
+  const syncToFirestore = async (): Promise<boolean> => {
+    try {
+      const playerRef = doc(db, 'players', clean);
+      const storyDocRef = doc(db, 'leaderboards_story', clean);
+      const [existingPlayer, existingSnap] = await Promise.all([
+        getDoc(playerRef),
+        getDoc(storyDocRef),
+      ]);
 
-    // Write to leaderboards_story if not already exists or if local progress is higher
-    const storyDocRef = doc(db, 'leaderboards_story', clean);
-    const existingSnap = await getDoc(storyDocRef);
-    if (!existingSnap.exists()) {
-      await setDoc(storyDocRef, initialStoryPayload);
-    } else {
-      const existingData = existingSnap.data() as Partial<StoryScoreEntry>;
-      if ((existingData.stageNum || 0) < initialStoryPayload.stageNum) {
-        await setDoc(storyDocRef, { ...existingData, ...initialStoryPayload }, { merge: true });
+      const writes: Promise<void>[] = [];
+      if (!existingPlayer.exists()) {
+        writes.push(
+          setDoc(playerRef, {
+            code: clean,
+            createdAt: new Date().toISOString(),
+          })
+        );
       }
+
+      if (!existingSnap.exists()) {
+        writes.push(setDoc(storyDocRef, initialStoryPayload));
+      } else {
+        const existingData = existingSnap.data() as Partial<StoryScoreEntry>;
+        if ((existingData.stageNum || 0) < initialStoryPayload.stageNum) {
+          writes.push(setDoc(storyDocRef, { ...existingData, ...initialStoryPayload }, { merge: true }));
+        }
+      }
+
+      if (writes.length > 0) {
+        await Promise.all(writes);
+      }
+      return true;
+    } catch (err: any) {
+      if (isQuotaError(err)) markFirestoreQuotaExhausted();
+      console.warn('registerPlayerCode Firestore write warning:', err);
+      return true; // Local storage succeeds
     }
-    return true;
-  } catch (err: any) {
-    if (isQuotaError(err)) markFirestoreQuotaExhausted();
-    console.warn('registerPlayerCode Firestore write warning:', err);
-    return true; // Local storage succeeds
-  }
+  };
+
+  // Cap Firestore wait so stalled/offline WebChannel retries never freeze the registration screen
+  return withTimeout(syncToFirestore(), 1500, true);
 }
 
 // ---------------------------------------------------------------------------
